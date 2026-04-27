@@ -1,0 +1,64 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 920" width="1000" height="920">
+  <rect width="1000" height="920" fill="#0a0a0a"/>
+  <text x="40" y="72" font-family="sans-serif" font-weight="600" font-size="40" fill="#f7f5f0" letter-spacing="6">FIELD PALETTE</text>
+  <rect x="0" y="120" width="200" height="200" fill="#0a0a0a"/>
+  <text x="16" y="298" font-family="sans-serif" font-weight="500" font-size="18" fill="#f7f5f0">ink-0</text>
+  <text x="16" y="276" font-family="sans-serif" font-weight="400" font-size="14" fill="#f7f5f0" opacity="0.6">#0a0a0a</text>
+  <rect x="200" y="120" width="200" height="200" fill="#111111"/>
+  <text x="216" y="298" font-family="sans-serif" font-weight="500" font-size="18" fill="#f7f5f0">ink-1</text>
+  <text x="216" y="276" font-family="sans-serif" font-weight="400" font-size="14" fill="#f7f5f0" opacity="0.6">#111111</text>
+  <rect x="400" y="120" width="200" height="200" fill="#171717"/>
+  <text x="416" y="298" font-family="sans-serif" font-weight="500" font-size="18" fill="#f7f5f0">ink-2</text>
+  <text x="416" y="276" font-family="sans-serif" font-weight="400" font-size="14" fill="#f7f5f0" opacity="0.6">#171717</text>
+  <rect x="600" y="120" width="200" height="200" fill="#1f1f1f"/>
+  <text x="616" y="298" font-family="sans-serif" font-weight="500" font-size="18" fill="#f7f5f0">ink-3</text>
+  <text x="616" y="276" font-family="sans-serif" font-weight="400" font-size="14" fill="#f7f5f0" opacity="0.6">#1f1f1f</text>
+  <rect x="800" y="120" width="200" height="200" fill="#2a2a2a"/>
+  <text x="816" y="298" font-family="sans-serif" font-weight="500" font-size="18" fill="#f7f5f0">ink-4</text>
+  <text x="816" y="276" font-family="sans-serif" font-weight="400" font-size="14" fill="#f7f5f0" opacity="0.6">#2a2a2a</text>
+  <rect x="0" y="320" width="200" height="200" fill="#f7f5f0"/>
+  <text x="16" y="498" font-family="sans-serif" font-weight="500" font-size="18" fill="#0a0a0a">bone-50</text>
+  <text x="16" y="476" font-family="sans-serif" font-weight="400" font-size="14" fill="#0a0a0a" opacity="0.6">#f7f5f0</text>
+  <rect x="200" y="320" width="200" height="200" fill="#e8e4dc"/>
+  <text x="216" y="498" font-family="sans-serif" font-weight="500" font-size="18" fill="#0a0a0a">bone-100</text>
+  <text x="216" y="476" font-family="sans-serif" font-weight="400" font-size="14" fill="#0a0a0a" opacity="0.6">#e8e4dc</text>
+  <rect x="400" y="320" width="200" height="200" fill="#a8a298"/>
+  <text x="416" y="498" font-family="sans-serif" font-weight="500" font-size="18" fill="#0a0a0a">bone-300</text>
+  <text x="416" y="476" font-family="sans-serif" font-weight="400" font-size="14" fill="#0a0a0a" opacity="0.6">#a8a298</text>
+  <rect x="600" y="320" width="200" height="200" fill="#6d675e"/>
+  <text x="616" y="498" font-family="sans-serif" font-weight="500" font-size="18" fill="#f7f5f0">bone-400</text>
+  <text x="616" y="476" font-family="sans-serif" font-weight="400" font-size="14" fill="#f7f5f0" opacity="0.6">#6d675e</text>
+  <rect x="800" y="320" width="200" height="200" fill="#4a453d"/>
+  <text x="816" y="498" font-family="sans-serif" font-weight="500" font-size="18" fill="#f7f5f0">bone-500</text>
+  <text x="816" y="476" font-family="sans-serif" font-weight="400" font-size="14" fill="#f7f5f0" opacity="0.6">#4a453d</text>
+  <rect x="0" y="520" width="200" height="200" fill="#FFF1EE"/>
+  <text x="16" y="698" font-family="sans-serif" font-weight="500" font-size="18" fill="#0a0a0a">salmon-50</text>
+  <text x="16" y="676" font-family="sans-serif" font-weight="400" font-size="14" fill="#0a0a0a" opacity="0.6">#FFF1EE</text>
+  <rect x="200" y="520" width="200" height="200" fill="#FFDDD4"/>
+  <text x="216" y="698" font-family="sans-serif" font-weight="500" font-size="18" fill="#0a0a0a">salmon-100</text>
+  <text x="216" y="676" font-family="sans-serif" font-weight="400" font-size="14" fill="#0a0a0a" opacity="0.6">#FFDDD4</text>
+  <rect x="400" y="520" width="200" height="200" fill="#FFA095"/>
+  <text x="416" y="698" font-family="sans-serif" font-weight="500" font-size="18" fill="#0a0a0a">salmon-300</text>
+  <text x="416" y="676" font-family="sans-serif" font-weight="400" font-size="14" fill="#0a0a0a" opacity="0.6">#FFA095</text>
+  <rect x="600" y="520" width="200" height="200" fill="#FF6B6B"/>
+  <text x="616" y="698" font-family="sans-serif" font-weight="500" font-size="18" fill="#0a0a0a">salmon-500</text>
+  <text x="616" y="676" font-family="sans-serif" font-weight="400" font-size="14" fill="#0a0a0a" opacity="0.6">#FF6B6B</text>
+  <rect x="800" y="520" width="200" height="200" fill="#CC3F3F"/>
+  <text x="816" y="698" font-family="sans-serif" font-weight="500" font-size="18" fill="#f7f5f0">salmon-700</text>
+  <text x="816" y="676" font-family="sans-serif" font-weight="400" font-size="14" fill="#f7f5f0" opacity="0.6">#CC3F3F</text>
+  <rect x="0" y="720" width="200" height="200" fill="#F7FEE7"/>
+  <text x="16" y="898" font-family="sans-serif" font-weight="500" font-size="18" fill="#0a0a0a">lime-50</text>
+  <text x="16" y="876" font-family="sans-serif" font-weight="400" font-size="14" fill="#0a0a0a" opacity="0.6">#F7FEE7</text>
+  <rect x="200" y="720" width="200" height="200" fill="#ECFCCB"/>
+  <text x="216" y="898" font-family="sans-serif" font-weight="500" font-size="18" fill="#0a0a0a">lime-100</text>
+  <text x="216" y="876" font-family="sans-serif" font-weight="400" font-size="14" fill="#0a0a0a" opacity="0.6">#ECFCCB</text>
+  <rect x="400" y="720" width="200" height="200" fill="#D9F99D"/>
+  <text x="416" y="898" font-family="sans-serif" font-weight="500" font-size="18" fill="#0a0a0a">lime-300</text>
+  <text x="416" y="876" font-family="sans-serif" font-weight="400" font-size="14" fill="#0a0a0a" opacity="0.6">#D9F99D</text>
+  <rect x="600" y="720" width="200" height="200" fill="#BEF264"/>
+  <text x="616" y="898" font-family="sans-serif" font-weight="500" font-size="18" fill="#0a0a0a">lime-500</text>
+  <text x="616" y="876" font-family="sans-serif" font-weight="400" font-size="14" fill="#0a0a0a" opacity="0.6">#BEF264</text>
+  <rect x="800" y="720" width="200" height="200" fill="#65A30D"/>
+  <text x="816" y="898" font-family="sans-serif" font-weight="500" font-size="18" fill="#f7f5f0">lime-700</text>
+  <text x="816" y="876" font-family="sans-serif" font-weight="400" font-size="14" fill="#f7f5f0" opacity="0.6">#65A30D</text>
+</svg>

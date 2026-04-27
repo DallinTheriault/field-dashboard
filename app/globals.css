@@ -1,0 +1,150 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    color-scheme: dark;
+  }
+
+  html,
+  body {
+    @apply bg-ink-0 text-bone-50 antialiased;
+    font-feature-settings: "ss01", "cv11";
+  }
+
+  body {
+    /* Fine warm wash over the base — salmon at low opacity to keep ink-0 from feeling sterile */
+    background-image:
+      radial-gradient(1200px 600px at 100% -200px, rgba(255, 107, 107, 0.04), transparent 60%),
+      radial-gradient(900px 500px at -100px 800px, rgba(255, 107, 107, 0.03), transparent 60%);
+    background-attachment: fixed;
+  }
+
+  ::selection {
+    @apply bg-salmon-500/30 text-bone-50;
+  }
+
+  *:focus-visible {
+    @apply outline-none ring-2 ring-salmon-500/60 ring-offset-2 ring-offset-ink-0;
+  }
+
+  /* Subtler native scrollbar on webkit */
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: #2a2a2a;
+    border: 2px solid #0a0a0a;
+    border-radius: 6px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: #3a3a3a;
+  }
+
+  input,
+  textarea,
+  select {
+    @apply bg-ink-2 border border-line-strong text-bone-50 placeholder:text-bone-400;
+    @apply rounded-sm px-3 py-2 text-sm;
+    @apply focus:border-salmon-500/60 focus:ring-1 focus:ring-salmon-500/60;
+    @apply transition-colors duration-100;
+  }
+
+  button {
+    @apply transition-all duration-100;
+  }
+
+  hr {
+    @apply border-line;
+  }
+}
+
+@layer components {
+  /* Panel — the base visual container. Inset hairline for depth. */
+  .panel {
+    @apply bg-ink-1 shadow-inset-line rounded-md;
+  }
+
+  .panel-elevated {
+    @apply bg-ink-2 shadow-pop rounded-md;
+  }
+
+  /* Button primitives */
+  .btn {
+    @apply inline-flex items-center justify-center gap-1.5;
+    @apply px-3 h-9 rounded-sm text-sm font-medium;
+    @apply disabled:opacity-50 disabled:cursor-not-allowed;
+  }
+
+  .btn-primary {
+    @apply btn bg-salmon-500 text-ink-0 hover:bg-salmon-400;
+    @apply active:bg-salmon-600;
+  }
+
+  .btn-secondary {
+    @apply btn bg-ink-2 text-bone-100 border border-line-strong;
+    @apply hover:bg-ink-3 hover:border-bone-500;
+  }
+
+  .btn-ghost {
+    @apply btn text-bone-300 hover:text-bone-50 hover:bg-ink-2;
+  }
+
+  .btn-danger {
+    @apply btn bg-status-danger/10 text-status-danger border border-status-danger/30;
+    @apply hover:bg-status-danger/20;
+  }
+
+  /* Chip — small status/count indicator */
+  .chip {
+    @apply inline-flex items-center gap-1 px-2 h-[22px] rounded-xs;
+    @apply text-2xs font-medium uppercase tracking-wide;
+    @apply border;
+  }
+
+  /* Data-focused small caps label */
+  .label-eyebrow {
+    @apply text-2xs font-medium uppercase tracking-[0.12em] text-bone-400;
+  }
+
+  /* Table primitives — Linear-ish density */
+  .table-pro {
+    @apply w-full text-sm border-separate border-spacing-0;
+  }
+  .table-pro thead th {
+    @apply label-eyebrow text-left py-2.5 px-3;
+    @apply border-b border-line;
+    @apply bg-ink-1;
+    @apply sticky top-0 z-10;
+  }
+  .table-pro tbody tr {
+    @apply border-b border-line-subtle;
+    @apply transition-colors;
+  }
+  .table-pro tbody tr:hover {
+    @apply bg-ink-2;
+  }
+  .table-pro td {
+    @apply py-2.5 px-3 align-middle border-b border-line-subtle;
+  }
+
+  /* Number display — tabular figures, monospaced */
+  .num {
+    @apply font-mono tabular-nums;
+  }
+}
+
+/* Smooth route transitions */
+main {
+  animation: fade-in 140ms ease-out;
+}
+
+/* Hide scrollbar when not needed for horizontal scroll hint */
+.scroll-x-hint {
+  scrollbar-width: thin;
+}
