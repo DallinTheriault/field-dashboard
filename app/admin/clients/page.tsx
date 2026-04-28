@@ -16,7 +16,7 @@ export default async function AdminClientsPage() {
   const supabase = createAdminClient();
   const { data: clients, error } = await supabase
     .from("Clients")
-    .select("id, business_name, business_phone, contact_email, intake_mode, is_active, created_at")
+    .select("id, business_name, business_phone, owner_email, intake_mode, is_active, created_at")
     .neq("id", 6) // hide platform sentinel row
     .order("id", { ascending: true });
 
@@ -82,7 +82,7 @@ export default async function AdminClientsPage() {
                         <span>·</span>
                         <span>{c.business_phone || "no phone"}</span>
                         <span>·</span>
-                        <span>{c.contact_email || "no email"}</span>
+                        <span>{c.owner_email || "no email"}</span>
                         {c.intake_mode && (
                           <>
                             <span>·</span>

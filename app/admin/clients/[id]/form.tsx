@@ -14,7 +14,8 @@ type ClientConfig = {
   primary_service: string;
   business_phone: string;
   business_website: string;
-  contact_email: string;
+  owner_email: string;
+  owner_phone: string;
   service_area: string;
   business_hours: string;
   service_constraints: string;
@@ -25,7 +26,7 @@ type ClientConfig = {
   twilio_number: string;
   vapi_assistant_id: string;
   calendar_id: string;
-  notify_email: string;
+  notify_email: boolean;
   notify_dashboard_ping: boolean;
   notify_sms: boolean;
   is_active: boolean;
@@ -146,13 +147,23 @@ export function ClientConfigForm({ client }: { client: ClientConfig }) {
             />
           </Field>
         </Row2>
-        <Field label="Owner email">
-          <input
-            type="email"
-            value={form.contact_email}
-            onChange={(e) => update("contact_email", e.target.value)}
-          />
-        </Field>
+        <Row2>
+          <Field label="Owner email" hint="For automation notifications">
+            <input
+              type="email"
+              value={form.owner_email}
+              onChange={(e) => update("owner_email", e.target.value)}
+            />
+          </Field>
+          <Field label="Owner phone" hint="For SMS alerts (if enabled)">
+            <input
+              type="tel"
+              value={form.owner_phone}
+              onChange={(e) => update("owner_phone", e.target.value)}
+              className="font-mono"
+            />
+          </Field>
+        </Row2>
         <Field label="Service area">
           <input
             value={form.service_area}
@@ -217,14 +228,12 @@ export function ClientConfigForm({ client }: { client: ClientConfig }) {
             className="font-mono"
           />
         </Field>
-        <Field label="Notification email">
-          <input
-            type="email"
-            value={form.notify_email}
-            onChange={(e) => update("notify_email", e.target.value)}
+        <div className="flex items-center gap-4 flex-wrap pt-2">
+          <Toggle
+            label="Email notifications"
+            checked={form.notify_email}
+            onChange={(v) => update("notify_email", v)}
           />
-        </Field>
-        <div className="flex items-center gap-4 flex-wrap">
           <Toggle
             label="Dashboard pings"
             checked={form.notify_dashboard_ping}

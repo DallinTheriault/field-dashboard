@@ -57,6 +57,8 @@ export async function POST(request: Request) {
     );
   }
 
+  const intakeNotes = body.notes?.trim() || null;
+
   const insertPayload = {
     business_name: businessName,
     business_short_name: businessName,
@@ -66,13 +68,17 @@ export async function POST(request: Request) {
     service_type: serviceType,
     primary_service: serviceType,
     service_area: body.service_area?.trim() || null,
-    contact_email: email,
+    owner_email: email,
     intake_mode: "primary",
     is_active: false,
-    notify_email: email,
+    notify_email: true,
     notify_dashboard_ping: true,
     notify_sms: false,
-    setup_notes: body.notes?.trim() || null,
+    // Clients has no setup_notes column. Stash any free-form notes in
+    // service_constraints so the operator can review them at /admin/clients/[id].
+    service_constraints: intakeNotes
+      ? `Intake notes from /onboard:\n${intakeNotes}`
+      : null,
   };
 
   const { data, error } = await supabase

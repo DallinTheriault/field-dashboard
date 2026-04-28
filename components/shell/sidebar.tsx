@@ -17,14 +17,14 @@ import { cn } from "@/lib/cn";
 import { Logo } from "@/components/ui/logo";
 
 const NAV = [
-  { href: "/app", label: "Overview", icon: LayoutDashboard },
-  { href: "/app/calls", label: "Calls", icon: Phone },
-  { href: "/app/jobs", label: "Jobs", icon: Briefcase },
-  { href: "/app/contacts", label: "Contacts", icon: Users },
-  { href: "/app/messages", label: "Messages", icon: MessageSquare },
-  { href: "/app/calendar", label: "Calendar", icon: CalendarDays },
-  { href: "/app/billing", label: "Billing", icon: CreditCard },
-  { href: "/app/settings", label: "Settings", icon: Settings },
+  { href: "/app", label: "Overview", icon: LayoutDashboard, soon: false },
+  { href: "/app/calls", label: "Calls", icon: Phone, soon: false },
+  { href: "/app/jobs", label: "Jobs", icon: Briefcase, soon: false },
+  { href: "/app/contacts", label: "Contacts", icon: Users, soon: false },
+  { href: "/app/messages", label: "Messages", icon: MessageSquare, soon: true },
+  { href: "/app/calendar", label: "Calendar", icon: CalendarDays, soon: false },
+  { href: "/app/billing", label: "Billing", icon: CreditCard, soon: false },
+  { href: "/app/settings", label: "Settings", icon: Settings, soon: false },
 ] as const;
 
 export function Sidebar({
@@ -77,7 +77,7 @@ export function Sidebar({
 
       {/* Nav */}
       <nav className="flex-1 px-2 py-3 space-y-0.5">
-        {NAV.map(({ href, label, icon: Icon }) => {
+        {NAV.map(({ href, label, icon: Icon, soon }) => {
           const active = pathname === href || (href !== "/app" && pathname?.startsWith(href));
           return (
             <Link
@@ -97,7 +97,12 @@ export function Sidebar({
                 strokeWidth={active ? 2.25 : 1.8}
                 className={cn(active ? "text-field-500" : "text-bone-400")}
               />
-              <span>{label}</span>
+              <span className="flex-1">{label}</span>
+              {soon && (
+                <span className="text-[9px] uppercase tracking-wide text-bone-400 border border-line-strong rounded-xs px-1 py-0.5">
+                  soon
+                </span>
+              )}
             </Link>
           );
         })}

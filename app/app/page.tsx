@@ -16,9 +16,10 @@ function fmtDate(d: string | null): string {
 
 function fmtDuration(s: number | null): string {
   if (!s || s < 1) return "—";
-  if (s < 60) return `${s}s`;
-  const m = Math.floor(s / 60);
-  const r = s % 60;
+  const total = Math.round(s);
+  if (total < 60) return `${total}s`;
+  const m = Math.floor(total / 60);
+  const r = total % 60;
   return `${m}m ${r}s`;
 }
 
@@ -49,8 +50,9 @@ export default async function OverviewPage() {
     supabase
       .from("jobs")
       .select("id, name, address, service, start_datetime, status")
-      .in("status", ["scheduled", "in_progress"])
+      .not("start_datetime", "is", null)
       .gte("start_datetime", new Date().toISOString())
+      .not("status", "in", '("completed","cancelled")')
       .order("start_datetime", { ascending: true })
       .limit(5),
     supabase
@@ -130,7 +132,7 @@ export default async function OverviewPage() {
           <MetricCard
             label="Upcoming"
             value={upcoming.length}
-            sub="scheduled jobs"
+            sub="upcoming jobs"
             accent="scheduled"
             className="cursor-pointer"
           />
@@ -226,8 +228,8 @@ export default async function OverviewPage() {
             {upcoming.length === 0 ? (
               <EmptyState
                 icon={Calendar}
-                title="Nothing scheduled"
-                body="Bookings will appear here as they&apos;re confirmed."
+                title="Nothing upcoming"
+                body="Estimates with proposed times and confirmed bookings will appear here."
               />
             ) : (
               <ul className="divide-y divide-line-subtle">

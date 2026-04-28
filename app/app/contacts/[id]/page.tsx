@@ -323,9 +323,10 @@ function CallsTab({
 }) {
   function fmtDuration(s: number | null): string {
     if (!s || s < 1) return "—";
-    if (s < 60) return `${s}s`;
-    const m = Math.floor(s / 60);
-    const r = s % 60;
+    const total = Math.round(s);
+    if (total < 60) return `${total}s`;
+    const m = Math.floor(total / 60);
+    const r = total % 60;
     return `${m}m ${r}s`;
   }
 

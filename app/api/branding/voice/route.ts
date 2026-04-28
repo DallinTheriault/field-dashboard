@@ -2,17 +2,10 @@ import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 
-// Allowlist of voice IDs we know about. Anything else is rejected to prevent
-// arbitrary-data writes via the API. Keep this in sync with the dropdown in
-// the Settings page.
-const ALLOWED_VOICE_IDS = new Set([
-  "21m00Tcm4TlvDq8ikWAM", // Rachel
-  "AZnzlk1XvdvUeBnXmlld", // Domi
-  "EXAVITQu4vr4xnSDxMaL", // Bella
-  "ErXwobaYiN019PkySvjV", // Antoni
-  "VR6AewLTigWG4xSOukaG", // Arnold
-  "pNInz6obpgDQGcFmaJgB", // Adam
-]);
+// Validate by shape rather than allowlist. ElevenLabs voice IDs are
+// 20 alphanumeric characters. The regex check prevents arbitrary
+// data writes to the column without forcing us to maintain a list.
+const VOICE_ID_REGEX = /^[A-Za-z0-9]{20}$/;
 
 export async function POST(request: Request) {
   const supabase = await createClient();
@@ -43,8 +36,11 @@ export async function POST(request: Request) {
   }
 
   const voiceId = body.voice_id;
-  if (!voiceId || !ALLOWED_VOICE_IDS.has(voiceId)) {
-    return NextResponse.json({ error: "Unsupported voice ID" }, { status: 400 });
+  if (!voiceId || !VOICE_ID_REGEX.test(voiceId)) {
+    return NextResponse.json(
+      { error: "Voice ID must be 20 alphanumeric characters." },
+      { status: 400 },
+    );
   }
 
   const admin = createAdminClient();

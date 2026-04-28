@@ -17,9 +17,10 @@ function fmtDate(d: string | null): string {
 
 function fmtDuration(s: number | null): string {
   if (!s || s < 1) return "—";
-  if (s < 60) return `${s}s`;
-  const m = Math.floor(s / 60);
-  const r = s % 60;
+  const total = Math.round(s);
+  if (total < 60) return `${total}s`;
+  const m = Math.floor(total / 60);
+  const r = total % 60;
   return `${m}m ${r}s`;
 }
 
@@ -64,6 +65,22 @@ export default async function CallDetailPage({
       .eq("id", call.job_id)
       .maybeSingle();
     job = j;
+  }
+
+  // For voicemail outcomes, fetch the linked message body so it appears inline.
+  let voicemail: {
+    id: number;
+    message_body: string | null;
+    callback_phone: string | null;
+    created_at: string;
+  } | null = null;
+  if (call.outcome === "message_left") {
+    const { data: m } = await supabase
+      .from("messages")
+      .select("id, message_body, callback_phone, created_at")
+      .eq("call_summary_id", call.id)
+      .maybeSingle();
+    voicemail = m ?? null;
   }
 
   return (
@@ -144,6 +161,30 @@ export default async function CallDetailPage({
               <div className="px-4 py-4">
                 <p className="text-xs text-bone-400">
                   Transcript hosted at VAPI. Click "Open" to view in new tab.
+                </p>
+              </div>
+            </div>
+          )}
+
+          {voicemail && (
+            <div className="panel">
+              <div className="px-4 h-11 flex items-center justify-between border-b border-line">
+                <div className="flex items-center gap-2">
+                  <span className="w-1.5 h-1.5 rounded-full bg-field-500" />
+                  <h2 className="text-sm font-semibold text-bone-100">Voicemail</h2>
+                </div>
+                {voicemail.callback_phone && (
+                  <a
+                    href={`tel:${voicemail.callback_phone}`}
+                    className="text-2xs text-bone-400 hover:text-bone-50"
+                  >
+                    Call back {fmtPhone(voicemail.callback_phone)}
+                  </a>
+                )}
+              </div>
+              <div className="px-4 py-4">
+                <p className="text-sm text-bone-100 leading-relaxed whitespace-pre-wrap">
+                  {voicemail.message_body || "(no transcript)"}
                 </p>
               </div>
             </div>
