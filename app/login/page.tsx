@@ -46,7 +46,7 @@ function LoginForm() {
         <div className="relative flex flex-col justify-between p-10 w-full">
           <Logo />
           <div>
-            <div className="label-eyebrow text-field-500 mb-3">Intelligent Receptionist &amp; Intake System</div>
+            <div className="label-eyebrow text-field-500 mb-3">AI Voice Receptionist</div>
             <h2 className="text-3xl font-semibold text-bone-50 tracking-tight leading-[1.15] max-w-sm">
               Every call answered. Every lead captured. Every booking on your
               calendar.

@@ -31,7 +31,7 @@ export function MetricCard({
         <span
           aria-hidden
           className={cn(
-            "absolute left-0 top-3 bottom-3 w-[2px] rounded-full",
+            "absolute left-0 top-3 bottom-3 w-[3px] rounded-full",
             accentBar[accent],
           )}
         />

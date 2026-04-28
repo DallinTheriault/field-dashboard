@@ -75,9 +75,9 @@
 
   --bone-50: 21 32 29;     /* #15201D — primary text on light */
   --bone-100: 42 56 51;    /* #2A3833 headings */
-  --bone-300: 90 104 99;   /* #5A6863 secondary */
-  --bone-400: 133 145 140; /* #85918C tertiary */
-  --bone-500: 170 178 173; /* disabled */
+  --bone-300: 74 88 82;    /* #4A5852 secondary — darkened from 5A6863 */
+  --bone-400: 99 113 107;  /* #63716B tertiary — darkened from 85918C, now WCAG-AA on white */
+  --bone-500: 145 155 150; /* disabled */
 
   --field-50: 234 246 244;
   --field-100: 213 237 232;

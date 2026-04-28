@@ -32,9 +32,9 @@ export function Logo({
   const poleOffset = "#BEF264"; // lime — brand offset
 
   const dims = {
-    sm: { mark: 32, font: "text-[15px]", gap: "gap-1.5" },
-    md: { mark: 40, font: "text-[17px]", gap: "gap-2" },
-    lg: { mark: 56, font: "text-[24px]", gap: "gap-2.5" },
+    sm: { mark: 36, font: "text-[16px]", gap: "gap-1.5" },
+    md: { mark: 52, font: "text-[20px]", gap: "gap-2" },
+    lg: { mark: 72, font: "text-[28px]", gap: "gap-3" },
   }[size];
 
   // When variant isn't explicitly set, follow the theme via Tailwind's

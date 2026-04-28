@@ -23,7 +23,7 @@ export const metadata: Metadata = {
     template: "%s · Field",
   },
   description:
-    "Intelligent Receptionist & Intake System. Every call answered, every lead captured.",
+    "AI Voice Receptionist. Every call answered, every lead captured.",
   manifest: "/manifest.webmanifest",
   icons: {
     icon: [
