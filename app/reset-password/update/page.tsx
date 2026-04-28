@@ -1,14 +1,15 @@
-'use client';
+"use client";
 
-import { useState } from 'react';
-import Image from 'next/image';
-import { useRouter } from 'next/navigation';
-import { createClient } from '@/lib/supabase/client';
+import { useState } from "react";
+import { useRouter } from "next/navigation";
+import { Loader2 } from "lucide-react";
+import { createClient } from "@/lib/supabase/client";
+import { Logo } from "@/components/ui/logo";
 
 export default function UpdatePasswordPage() {
   const router = useRouter();
-  const [password, setPassword] = useState('');
-  const [confirm, setConfirm] = useState('');
+  const [password, setPassword] = useState("");
+  const [confirm, setConfirm] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
@@ -17,11 +18,11 @@ export default function UpdatePasswordPage() {
     setError(null);
 
     if (password.length < 8) {
-      setError('Password must be at least 8 characters.');
+      setError("Password must be at least 8 characters.");
       return;
     }
     if (password !== confirm) {
-      setError('Passwords don\u2019t match.');
+      setError("Passwords don\u2019t match.");
       return;
     }
 
@@ -35,61 +36,76 @@ export default function UpdatePasswordPage() {
       return;
     }
 
-    router.push('/dashboard');
+    router.push("/app");
     router.refresh();
   }
 
   return (
-    <main style={{
-      minHeight: '100vh',
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'center',
-      padding: 20,
-    }}>
-      <div className="card" style={{ width: '100%', maxWidth: 380 }}>
-        <div style={{ marginBottom: 24, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10 }}>
-          <Image src="/logo.png" alt="Field" width={64} height={64} priority />
-          <h1 style={{ fontSize: 20, fontWeight: 600 }}>Set a new password</h1>
-          <p className="muted small" style={{ textAlign: 'center', marginTop: 0 }}>
+    <main className="min-h-screen flex items-center justify-center p-6">
+      <div className="w-full max-w-sm">
+        <div className="mb-8 flex flex-col items-center gap-3">
+          <Logo />
+          <h1 className="text-xl font-semibold text-bone-50 tracking-tight">
+            Set a new password
+          </h1>
+          <p className="text-xs text-bone-400 text-center max-w-xs leading-relaxed">
             Pick something you&rsquo;ll remember. At least 8 characters.
           </p>
         </div>
 
-        <form onSubmit={handleSubmit} style={{ display: 'grid', gap: 16 }}>
-          <div>
-            <label htmlFor="password">New password</label>
-            <input
-              id="password"
-              type="password"
-              value={password}
-              onChange={e => setPassword(e.target.value)}
-              required
-              minLength={8}
-              autoComplete="new-password"
-              autoFocus
-            />
-          </div>
+        <div className="panel p-6">
+          <form onSubmit={handleSubmit} className="space-y-4">
+            <div className="field-group">
+              <label htmlFor="password" className="field-label">
+                New password
+              </label>
+              <input
+                id="password"
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                required
+                minLength={8}
+                autoComplete="new-password"
+                autoFocus
+                className="w-full h-10"
+              />
+            </div>
 
-          <div>
-            <label htmlFor="confirm">Confirm new password</label>
-            <input
-              id="confirm"
-              type="password"
-              value={confirm}
-              onChange={e => setConfirm(e.target.value)}
-              required
-              minLength={8}
-              autoComplete="new-password"
-            />
-          </div>
+            <div className="field-group">
+              <label htmlFor="confirm" className="field-label">
+                Confirm new password
+              </label>
+              <input
+                id="confirm"
+                type="password"
+                value={confirm}
+                onChange={(e) => setConfirm(e.target.value)}
+                required
+                minLength={8}
+                autoComplete="new-password"
+                className="w-full h-10"
+              />
+            </div>
 
-          {error && <div className="error">{error}</div>}
+            {error && <div className="form-error">{error}</div>}
 
-          <button type="submit" disabled={loading}>
-            {loading ? 'Updating\u2026' : 'Update password'}
-          </button>
-        </form>
+            <button
+              type="submit"
+              disabled={loading}
+              className="btn-primary w-full h-10 text-sm"
+            >
+              {loading ? (
+                <>
+                  <Loader2 size={13} className="animate-spin" />
+                  Updating…
+                </>
+              ) : (
+                "Update password"
+              )}
+            </button>
+          </form>
+        </div>
       </div>
     </main>
   );

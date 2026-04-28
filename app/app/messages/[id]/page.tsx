@@ -68,7 +68,16 @@ export default async function MessageDetailPage({
         <div className="px-5 py-4 border-b border-line">
           <div className="flex items-baseline justify-between gap-3">
             <h1 className="text-lg font-semibold text-bone-50">
-              {m.caller_name || "Unknown caller"}
+              {m.contact_id ? (
+                <Link
+                  href={`/app/contacts/${m.contact_id}`}
+                  className="hover:text-field-500"
+                >
+                  {m.caller_name || "Unknown caller"}
+                </Link>
+              ) : (
+                m.caller_name || "Unknown caller"
+              )}
             </h1>
             <span className="text-2xs text-bone-400 flex items-center gap-1 shrink-0">
               <Clock size={10} />
@@ -79,7 +88,7 @@ export default async function MessageDetailPage({
           {callbackNumber && (
             <div className="mt-2 flex items-center gap-3">
               <div className="flex items-center gap-1.5 text-sm text-bone-300 num">
-                <Phone size={12} className="text-salmon-500" />
+                <Phone size={12} className="text-field-500" />
                 {fmtPhone(callbackNumber)}
               </div>
               <a

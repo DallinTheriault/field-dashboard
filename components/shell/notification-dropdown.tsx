@@ -21,7 +21,7 @@ const KIND_COLOR: Record<string, string> = {
   booking_saved: "text-status-scheduled",
   booking_rescheduled: "text-status-progress",
   booking_cancelled: "text-status-cancelled",
-  message_left: "text-salmon-500",
+  message_left: "text-field-500",
 };
 
 const KIND_LABEL: Record<string, string> = {
@@ -135,7 +135,7 @@ export function NotificationDropdown() {
             className={cn(
               "absolute top-0.5 right-0.5",
               "min-w-[14px] h-[14px] px-1",
-              "rounded-full bg-salmon-500",
+              "rounded-full bg-field-500",
               "text-[9px] font-bold text-ink-0",
               "flex items-center justify-center",
               "shadow-sm",
@@ -214,13 +214,13 @@ export function NotificationDropdown() {
                       className={cn(
                         "w-full text-left px-3 py-2.5 flex items-start gap-2.5",
                         "hover:bg-ink-2 transition-colors",
-                        !n.read_at && "bg-salmon-500/[0.04]",
+                        !n.read_at && "bg-field-500/[0.04]",
                       )}
                     >
                       <span
                         className={cn(
                           "mt-1 w-1.5 h-1.5 rounded-full shrink-0",
-                          n.read_at ? "bg-transparent" : "bg-salmon-500",
+                          n.read_at ? "bg-transparent" : "bg-field-500",
                         )}
                       />
                       <div className="flex-1 min-w-0">

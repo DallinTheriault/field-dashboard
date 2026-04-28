@@ -63,10 +63,10 @@ export default async function AdminLayout({
   return (
     <div className="min-h-screen">
       {/* Admin header — distinct from tenant nav so you always know where you are */}
-      <header className="h-12 border-b border-salmon-500/30 bg-salmon-500/[0.04] sticky top-0 z-20 backdrop-blur-md">
+      <header className="h-12 border-b border-field-500/30 bg-field-500/[0.04] sticky top-0 z-20 backdrop-blur-md">
         <div className="h-full max-w-[1100px] mx-auto px-6 flex items-center gap-4">
           <Logo size="sm" />
-          <span className="label-eyebrow text-salmon-500">Admin</span>
+          <span className="label-eyebrow text-field-500">Admin</span>
           <nav className="flex items-center gap-1 ml-3">
             <Link
               href="/admin"

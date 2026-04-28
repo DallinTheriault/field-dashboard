@@ -1,6 +1,7 @@
 import { Search } from "lucide-react";
 import { cn } from "@/lib/cn";
 import { NotificationDropdown } from "./notification-dropdown";
+import { ThemeToggle } from "./theme-toggle";
 
 export function Topbar({
   userEmail,
@@ -43,7 +44,8 @@ export function Topbar({
         <div className="flex-1 md:hidden" />
 
         {/* Right cluster */}
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1">
+          <ThemeToggle />
           <NotificationDropdown />
 
           <div className="hidden md:flex items-center gap-2 pl-3 ml-1 border-l border-line">

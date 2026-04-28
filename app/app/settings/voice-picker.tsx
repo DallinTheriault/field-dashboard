@@ -52,7 +52,7 @@ export function VoicePicker({ initialVoiceId }: { initialVoiceId: string | null 
     <div>
       <div className="label-eyebrow mb-3">Currently selected</div>
       <div className="flex items-center gap-2 mb-1">
-        <Volume2 size={13} className="text-salmon-500" />
+        <Volume2 size={13} className="text-field-500" />
         <span className="text-sm font-medium text-bone-100">{current.name}</span>
       </div>
       <div className="text-xs text-bone-400 mb-4">{current.sample}</div>

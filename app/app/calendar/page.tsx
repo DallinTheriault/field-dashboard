@@ -185,7 +185,7 @@ export default async function CalendarPage({
               className={cn(
                 "border-r border-b border-line min-h-[112px] p-1.5 relative",
                 !isCurMonth && "bg-ink-1/30",
-                isToday && "ring-1 ring-inset ring-salmon-500/40",
+                isToday && "ring-1 ring-inset ring-field-500/40",
               )}
             >
               <div className="flex items-center justify-between mb-1">
@@ -193,7 +193,7 @@ export default async function CalendarPage({
                   className={cn(
                     "num text-2xs",
                     isCurMonth ? "text-bone-300" : "text-bone-500",
-                    isToday && "text-salmon-500 font-semibold",
+                    isToday && "text-field-500 font-semibold",
                   )}
                 >
                   {date.getDate()}

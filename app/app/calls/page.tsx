@@ -2,6 +2,7 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { Phone, Search } from "lucide-react";
 import { cn } from "@/lib/cn";
+import { ClickableTableRow } from "@/components/ui/clickable-table-row";
 
 function fmtDate(d: string | null): string {
   if (!d) return "—";
@@ -39,7 +40,7 @@ const OUTCOME_LABELS: Record<string, { label: string; color: string }> = {
   booking_updated: { label: "Booking updated", color: "text-status-progress" },
   booking_cancelled: { label: "Booking cancelled", color: "text-status-cancelled" },
   no_action: { label: "No action", color: "text-bone-400" },
-  transferred: { label: "Transferred", color: "text-salmon-500" },
+  transferred: { label: "Transferred", color: "text-field-500" },
   dropped: { label: "Dropped", color: "text-status-danger" },
   error: { label: "Error", color: "text-status-danger" },
 };
@@ -169,14 +170,9 @@ export default async function CallsPage({
                     ? OUTCOME_LABELS[c.outcome]
                     : { label: "—", color: "text-bone-400" };
                   return (
-                    <tr key={c.id}>
-                      <td>
-                        <Link
-                          href={`/app/calls/${c.id}`}
-                          className="text-bone-100 hover:text-salmon-500 font-medium"
-                        >
-                          {c.caller_name || "Unknown"}
-                        </Link>
+                    <ClickableTableRow key={c.id} href={`/app/calls/${c.id}`}>
+                      <td className="text-bone-100 font-medium">
+                        {c.caller_name || "Unknown"}
                       </td>
                       <td className="num text-xs text-bone-300">
                         {fmtPhone(c.caller_phone)}
@@ -191,7 +187,7 @@ export default async function CallsPage({
                       <td className="num text-xs text-bone-400 text-right">
                         {fmtDate(c.started_at)}
                       </td>
-                    </tr>
+                    </ClickableTableRow>
                   );
                 })}
               </tbody>

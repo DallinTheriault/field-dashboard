@@ -2,9 +2,125 @@
 @tailwind components;
 @tailwind utilities;
 
+/*
+ * THEME TOKENS
+ *
+ * Each token is an `R G B` triplet (no commas) so it can be used inside
+ * `rgb(var(--token) / <alpha>)` for opacity. Switching theme is a single
+ * attribute swap on <html>: data-theme="dark" or "light".
+ */
+
+:root,
+[data-theme="dark"] {
+  /* Surfaces — deep teal-tinted off-blacks */
+  --ink-0: 14 22 20;       /* #0E1614 — page canvas */
+  --ink-1: 19 29 27;       /* #131D1B — panel */
+  --ink-2: 25 37 34;       /* #192522 — raised */
+  --ink-3: 34 48 45;       /* #22302D — input/row hover */
+  --ink-4: 45 60 56;       /* heavy borders */
+
+  /* Text */
+  --bone-50: 232 235 233;  /* #E8EBE9 */
+  --bone-100: 213 219 216; /* #D5DBD8 */
+  --bone-300: 154 163 159; /* #9AA39F */
+  --bone-400: 110 118 114; /* #6E7672 */
+  --bone-500: 70 78 74;    /* disabled */
+
+  /* Field — teal-green primary */
+  --field-50: 234 246 244;
+  --field-100: 213 237 232;
+  --field-200: 180 220 213;
+  --field-300: 132 197 187;
+  --field-400: 98 179 164;   /* #62B3A4 */
+  --field-500: 74 157 142;   /* #4A9D8E ★ brand */
+  --field-600: 58 130 118;   /* #3A8276 hover */
+  --field-700: 45 105 96;
+  --field-800: 32 75 69;
+  --field-900: 22 52 47;
+
+  /* Lime offset — only the logo's right pole */
+  --lime-300: 190 242 100;
+  --lime-400: 163 230 53;
+  --lime-500: 132 204 22;
+
+  /* Status — muted, distinct enough to read at a glance */
+  --status-lead: 196 180 84;          /* #C4B454 mustard yellow */
+  --status-estimated: 111 168 182;    /* #6FA8B6 dusky cyan */
+  --status-scheduled: 90 135 176;     /* #5A87B0 dusty blue */
+  --status-progress: 209 127 60;      /* #D17F3C deeper orange */
+  --status-completed: 90 146 104;     /* #5A9268 forest green */
+  --status-cancelled: 110 118 114;    /* gray */
+  --status-danger: 181 86 78;         /* #B5564E red */
+
+  /* Lines */
+  --line: 34 48 45;          /* #22302D */
+  --line-strong: 45 60 56;
+  --line-subtle: 26 37 34;   /* #1A2522 */
+
+  /* Misc */
+  --inset-line: 255 255 255; /* used at 0.06 opacity for inset hairline */
+  --scrollbar-thumb: 45 60 56;
+  --scrollbar-track: 14 22 20;
+  --selection-bg: 74 157 142; /* field-500 at 30% in usage */
+  --body-wash-1: 74 157 142;
+  --body-wash-2: 58 130 118;
+}
+
+[data-theme="light"] {
+  --ink-0: 245 244 240;    /* #F5F4F0 canvas */
+  --ink-1: 255 255 255;    /* #FFFFFF panel */
+  --ink-2: 240 239 233;    /* #F0EFE9 raised */
+  --ink-3: 230 228 220;    /* hover */
+  --ink-4: 215 212 200;    /* heavy border */
+
+  --bone-50: 21 32 29;     /* #15201D — primary text on light */
+  --bone-100: 42 56 51;    /* #2A3833 headings */
+  --bone-300: 90 104 99;   /* #5A6863 secondary */
+  --bone-400: 133 145 140; /* #85918C tertiary */
+  --bone-500: 170 178 173; /* disabled */
+
+  --field-50: 234 246 244;
+  --field-100: 213 237 232;
+  --field-200: 180 220 213;
+  --field-300: 132 197 187;
+  --field-400: 74 157 142;
+  --field-500: 58 130 118;   /* #3A8276 darker for contrast on light */
+  --field-600: 45 105 96;
+  --field-700: 32 75 69;
+  --field-800: 22 52 47;
+  --field-900: 15 35 31;
+
+  --lime-300: 132 204 22;
+  --lime-400: 101 163 13;
+  --lime-500: 77 124 15;
+
+  --status-lead: 156 130 38;          /* darker mustard */
+  --status-estimated: 61 114 130;     /* darker cyan */
+  --status-scheduled: 61 98 133;      /* #3D6285 */
+  --status-progress: 176 95 31;       /* darker orange */
+  --status-completed: 61 112 72;      /* #3D7048 forest */
+  --status-cancelled: 110 110 110;
+  --status-danger: 140 63 56;         /* #8C3F38 */
+
+  --line: 216 214 206;       /* #D8D6CE */
+  --line-strong: 195 192 180;
+  --line-subtle: 230 228 220;
+
+  --inset-line: 0 0 0;
+  --scrollbar-thumb: 195 192 180;
+  --scrollbar-track: 245 244 240;
+  --selection-bg: 58 130 118;
+  --body-wash-1: 58 130 118;
+  --body-wash-2: 74 157 142;
+}
+
 @layer base {
   :root {
     color-scheme: dark;
+  }
+
+  [data-theme="light"] {
+    color-scheme: light;
   }
 
   html,
@@ -14,22 +130,22 @@
   }
 
   body {
-    /* Fine warm wash over the base — salmon at low opacity to keep ink-0 from feeling sterile */
+    /* Field-tinted radial wash to keep ink-0 from feeling sterile */
     background-image:
-      radial-gradient(1200px 600px at 100% -200px, rgba(255, 107, 107, 0.04), transparent 60%),
-      radial-gradient(900px 500px at -100px 800px, rgba(255, 107, 107, 0.03), transparent 60%);
+      radial-gradient(1200px 600px at 100% -200px, rgb(var(--body-wash-1) / 0.06), transparent 60%),
+      radial-gradient(900px 500px at -100px 800px, rgb(var(--body-wash-2) / 0.04), transparent 60%);
     background-attachment: fixed;
   }
 
   ::selection {
-    @apply bg-salmon-500/30 text-bone-50;
+    background-color: rgb(var(--selection-bg) / 0.3);
+    color: rgb(var(--bone-50));
   }
 
   *:focus-visible {
-    @apply outline-none ring-2 ring-salmon-500/60 ring-offset-2 ring-offset-ink-0;
+    @apply outline-none ring-2 ring-field-500/60 ring-offset-2 ring-offset-ink-0;
   }
 
-  /* Subtler native scrollbar on webkit */
   ::-webkit-scrollbar {
     width: 10px;
     height: 10px;
@@ -38,12 +154,12 @@
     background: transparent;
   }
   ::-webkit-scrollbar-thumb {
-    background: #2a2a2a;
-    border: 2px solid #0a0a0a;
+    background: rgb(var(--scrollbar-thumb));
+    border: 2px solid rgb(var(--scrollbar-track));
     border-radius: 6px;
   }
   ::-webkit-scrollbar-thumb:hover {
-    background: #3a3a3a;
+    background: rgb(var(--bone-400));
   }
 
   input,
@@ -51,7 +167,7 @@
   select {
     @apply bg-ink-2 border border-line-strong text-bone-50 placeholder:text-bone-400;
     @apply rounded-sm px-3 py-2 text-sm;
-    @apply focus:border-salmon-500/60 focus:ring-1 focus:ring-salmon-500/60;
+    @apply focus:border-field-500/60 focus:ring-1 focus:ring-field-500/60;
     @apply transition-colors duration-100;
   }
 
@@ -82,8 +198,8 @@
   }
 
   .btn-primary {
-    @apply btn bg-salmon-500 text-ink-0 hover:bg-salmon-400;
-    @apply active:bg-salmon-600;
+    @apply btn bg-field-500 text-ink-0 hover:bg-field-400;
+    @apply active:bg-field-600;
   }
 
   .btn-secondary {
@@ -137,6 +253,26 @@
   .num {
     @apply font-mono tabular-nums;
   }
+
+  /* Form helpers — used by /onboard, /reset-password and admin forms */
+  .form-card {
+    @apply bg-ink-1 shadow-inset-line rounded-md p-5 space-y-4;
+  }
+  .field-group {
+    @apply space-y-1.5;
+  }
+  .field-label {
+    @apply label-eyebrow block;
+  }
+  .field-hint {
+    @apply text-2xs text-bone-400 mt-1;
+  }
+  .form-error {
+    @apply text-xs px-3 py-2 rounded-sm bg-status-danger/10 text-status-danger border border-status-danger/30;
+  }
+  .form-success {
+    @apply text-xs px-3 py-2.5 rounded-sm bg-status-completed/10 text-status-completed border border-status-completed/30;
+  }
 }
 
 /* Smooth route transitions */
@@ -147,4 +283,11 @@ main {
 /* Hide scrollbar when not needed for horizontal scroll hint */
 .scroll-x-hint {
   scrollbar-width: thin;
+}
+
+/* Respect users who haven't picked a theme — match OS preference. */
+@media (prefers-color-scheme: light) {
+  html:not([data-theme]) {
+    color-scheme: light;
+  }
 }

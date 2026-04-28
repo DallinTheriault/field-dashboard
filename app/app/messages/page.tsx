@@ -27,7 +27,7 @@ export default async function MessagesPage() {
   const supabase = await createClient();
   const { data: messages, error } = await supabase
     .from("messages")
-    .select("id, caller_name, caller_phone, callback_phone, message_body, read_at, responded_at, created_at")
+    .select("id, caller_name, caller_phone, callback_phone, message_body, read_at, responded_at, created_at, contact_id")
     .order("created_at", { ascending: false })
     .limit(100);
 
@@ -76,7 +76,7 @@ export default async function MessagesPage() {
                 <div className="flex items-start gap-3">
                   {/* Unread indicator */}
                   <span
-                    className={`mt-1.5 w-1.5 h-1.5 rounded-full shrink-0 ${m.read_at ? "bg-transparent" : "bg-salmon-500"}`}
+                    className={`mt-1.5 w-1.5 h-1.5 rounded-full shrink-0 ${m.read_at ? "bg-transparent" : "bg-field-500"}`}
                   />
                   <div className="flex-1 min-w-0">
                     <div className="flex items-baseline justify-between gap-3">

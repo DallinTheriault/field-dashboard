@@ -73,11 +73,11 @@ export default async function SettingsPage() {
                 <span
                   className="w-7 h-7 rounded-sm border border-line-strong shrink-0"
                   style={{
-                    background: client?.brand_primary_color ?? "#FF6B6B",
+                    background: client?.brand_primary_color ?? "#4A9D8E",
                   }}
                 />
                 <span className="num text-xs text-bone-300">
-                  {client?.brand_primary_color ?? "#FF6B6B"}
+                  {client?.brand_primary_color ?? "#4A9D8E"}
                 </span>
                 {!client?.brand_primary_color && (
                   <span className="text-2xs text-bone-400 ml-1">(default)</span>
@@ -85,7 +85,7 @@ export default async function SettingsPage() {
               </div>
               <p className="text-2xs text-bone-400 mt-3 leading-relaxed">
                 Color customization is coming in a future release. Right now
-                everyone uses the default Field salmon accent.
+                everyone uses the default Field teal accent.
               </p>
             </div>
           </div>
@@ -191,7 +191,7 @@ function Section({
   return (
     <div className="panel">
       <div className="px-4 h-12 flex items-center gap-3 border-b border-line">
-        <Icon size={14} className="text-salmon-500" strokeWidth={1.8} />
+        <Icon size={14} className="text-field-500" strokeWidth={1.8} />
         <div className="flex-1">
           <h2 className="text-sm font-semibold text-bone-100">{title}</h2>
           <p className="text-2xs text-bone-400 mt-0.5">{subtitle}</p>

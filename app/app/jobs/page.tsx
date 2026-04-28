@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { StatusChip } from "@/components/ui/status-chip";
+import { ClickableTableRow } from "@/components/ui/clickable-table-row";
 
 function fmtDate(d: string | null): string {
   if (!d) return "—";
@@ -86,14 +87,9 @@ export default async function JobsPage({
               </thead>
               <tbody>
                 {rows.map((j) => (
-                  <tr key={j.id} className="cursor-pointer">
-                    <td>
-                      <Link
-                        href={`/app/jobs/${j.id}`}
-                        className="text-bone-100 hover:text-salmon-500 font-medium"
-                      >
-                        {j.name || "—"}
-                      </Link>
+                  <ClickableTableRow key={j.id} href={`/app/jobs/${j.id}`}>
+                    <td className="text-bone-100 font-medium">
+                      {j.name || "—"}
                     </td>
                     <td className="num text-xs text-bone-300">
                       {fmtPhone(j.phone)}
@@ -111,7 +107,7 @@ export default async function JobsPage({
                     <td className="num text-xs text-bone-400 text-right">
                       {fmtDate(j.created_at)}
                     </td>
-                  </tr>
+                  </ClickableTableRow>
                 ))}
               </tbody>
             </table>

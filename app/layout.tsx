@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import { Inter, JetBrains_Mono } from "next/font/google";
+import { themeBootstrapScript } from "@/components/shell/theme-toggle";
 import "./globals.css";
 
 const inter = Inter({
@@ -38,7 +39,7 @@ export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
   viewportFit: "cover",
-  themeColor: "#0a0a0a",
+  themeColor: "#0E1614",
 };
 
 export default function RootLayout({
@@ -49,9 +50,14 @@ export default function RootLayout({
   return (
     <html
       lang="en"
-      className={`${inter.variable} ${jbMono.variable} dark`}
+      className={`${inter.variable} ${jbMono.variable}`}
       suppressHydrationWarning
     >
+      <head>
+        <script
+          dangerouslySetInnerHTML={{ __html: themeBootstrapScript }}
+        />
+      </head>
       <body className="min-h-screen font-sans">{children}</body>
     </html>
   );

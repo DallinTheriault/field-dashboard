@@ -1,8 +1,8 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { ArrowLeft, Briefcase, Phone } from "lucide-react";
+import { ArrowLeft, Briefcase, Phone, Mail, MapPin, MessageSquare } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
-import { StatusChip } from "@/components/ui/status-chip";
+import { JobEditForm } from "./form";
 
 function fmtDate(d: string | null): string {
   if (!d) return "—";
@@ -26,11 +26,6 @@ function fmtPhone(p: string | null): string {
     return `(${d.slice(0, 3)}) ${d.slice(3, 6)}-${d.slice(6)}`;
   }
   return p;
-}
-
-function fmtDollar(c: number | null): string {
-  if (c == null) return "—";
-  return `$${(c / 100).toFixed(2)}`;
 }
 
 export default async function JobDetailPage({
@@ -68,60 +63,90 @@ export default async function JobDetailPage({
       <div className="flex items-start justify-between gap-4 mb-6">
         <div>
           <div className="flex items-center gap-2 mb-1">
-            <Briefcase size={14} className="text-salmon-500" />
+            <Briefcase size={14} className="text-field-500" />
             <span className="label-eyebrow">Job #{job.id}</span>
           </div>
           <h1 className="text-2xl font-semibold text-bone-50 tracking-tight">
-            {job.name || "—"}
+            {job.contact_id ? (
+              <Link
+                href={`/app/contacts/${job.contact_id}`}
+                className="hover:text-field-500"
+              >
+                {job.name || "—"}
+              </Link>
+            ) : (
+              job.name || "—"
+            )}
           </h1>
           <p className="text-sm text-bone-300 mt-1">
             {job.service || "—"} · {job.address || "—"}
           </p>
         </div>
-        <StatusChip status={job.status} className="shrink-0" />
+      </div>
+
+      {/* Quick contact actions */}
+      <div className="flex flex-wrap items-center gap-2 mb-6">
+        {job.phone && (
+          <>
+            <a href={`tel:${job.phone}`} className="btn-secondary text-xs h-8">
+              <Phone size={12} />
+              Call {fmtPhone(job.phone)}
+            </a>
+            <a href={`sms:${job.phone}`} className="btn-secondary text-xs h-8">
+              <MessageSquare size={12} />
+              Text
+            </a>
+          </>
+        )}
+        {job.email && (
+          <a href={`mailto:${job.email}`} className="btn-secondary text-xs h-8">
+            <Mail size={12} />
+            Email
+          </a>
+        )}
+        {job.address && (
+          <a
+            href={`https://maps.google.com/?q=${encodeURIComponent(job.address)}`}
+            target="_blank"
+            rel="noreferrer"
+            className="btn-secondary text-xs h-8"
+          >
+            <MapPin size={12} />
+            Map
+          </a>
+        )}
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-5 gap-5">
-        <section className="lg:col-span-3 space-y-5">
-          <div className="panel">
-            <div className="px-4 h-11 flex items-center border-b border-line">
-              <h2 className="text-sm font-semibold text-bone-100">Details</h2>
-            </div>
-            <dl className="divide-y divide-line-subtle">
-              <Row label="Customer" value={job.name ?? "—"} />
-              <Row label="Phone" value={fmtPhone(job.phone)} mono />
-              <Row label="Email" value={job.email ?? "—"} />
-              <Row label="Service" value={job.service ?? "—"} />
-              <Row label="Address" value={job.address ?? "—"} />
-              <Row label="Scope" value={job.scope ?? "—"} />
-              <Row label="Quoted" value={fmtDollar(job.quoted_price)} />
-              <Row label="Source" value={job.source ?? "—"} />
-              <Row label="SMS consent" value={job.sms_consent ?? "—"} />
-            </dl>
-          </div>
-
-          {job.notes && (
-            <div className="panel">
-              <div className="px-4 h-11 flex items-center border-b border-line">
-                <h2 className="text-sm font-semibold text-bone-100">Notes</h2>
-              </div>
-              <div className="px-4 py-4">
-                <p className="text-sm text-bone-100 whitespace-pre-wrap">
-                  {job.notes}
-                </p>
-              </div>
-            </div>
-          )}
+        <section className="lg:col-span-3">
+          <JobEditForm
+            job={{
+              id: job.id,
+              name: job.name ?? "",
+              phone: job.phone ?? "",
+              email: job.email ?? "",
+              address: job.address ?? "",
+              service: job.service ?? "",
+              scope: job.scope ?? "",
+              quoted_price: job.quoted_price ?? null,
+              start_datetime: job.start_datetime ?? null,
+              end_datetime: job.end_datetime ?? null,
+              status: job.status ?? "lead",
+              notes: job.notes ?? "",
+            }}
+          />
         </section>
 
         <aside className="lg:col-span-2 space-y-3">
           <div className="panel p-4">
-            <div className="label-eyebrow mb-3">Schedule</div>
+            <div className="label-eyebrow mb-3">Timestamps</div>
             <dl className="space-y-2 text-xs">
-              <Mini label="Start" value={fmtDate(job.start_datetime)} />
-              <Mini label="End" value={fmtDate(job.end_datetime)} />
               <Mini label="Created" value={fmtDate(job.created_at)} />
               <Mini label="Updated" value={fmtDate(job.updated_at)} />
+              {job.source && <Mini label="Source" value={job.source} />}
+              {job.sms_consent !== null && job.sms_consent !== undefined && (
+                <Mini label="SMS consent" value={String(job.sms_consent)} />
+              )}
             </dl>
           </div>
 
@@ -158,27 +183,6 @@ export default async function JobDetailPage({
           )}
         </aside>
       </div>
-    </div>
-  );
-}
-
-function Row({
-  label,
-  value,
-  mono,
-}: {
-  label: string;
-  value: string;
-  mono?: boolean;
-}) {
-  return (
-    <div className="px-4 py-2.5 grid grid-cols-3 gap-3 items-baseline">
-      <dt className="text-xs text-bone-400">{label}</dt>
-      <dd
-        className={`col-span-2 text-xs text-bone-100 ${mono ? "font-mono" : ""}`}
-      >
-        {value}
-      </dd>
     </div>
   );
 }

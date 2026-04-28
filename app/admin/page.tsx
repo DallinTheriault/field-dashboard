@@ -13,7 +13,6 @@ const TILES = [
     icon: Users,
     title: "Clients",
     body: "All tenants on the platform, with subscription state and quick links.",
-    soon: true,
   },
   {
     href: "/admin/invoices",
@@ -44,7 +43,7 @@ export default function AdminHome() {
               soon ? "opacity-50 cursor-not-allowed" : "hover:bg-ink-2"
             }`}
           >
-            <Icon size={16} className="text-salmon-500 shrink-0 mt-0.5" />
+            <Icon size={16} className="text-field-500 shrink-0 mt-0.5" />
             <div className="flex-1 min-w-0">
               <div className="flex items-baseline justify-between gap-2">
                 <span className="text-sm font-semibold text-bone-100">

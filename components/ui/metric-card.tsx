@@ -10,11 +10,11 @@ export function MetricCard({
   label: string;
   value: string | number;
   sub?: string;
-  accent?: "salmon" | "lead" | "scheduled" | "completed" | null;
+  accent?: "field" | "lead" | "scheduled" | "completed" | null;
   className?: string;
 }) {
   const accentBar: Record<string, string> = {
-    salmon: "bg-salmon-500",
+    field: "bg-field-500",
     lead: "bg-status-lead",
     scheduled: "bg-status-scheduled",
     completed: "bg-status-completed",

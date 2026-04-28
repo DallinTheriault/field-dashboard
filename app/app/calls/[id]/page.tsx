@@ -79,11 +79,20 @@ export default async function CallDetailPage({
       <div className="flex items-start justify-between gap-4 mb-6">
         <div>
           <div className="flex items-center gap-2 mb-1">
-            <Phone size={14} className="text-salmon-500" />
+            <Phone size={14} className="text-field-500" />
             <span className="label-eyebrow">Call</span>
           </div>
           <h1 className="text-2xl font-semibold text-bone-50 tracking-tight">
-            {call.caller_name || "Unknown caller"}
+            {call.contact_id ? (
+              <Link
+                href={`/app/contacts/${call.contact_id}`}
+                className="hover:text-field-500"
+              >
+                {call.caller_name || "Unknown caller"}
+              </Link>
+            ) : (
+              call.caller_name || "Unknown caller"
+            )}
           </h1>
           <p className="num text-sm text-bone-300 mt-1">
             {fmtPhone(call.caller_phone)} · {fmtDate(call.started_at)}

@@ -35,7 +35,7 @@ export function MobileNav() {
                 className={cn(
                   "flex flex-col items-center justify-center gap-0.5",
                   "h-14 text-2xs font-medium",
-                  active ? "text-salmon-500" : "text-bone-300",
+                  active ? "text-field-500" : "text-bone-300",
                 )}
               >
                 <Icon size={18} strokeWidth={active ? 2.25 : 1.8} />

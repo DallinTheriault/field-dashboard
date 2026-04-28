@@ -8,6 +8,7 @@ import {
   Briefcase,
   CalendarDays,
   MessageSquare,
+  Users,
   Settings,
   CreditCard,
   ShieldCheck,
@@ -19,6 +20,7 @@ const NAV = [
   { href: "/app", label: "Overview", icon: LayoutDashboard },
   { href: "/app/calls", label: "Calls", icon: Phone },
   { href: "/app/jobs", label: "Jobs", icon: Briefcase },
+  { href: "/app/contacts", label: "Contacts", icon: Users },
   { href: "/app/messages", label: "Messages", icon: MessageSquare },
   { href: "/app/calendar", label: "Calendar", icon: CalendarDays },
   { href: "/app/billing", label: "Billing", icon: CreditCard },
@@ -93,7 +95,7 @@ export function Sidebar({
               <Icon
                 size={15}
                 strokeWidth={active ? 2.25 : 1.8}
-                className={cn(active ? "text-salmon-500" : "text-bone-400")}
+                className={cn(active ? "text-field-500" : "text-bone-400")}
               />
               <span>{label}</span>
             </Link>
@@ -106,7 +108,7 @@ export function Sidebar({
         {isAdmin && (
           <Link
             href="/admin"
-            className="flex items-center gap-2 text-2xs text-salmon-500 hover:text-salmon-400"
+            className="flex items-center gap-2 text-2xs text-field-500 hover:text-field-400"
           >
             <ShieldCheck size={11} />
             <span className="font-medium uppercase tracking-wide">Admin</span>
@@ -114,14 +116,7 @@ export function Sidebar({
         )}
         <div className="flex items-center justify-between">
           <span className="text-2xs text-bone-400 font-mono">v0.3.0</span>
-          <a
-            href="https://docs.iris.example.com"
-            target="_blank"
-            rel="noreferrer"
-            className="text-2xs text-bone-400 hover:text-bone-50"
-          >
-            Docs ↗
-          </a>
+          <span className="text-2xs text-bone-400">field</span>
         </div>
       </div>
     </aside>

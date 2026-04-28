@@ -113,7 +113,7 @@ export default async function OverviewPage() {
             label="Calls this week"
             value={callsThisWeek}
             sub={calls.length > 0 ? `${calls.length} total tracked` : "No calls yet"}
-            accent="salmon"
+            accent="field"
             className="cursor-pointer"
           />
         </Link>
@@ -151,7 +151,7 @@ export default async function OverviewPage() {
         <section className="lg:col-span-3 panel">
           <div className="flex items-center justify-between px-4 h-11 border-b border-line">
             <div className="flex items-center gap-2">
-              <Phone size={13} strokeWidth={2} className="text-salmon-500" />
+              <Phone size={13} strokeWidth={2} className="text-field-500" />
               <h2 className="text-sm font-semibold text-bone-100">Recent calls</h2>
             </div>
             <Link
@@ -246,7 +246,7 @@ export default async function OverviewPage() {
                       <div className="text-2xs text-bone-400 mt-0.5 truncate">
                         {u.service || "—"} · {u.address || "—"}
                       </div>
-                      <div className="num text-2xs text-salmon-500 mt-1">
+                      <div className="num text-2xs text-field-500 mt-1">
                         {fmtDate(u.start_datetime)}
                       </div>
                     </Link>

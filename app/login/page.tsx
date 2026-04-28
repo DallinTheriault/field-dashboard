@@ -40,13 +40,13 @@ function LoginForm() {
     <div className="min-h-screen grid md:grid-cols-2">
       <aside className="hidden md:flex relative overflow-hidden bg-ink-1 border-r border-line">
         <div className="absolute inset-0 opacity-[0.55] pointer-events-none">
-          <div className="absolute -top-32 -left-32 w-96 h-96 rounded-full bg-salmon-500/10 blur-3xl" />
-          <div className="absolute bottom-0 right-0 w-96 h-96 rounded-full bg-salmon-600/10 blur-3xl" />
+          <div className="absolute -top-32 -left-32 w-96 h-96 rounded-full bg-field-500/10 blur-3xl" />
+          <div className="absolute bottom-0 right-0 w-96 h-96 rounded-full bg-field-600/10 blur-3xl" />
         </div>
         <div className="relative flex flex-col justify-between p-10 w-full">
           <Logo />
           <div>
-            <div className="label-eyebrow text-salmon-500 mb-3">Intelligent Receptionist &amp; Intake System</div>
+            <div className="label-eyebrow text-field-500 mb-3">Intelligent Receptionist &amp; Intake System</div>
             <h2 className="text-3xl font-semibold text-bone-50 tracking-tight leading-[1.15] max-w-sm">
               Every call answered. Every lead captured. Every booking on your
               calendar.
@@ -114,7 +114,7 @@ function LoginForm() {
                 </label>
                 <Link
                   href="/reset-password"
-                  className="text-2xs text-bone-400 hover:text-salmon-500"
+                  className="text-2xs text-bone-400 hover:text-field-500"
                 >
                   Forgot password?
                 </Link>
@@ -167,7 +167,7 @@ function LoginForm() {
               New here?{" "}
               <Link
                 href="/onboard"
-                className="text-bone-100 hover:text-salmon-500 font-medium"
+                className="text-bone-100 hover:text-field-500 font-medium"
               >
                 Set up your business →
               </Link>
