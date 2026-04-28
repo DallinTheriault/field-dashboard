@@ -19,7 +19,7 @@ export default async function AppLayout({
 
   const { data: clients } = await supabase
     .from("Clients")
-    .select("id, business_name, is_active")
+    .select("id, business_name, business_short_name, is_active, brand_logo_url, brand_primary_color")
     .order("id")
     .limit(1);
 
@@ -65,22 +65,36 @@ export default async function AppLayout({
     .filter(Boolean);
   const isAdmin = adminEmails.includes((user.email ?? "").toLowerCase());
 
+  // Tenant accent color — converted to RGB triplet for use in
+  // rgb(var(--tenant-accent) / opacity) syntax. Falls back to the field-500
+  // default when the tenant hasn't set a custom color.
+  const tenantAccentRgb = hexToRgbTriplet(client.brand_primary_color);
+
   return (
-    <div className="flex min-h-screen">
+    <div
+      className="flex min-h-screen w-full overflow-x-hidden"
+      style={
+        tenantAccentRgb
+          ? ({ ["--tenant-accent" as string]: tenantAccentRgb } as React.CSSProperties)
+          : undefined
+      }
+    >
       <Sidebar
         businessName={client.business_name ?? "—"}
         planStatus={planStatus}
         isAdmin={isAdmin}
       />
 
-      <div className="flex-1 flex flex-col min-w-0">
+      <div className="flex-1 flex flex-col min-w-0 max-w-full">
         <Topbar
           userEmail={user.email ?? ""}
           businessName={client.business_name ?? "—"}
+          businessShortName={client.business_short_name ?? null}
+          brandLogoUrl={client.brand_logo_url ?? null}
         />
 
-        <main className="flex-1 px-4 md:px-6 py-6 pb-20 md:pb-8">
-          <div className="mx-auto max-w-[1200px]">{children}</div>
+        <main className="flex-1 px-4 md:px-6 py-6 pb-20 md:pb-8 min-w-0 max-w-full overflow-x-hidden">
+          <div className="mx-auto max-w-[1200px] min-w-0">{children}</div>
         </main>
       </div>
 
@@ -90,4 +104,20 @@ export default async function AppLayout({
       <IdleTimeout />
     </div>
   );
+}
+
+/**
+ * Convert a 6-digit hex color (e.g. "#4A9D8E") to a space-separated RGB
+ * triplet ("74 157 142"). Returns null for invalid input so the caller can
+ * fall back to the field-500 default.
+ */
+function hexToRgbTriplet(hex: string | null | undefined): string | null {
+  if (!hex || typeof hex !== "string") return null;
+  const m = /^#([0-9a-fA-F]{6})$/.exec(hex.trim());
+  if (!m) return null;
+  const n = parseInt(m[1], 16);
+  const r = (n >> 16) & 0xff;
+  const g = (n >> 8) & 0xff;
+  const b = n & 0xff;
+  return `${r} ${g} ${b}`;
 }

@@ -3,6 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import { Phone, Search, MessageSquare, Clock } from "lucide-react";
 import { cn } from "@/lib/cn";
 import { ClickableTableRow } from "@/components/ui/clickable-table-row";
+import { FilterDropdown } from "@/components/ui/filter-dropdown";
 
 function fmtDate(d: string | null): string {
   if (!d) return "—";
@@ -61,12 +62,16 @@ type Tab = "log" | "voicemails";
 export default async function CallsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ q?: string; outcome?: string; tab?: string }>;
+  searchParams: Promise<{ q?: string; outcomes?: string; tab?: string }>;
 }) {
   const supabase = await createClient();
   const params = await searchParams;
   const q = params.q;
-  const outcome = params.outcome;
+  const outcomesRaw = params.outcomes ?? "";
+  const outcomes = outcomesRaw
+    .split(",")
+    .map((s) => s.trim())
+    .filter((s) => s in OUTCOME_LABELS);
   const tab: Tab = params.tab === "voicemails" ? "voicemails" : "log";
 
   // Always count both tabs so we can show counts in the tab bar.
@@ -112,7 +117,7 @@ export default async function CallsPage({
       )
       .order("started_at", { ascending: false })
       .limit(100);
-    if (outcome) query = query.eq("outcome", outcome);
+    if (outcomes.length > 0) query = query.in("outcome", outcomes);
     if (q) {
       query = query.or(
         `caller_name.ilike.%${q}%,caller_phone.ilike.%${q}%,summary.ilike.%${q}%`,
@@ -151,7 +156,7 @@ export default async function CallsPage({
             {tab === "log"
               ? `${activeRows.length} ${activeRows.length === 1 ? "call" : "calls"}`
               : `${activeRows.length} ${activeRows.length === 1 ? "voicemail" : "voicemails"}`}
-            {tab === "log" && outcome && ` · filtered by ${outcome.replace(/_/g, " ")}`}
+            {tab === "log" && outcomes.length > 0 && ` · ${outcomes.length} ${outcomes.length === 1 ? "filter" : "filters"} active`}
             {q && ` · matching "${q}"`}
           </p>
         </div>
@@ -171,16 +176,22 @@ export default async function CallsPage({
                   ? "Search name, phone, summary…"
                   : "Search name, phone, message…"
               }
-              className="!bg-ink-1 pl-7 h-8 w-64 text-xs"
+              className="!bg-ink-1 pl-7 h-8 w-full max-w-[16rem] sm:w-64 text-xs"
             />
           </div>
           {tab === "voicemails" && <input type="hidden" name="tab" value="voicemails" />}
-          {outcome && tab === "log" && (
-            <input type="hidden" name="outcome" value={outcome} />
+          {outcomes.length > 0 && tab === "log" && (
+            <input type="hidden" name="outcomes" value={outcomes.join(",")} />
           )}
-          {(q || outcome) && (
+          {q && (
             <Link
-              href={tab === "voicemails" ? "/app/calls?tab=voicemails" : "/app/calls"}
+              href={
+                tab === "voicemails"
+                  ? "/app/calls?tab=voicemails"
+                  : outcomes.length > 0
+                  ? `/app/calls?outcomes=${outcomes.join(",")}`
+                  : "/app/calls"
+              }
               className="btn-ghost text-xs h-8"
             >
               Clear
@@ -209,41 +220,25 @@ export default async function CallsPage({
 
       {tab === "log" && (
         <>
-          {/* Outcome filter chips */}
-          <div className="flex items-center gap-1.5 mb-4 flex-wrap">
-            <Link
-              href="/app/calls"
-              className={cn(
-                "chip border-line text-xs",
-                !outcome
-                  ? "bg-ink-3 text-bone-50"
-                  : "text-bone-400 hover:text-bone-50",
-              )}
-            >
-              All
-            </Link>
-            {Object.entries(OUTCOME_LABELS).map(([key, { label }]) => (
-              <Link
-                key={key}
-                href={`/app/calls?outcome=${key}`}
-                className={cn(
-                  "chip border-line text-xs",
-                  outcome === key
-                    ? "bg-ink-3 text-bone-50"
-                    : "text-bone-400 hover:text-bone-50",
-                )}
-              >
-                {label}
-              </Link>
-            ))}
+          {/* Outcome multi-select filter */}
+          <div className="flex items-center gap-2 mb-4 flex-wrap">
+            <span className="label-eyebrow">Outcome</span>
+            <FilterDropdown
+              paramName="outcomes"
+              label="All outcomes"
+              options={Object.entries(OUTCOME_LABELS).map(([key, { label }]) => ({
+                key,
+                label,
+              }))}
+            />
           </div>
 
           {(callRows ?? []).length === 0 ? (
             <EmptyTab
               icon={Phone}
-              title={q || outcome ? "No matching calls" : "No calls yet"}
+              title={q || outcomes.length > 0 ? "No matching calls" : "No calls yet"}
               body={
-                q || outcome
+                q || outcomes.length > 0
                   ? "Try clearing your filters."
                   : "Call activity will appear as your assistant handles inbound calls."
               }

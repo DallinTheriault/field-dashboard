@@ -49,6 +49,12 @@ const config: Config = {
           800: "rgb(var(--field-800) / <alpha-value>)",
           900: "rgb(var(--field-900) / <alpha-value>)",
         },
+        // Tenant-customizable accent. Falls back to field-500 when the
+        // tenant hasn't set a custom color (see globals.css default).
+        // Only used in a small set of accent surfaces — metric card stripe,
+        // logo border on the topbar, primary CTA hover. Field teal stays
+        // the brand color everywhere else.
+        accent: "rgb(var(--tenant-accent, var(--field-500)) / <alpha-value>)",
         // Offset accent — kept for the logo's second pole. Used sparingly.
         lime: {
           300: "rgb(var(--lime-300) / <alpha-value>)",

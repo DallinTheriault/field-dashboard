@@ -14,7 +14,7 @@ export function MetricCard({
   className?: string;
 }) {
   const accentBar: Record<string, string> = {
-    field: "bg-field-500",
+    field: "bg-accent",
     lead: "bg-status-lead",
     scheduled: "bg-status-scheduled",
     completed: "bg-status-completed",

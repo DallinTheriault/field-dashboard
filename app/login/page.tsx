@@ -64,8 +64,8 @@ function LoginForm() {
 
       <main className="flex items-center justify-center p-6 md:p-10">
         <div className="w-full max-w-sm">
-          <div className="mb-10 md:hidden">
-            <Logo />
+          <div className="mb-10 md:hidden flex justify-center">
+            <Logo size="lg" />
           </div>
 
           {reason === "idle" && (

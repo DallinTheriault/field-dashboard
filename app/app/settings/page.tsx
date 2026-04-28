@@ -10,6 +10,8 @@ import {
 } from "lucide-react";
 import { LogoUploader } from "./logo-uploader";
 import { VoicePicker } from "./voice-picker";
+import { BusinessProfileForm } from "./profile-form";
+import { ColorPicker } from "./color-picker";
 
 export default async function SettingsPage() {
   const supabase = await createClient();
@@ -17,7 +19,7 @@ export default async function SettingsPage() {
   const { data: clients } = await supabase
     .from("Clients")
     .select(
-      "id, business_name, twilio_number, timezone, services, brand_logo_url, brand_primary_color, vapi_voice_id, owner_email, calendar_id",
+      "id, business_name, business_short_name, owner_first_name, owner_email, owner_phone, twilio_number, timezone, services, brand_logo_url, brand_primary_color, vapi_voice_id, calendar_id, business_website, business_hours, service_area, pricing_block, scope_values, service_constraints, escalation_phone",
     )
     .limit(1);
 
@@ -42,11 +44,11 @@ export default async function SettingsPage() {
       </p>
 
       <div className="space-y-3 max-w-3xl">
-        {/* Business info */}
+        {/* Identity (read-only — operator-managed) */}
         <Section
           icon={Building2}
-          title="Business profile"
-          subtitle="Name, contact, and timezone"
+          title="Identity"
+          subtitle="Operator-managed. Reach out if anything's wrong."
         >
           <FieldRow label="Business name" value={client?.business_name ?? "—"} />
           <FieldRow
@@ -54,44 +56,41 @@ export default async function SettingsPage() {
             value={client?.twilio_number ?? "—"}
             mono
           />
-          <FieldRow label="Owner email" value={client?.owner_email ?? "—"} />
           <FieldRow label="Timezone" value={client?.timezone ?? "—"} />
-          <FieldRow
-            label="Services"
-            value={client?.services ?? "—"}
-            multiline
+        </Section>
+
+        {/* Editable profile */}
+        <Section
+          icon={Building2}
+          title="Business profile"
+          subtitle="Hours, area, owner contact, pricing, scope"
+        >
+          <BusinessProfileForm
+            initial={{
+              business_short_name: client?.business_short_name ?? "",
+              owner_first_name: client?.owner_first_name ?? "",
+              owner_email: client?.owner_email ?? "",
+              owner_phone: client?.owner_phone ?? "",
+              business_website: client?.business_website ?? "",
+              business_hours: client?.business_hours ?? "",
+              service_area: client?.service_area ?? "",
+              pricing_block: client?.pricing_block ?? "",
+              scope_values: client?.scope_values ?? "",
+              service_constraints: client?.service_constraints ?? "",
+              escalation_phone: client?.escalation_phone ?? "",
+            }}
           />
         </Section>
 
-        {/* Branding — now interactive */}
+        {/* Branding */}
         <Section icon={Palette} title="Branding" subtitle="Logo and primary color">
           <div className="px-4 py-4 grid grid-cols-1 md:grid-cols-2 gap-6">
             <LogoUploader initialUrl={client?.brand_logo_url ?? null} />
-            <div>
-              <div className="label-eyebrow mb-2">Primary color</div>
-              <div className="flex items-center gap-2">
-                <span
-                  className="w-7 h-7 rounded-sm border border-line-strong shrink-0"
-                  style={{
-                    background: client?.brand_primary_color ?? "#4A9D8E",
-                  }}
-                />
-                <span className="num text-xs text-bone-300">
-                  {client?.brand_primary_color ?? "#4A9D8E"}
-                </span>
-                {!client?.brand_primary_color && (
-                  <span className="text-2xs text-bone-400 ml-1">(default)</span>
-                )}
-              </div>
-              <p className="text-2xs text-bone-400 mt-3 leading-relaxed">
-                Color customization is coming in a future release. Right now
-                everyone uses the default Field teal accent.
-              </p>
-            </div>
+            <ColorPicker initial={client?.brand_primary_color ?? null} />
           </div>
         </Section>
 
-        {/* Voice — now interactive */}
+        {/* Voice */}
         <Section
           icon={Volume2}
           title="Assistant voice"
@@ -136,7 +135,7 @@ export default async function SettingsPage() {
                   better isolation, switch to per-tenant OAuth below.
                 </p>
                 <button className="btn-secondary text-xs h-8" disabled>
-                  Connect with Google (coming in v0.4)
+                  Connect with Google (coming in v0.5)
                 </button>
               </>
             ) : (
@@ -145,7 +144,7 @@ export default async function SettingsPage() {
                   No calendar connected
                 </div>
                 <button className="btn-primary text-xs h-8" disabled>
-                  Connect Google Calendar (coming in v0.4)
+                  Connect Google Calendar (coming in v0.5)
                 </button>
               </>
             )}
@@ -217,7 +216,9 @@ function FieldRow({
     <div className="px-4 py-2.5 grid grid-cols-3 gap-3 items-baseline">
       <dt className="text-xs text-bone-400">{label}</dt>
       <dd
-        className={`col-span-2 text-xs text-bone-100 ${mono ? "font-mono" : ""} ${multiline ? "whitespace-pre-wrap" : "truncate"}`}
+        className={`col-span-2 text-xs text-bone-100 ${mono ? "font-mono" : ""} ${
+          multiline ? "whitespace-pre-wrap" : "truncate"
+        }`}
       >
         {value}
       </dd>
