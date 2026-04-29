@@ -12,6 +12,8 @@ import {
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { StatusChip } from "@/components/ui/status-chip";
+import { TextAndCopyButtons } from "@/components/ui/text-copy-buttons";
+import { DeleteContactButton } from "./delete-contact-button";
 import { cn } from "@/lib/cn";
 
 function fmtPhone(p: string | null): string {
@@ -117,13 +119,16 @@ export default async function ContactDetailPage({
             </p>
           )}
         </div>
-        <Link
-          href={`/app/contacts/${contact.id}/edit`}
-          className="btn-secondary text-xs h-8"
-        >
-          <Pencil size={12} />
-          Edit
-        </Link>
+        <div className="flex items-center gap-1.5 shrink-0">
+          <Link
+            href={`/app/contacts/${contact.id}/edit`}
+            className="btn-secondary text-xs h-8"
+          >
+            <Pencil size={12} />
+            Edit
+          </Link>
+          <DeleteContactButton contactId={contact.id} />
+        </div>
       </div>
 
       {/* Quick actions */}
@@ -136,13 +141,11 @@ export default async function ContactDetailPage({
             <Phone size={12} />
             Call
           </a>
-          <a
-            href={`sms:${callbackPhone}`}
-            className="btn-secondary text-xs h-8"
-          >
-            <MessageSquare size={12} />
-            Text
-          </a>
+          <TextAndCopyButtons
+            phone={callbackPhone}
+            contactId={contact.id}
+            displayPhone={fmtPhone(callbackPhone)}
+          />
           {contact.email && (
             <a
               href={`mailto:${contact.email}`}

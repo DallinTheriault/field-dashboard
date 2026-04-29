@@ -4,6 +4,7 @@ import { Phone, Search, MessageSquare, Clock } from "lucide-react";
 import { cn } from "@/lib/cn";
 import { ClickableTableRow } from "@/components/ui/clickable-table-row";
 import { FilterDropdown } from "@/components/ui/filter-dropdown";
+import { MobileCallCard } from "@/components/list-cards/mobile-call-card";
 
 function fmtDate(d: string | null): string {
   if (!d) return "—";
@@ -244,49 +245,59 @@ export default async function CallsPage({
               }
             />
           ) : (
-            <div className="panel overflow-hidden">
-              <div className="overflow-x-auto scroll-x-hint">
-                <table className="table-pro">
-                  <thead>
-                    <tr>
-                      <th>Caller</th>
-                      <th>Phone</th>
-                      <th>Intent</th>
-                      <th>Outcome</th>
-                      <th className="text-right">Duration</th>
-                      <th className="text-right">When</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {(callRows ?? []).map((c) => {
-                      const oc = c.outcome
-                        ? OUTCOME_LABELS[c.outcome]
-                        : { label: "—", color: "text-bone-400" };
-                      return (
-                        <ClickableTableRow key={c.id} href={`/app/calls/${c.id}`}>
-                          <td className="text-bone-100 font-medium">
-                            {c.caller_name || "Unknown"}
-                          </td>
-                          <td className="num text-xs text-bone-300">
-                            {fmtPhone(c.caller_phone)}
-                          </td>
-                          <td className="text-xs text-bone-300 capitalize">
-                            {c.intent ? c.intent.replace(/_/g, " ") : "—"}
-                          </td>
-                          <td className={cn("text-xs", oc.color)}>{oc.label}</td>
-                          <td className="num text-xs text-bone-300 text-right">
-                            {fmtDuration(c.duration_seconds)}
-                          </td>
-                          <td className="num text-xs text-bone-400 text-right">
-                            {fmtDate(c.started_at)}
-                          </td>
-                        </ClickableTableRow>
-                      );
-                    })}
-                  </tbody>
-                </table>
+            <>
+              {/* Mobile: stacked cards */}
+              <div className="panel divide-y divide-line-subtle md:hidden">
+                {(callRows ?? []).map((c) => (
+                  <MobileCallCard key={c.id} call={c} />
+                ))}
               </div>
-            </div>
+
+              {/* Desktop: table */}
+              <div className="panel overflow-hidden hidden md:block">
+                <div className="overflow-x-auto scroll-x-hint">
+                  <table className="table-pro">
+                    <thead>
+                      <tr>
+                        <th>Caller</th>
+                        <th>Phone</th>
+                        <th>Intent</th>
+                        <th>Outcome</th>
+                        <th className="text-right">Duration</th>
+                        <th className="text-right">When</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {(callRows ?? []).map((c) => {
+                        const oc = c.outcome
+                          ? OUTCOME_LABELS[c.outcome]
+                          : { label: "—", color: "text-bone-400" };
+                        return (
+                          <ClickableTableRow key={c.id} href={`/app/calls/${c.id}`}>
+                            <td className="text-bone-100 font-medium">
+                              {c.caller_name || "Unknown"}
+                            </td>
+                            <td className="num text-xs text-bone-300">
+                              {fmtPhone(c.caller_phone)}
+                            </td>
+                            <td className="text-xs text-bone-300 capitalize">
+                              {c.intent ? c.intent.replace(/_/g, " ") : "—"}
+                            </td>
+                            <td className={cn("text-xs", oc.color)}>{oc.label}</td>
+                            <td className="num text-xs text-bone-300 text-right">
+                              {fmtDuration(c.duration_seconds)}
+                            </td>
+                            <td className="num text-xs text-bone-400 text-right">
+                              {fmtDate(c.started_at)}
+                            </td>
+                          </ClickableTableRow>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </>
           )}
         </>
       )}

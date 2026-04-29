@@ -2,6 +2,7 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { Users, Search } from "lucide-react";
 import { ClickableTableRow } from "@/components/ui/clickable-table-row";
+import { MobileContactCard } from "@/components/list-cards/mobile-contact-card";
 
 function fmtPhone(p: string | null): string {
   if (!p) return "—";
@@ -35,6 +36,7 @@ export default async function ContactsPage({
   let query = supabase
     .from("contacts")
     .select("id, name, phone, email, address, updated_at, created_at")
+    .is("archived_at", null)
     .order("updated_at", { ascending: false })
     .limit(200);
 
@@ -109,42 +111,55 @@ export default async function ContactsPage({
           </p>
         </div>
       ) : (
-        <div className="panel overflow-hidden">
-          <div className="overflow-x-auto scroll-x-hint">
-            <table className="table-pro">
-              <thead>
-                <tr>
-                  <th>Name</th>
-                  <th>Phone</th>
-                  <th>Email</th>
-                  <th>Address</th>
-                  <th className="text-right">Last activity</th>
-                </tr>
-              </thead>
-              <tbody>
-                {rows.map((c) => (
-                  <ClickableTableRow key={c.id} href={`/app/contacts/${c.id}`}>
-                    <td className="text-bone-100 font-medium">
-                      {c.name || "—"}
-                    </td>
-                    <td className="num text-xs text-bone-300">
-                      {fmtPhone(c.phone)}
-                    </td>
-                    <td className="text-xs text-bone-300 max-w-[220px] truncate">
-                      {c.email || "—"}
-                    </td>
-                    <td className="text-bone-300 max-w-[200px] truncate text-xs">
-                      {c.address || "—"}
-                    </td>
-                    <td className="num text-xs text-bone-400 text-right">
-                      {fmtDate(c.updated_at ?? c.created_at)}
-                    </td>
-                  </ClickableTableRow>
-                ))}
-              </tbody>
-            </table>
+        <>
+          {/* Mobile: stacked cards */}
+          <div className="panel divide-y divide-line-subtle md:hidden">
+            {rows.map((c) => (
+              <MobileContactCard key={c.id} contact={c} />
+            ))}
           </div>
-        </div>
+
+          {/* Desktop: table */}
+          <div className="panel overflow-hidden hidden md:block">
+            <div className="overflow-x-auto scroll-x-hint">
+              <table className="table-pro">
+                <thead>
+                  <tr>
+                    <th>Name</th>
+                    <th>Phone</th>
+                    <th>Email</th>
+                    <th>Address</th>
+                    <th className="text-right">Last activity</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {rows.map((c) => (
+                    <ClickableTableRow
+                      key={c.id}
+                      href={`/app/contacts/${c.id}`}
+                    >
+                      <td className="text-bone-100 font-medium">
+                        {c.name || "—"}
+                      </td>
+                      <td className="num text-xs text-bone-300">
+                        {fmtPhone(c.phone)}
+                      </td>
+                      <td className="text-xs text-bone-300 max-w-[220px] truncate">
+                        {c.email || "—"}
+                      </td>
+                      <td className="text-bone-300 max-w-[200px] truncate text-xs">
+                        {c.address || "—"}
+                      </td>
+                      <td className="num text-xs text-bone-400 text-right">
+                        {fmtDate(c.updated_at ?? c.created_at)}
+                      </td>
+                    </ClickableTableRow>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </>
       )}
     </div>
   );

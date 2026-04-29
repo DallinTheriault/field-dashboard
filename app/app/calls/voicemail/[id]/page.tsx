@@ -9,9 +9,9 @@ import {
   Clock,
   Voicemail as VoicemailIcon,
   PhoneCall,
-  MessageSquare,
 } from "lucide-react";
 import { fmtPhoneDisplay } from "@/lib/sms/phone";
+import { TextAndCopyButtons } from "@/components/ui/text-copy-buttons";
 import { MarkRespondedButton } from "./mark-responded-button";
 
 export const dynamic = "force-dynamic";
@@ -98,34 +98,34 @@ export default async function VoicemailDetailPage({
 
       {/* Header */}
       <div className="panel mb-4">
-        <div className="px-4 py-3 flex items-start justify-between gap-3 flex-wrap">
-          <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-2 mb-1">
-              <VoicemailIcon size={11} className="text-field-500" />
-              <span className="label-eyebrow">Voicemail</span>
-            </div>
-            <h1 className="text-lg font-semibold text-bone-50 truncate">
-              {callerName}
-            </h1>
-            <div className="flex items-center gap-3 mt-1 flex-wrap text-2xs text-bone-400">
-              {callbackPhone && (
-                <span className="font-mono">
-                  {fmtPhoneDisplay(callbackPhone)}
-                </span>
-              )}
-              <span className="inline-flex items-center gap-1">
-                <Clock size={10} />
-                {fmtClock(voicemail.created_at)}
+        <div className="px-4 py-3">
+          {/* Title block — full width, no buttons crammed beside */}
+          <div className="flex items-center gap-2 mb-1">
+            <VoicemailIcon size={11} className="text-field-500" />
+            <span className="label-eyebrow">Voicemail</span>
+          </div>
+          <h1 className="text-lg font-semibold text-bone-50 break-words">
+            {callerName}
+          </h1>
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-1 text-2xs text-bone-400">
+            {callbackPhone && (
+              <span className="font-mono">
+                {fmtPhoneDisplay(callbackPhone)}
               </span>
-              {voicemail.responded_at && (
-                <span className="text-status-completed">
-                  · Responded {fmtClock(voicemail.responded_at)}
-                </span>
-              )}
-            </div>
+            )}
+            <span className="inline-flex items-center gap-1">
+              <Clock size={10} />
+              {fmtClock(voicemail.created_at)}
+            </span>
+            {voicemail.responded_at && (
+              <span className="text-status-completed">
+                Responded {fmtClock(voicemail.responded_at)}
+              </span>
+            )}
           </div>
 
-          <div className="flex items-center gap-1.5 shrink-0 flex-wrap">
+          {/* Action buttons — separate row, wraps freely on narrow screens */}
+          <div className="flex flex-wrap items-center gap-1.5 mt-3">
             {callbackPhone && (
               <>
                 <a
@@ -135,13 +135,11 @@ export default async function VoicemailDetailPage({
                   <PhoneCall size={11} />
                   Call back
                 </a>
-                <a
-                  href={`sms:${callbackPhone}`}
-                  className="btn-secondary text-xs h-8"
-                >
-                  <MessageSquare size={11} />
-                  Text
-                </a>
+                <TextAndCopyButtons
+                  phone={callbackPhone}
+                  contactId={voicemail.contact_id ?? null}
+                  displayPhone={fmtPhoneDisplay(callbackPhone)}
+                />
               </>
             )}
             {contact && (

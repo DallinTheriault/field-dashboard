@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { ArrowLeft, Briefcase, Phone, Mail, MapPin, MessageSquare } from "lucide-react";
+import { ArrowLeft, Briefcase, Phone, Mail, MapPin } from "lucide-react";
+import { TextAndCopyButtons } from "@/components/ui/text-copy-buttons";
 import { createClient } from "@/lib/supabase/server";
 import { JobEditForm } from "./form";
 
@@ -92,10 +93,11 @@ export default async function JobDetailPage({
               <Phone size={12} />
               Call {fmtPhone(job.phone)}
             </a>
-            <a href={`sms:${job.phone}`} className="btn-secondary text-xs h-8">
-              <MessageSquare size={12} />
-              Text
-            </a>
+            <TextAndCopyButtons
+              phone={job.phone}
+              contactId={job.contact_id ?? null}
+              displayPhone={fmtPhone(job.phone)}
+            />
           </>
         )}
         {job.email && (

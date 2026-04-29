@@ -2,6 +2,7 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { StatusChip } from "@/components/ui/status-chip";
 import { ClickableTableRow } from "@/components/ui/clickable-table-row";
+import { MobileJobCard } from "@/components/list-cards/mobile-job-card";
 import { AddJobButton } from "./_components/add-job-button";
 
 function fmtDate(d: string | null): string {
@@ -80,48 +81,58 @@ export default async function JobsPage({
           </div>
         </div>
       ) : (
-        <div className="panel overflow-hidden">
-          <div className="overflow-x-auto scroll-x-hint">
-            <table className="table-pro">
-              <thead>
-                <tr>
-                  <th>Customer</th>
-                  <th>Phone</th>
-                  <th>Service</th>
-                  <th>Address</th>
-                  <th>Start</th>
-                  <th>Status</th>
-                  <th className="text-right">Created</th>
-                </tr>
-              </thead>
-              <tbody>
-                {rows.map((j) => (
-                  <ClickableTableRow key={j.id} href={`/app/jobs/${j.id}`}>
-                    <td className="text-bone-100 font-medium">
-                      {j.name || "—"}
-                    </td>
-                    <td className="num text-xs text-bone-300">
-                      {fmtPhone(j.phone)}
-                    </td>
-                    <td className="text-bone-300">{j.service || "—"}</td>
-                    <td className="text-bone-300 max-w-[200px] truncate">
-                      {j.address || "—"}
-                    </td>
-                    <td className="num text-xs text-bone-300">
-                      {fmtDate(j.start_datetime)}
-                    </td>
-                    <td>
-                      <StatusChip status={j.status} />
-                    </td>
-                    <td className="num text-xs text-bone-400 text-right">
-                      {fmtDate(j.created_at)}
-                    </td>
-                  </ClickableTableRow>
-                ))}
-              </tbody>
-            </table>
+        <>
+          {/* Mobile: stacked cards */}
+          <div className="panel divide-y divide-line-subtle md:hidden">
+            {rows.map((j) => (
+              <MobileJobCard key={j.id} job={j} />
+            ))}
           </div>
-        </div>
+
+          {/* Desktop: table */}
+          <div className="panel overflow-hidden hidden md:block">
+            <div className="overflow-x-auto scroll-x-hint">
+              <table className="table-pro">
+                <thead>
+                  <tr>
+                    <th>Customer</th>
+                    <th>Phone</th>
+                    <th>Service</th>
+                    <th>Address</th>
+                    <th>Start</th>
+                    <th>Status</th>
+                    <th className="text-right">Created</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {rows.map((j) => (
+                    <ClickableTableRow key={j.id} href={`/app/jobs/${j.id}`}>
+                      <td className="text-bone-100 font-medium">
+                        {j.name || "—"}
+                      </td>
+                      <td className="num text-xs text-bone-300">
+                        {fmtPhone(j.phone)}
+                      </td>
+                      <td className="text-bone-300">{j.service || "—"}</td>
+                      <td className="text-bone-300 max-w-[200px] truncate">
+                        {j.address || "—"}
+                      </td>
+                      <td className="num text-xs text-bone-300">
+                        {fmtDate(j.start_datetime)}
+                      </td>
+                      <td>
+                        <StatusChip status={j.status} />
+                      </td>
+                      <td className="num text-xs text-bone-400 text-right">
+                        {fmtDate(j.created_at)}
+                      </td>
+                    </ClickableTableRow>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </>
       )}
     </div>
   );
