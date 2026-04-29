@@ -91,6 +91,7 @@ export default async function AppLayout({
           businessName={client.business_name ?? "—"}
           businessShortName={client.business_short_name ?? null}
           brandLogoUrl={client.brand_logo_url ?? null}
+          isAdmin={isAdmin}
         />
 
         <main className="flex-1 px-4 md:px-6 py-6 pb-20 md:pb-8 min-w-0 max-w-full overflow-x-hidden">

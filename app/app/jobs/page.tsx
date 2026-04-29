@@ -2,6 +2,7 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { StatusChip } from "@/components/ui/status-chip";
 import { ClickableTableRow } from "@/components/ui/clickable-table-row";
+import { AddJobButton } from "./_components/add-job-button";
 
 function fmtDate(d: string | null): string {
   if (!d) return "—";
@@ -47,7 +48,7 @@ export default async function JobsPage({
 
   return (
     <div>
-      <div className="flex items-end justify-between mb-6 gap-4">
+      <div className="flex items-end justify-between mb-6 gap-4 flex-wrap">
         <div>
           <div className="label-eyebrow mb-1">Jobs</div>
           <h1 className="text-2xl font-semibold text-bone-50 tracking-tight">
@@ -57,19 +58,26 @@ export default async function JobsPage({
             {rows.length} {rows.length === 1 ? "job" : "jobs"}
           </p>
         </div>
-        {status && (
-          <Link href="/app/jobs" className="btn-ghost text-xs">
-            Clear filter
-          </Link>
-        )}
+        <div className="flex items-center gap-2">
+          {status && (
+            <Link href="/app/jobs" className="btn-ghost text-xs h-9">
+              Clear filter
+            </Link>
+          )}
+          <AddJobButton />
+        </div>
       </div>
 
       {rows.length === 0 ? (
         <div className="panel px-6 py-14 text-center">
           <p className="text-sm text-bone-100 font-medium mb-1">No jobs yet</p>
-          <p className="text-xs text-bone-400">
-            As your assistant captures calls, jobs will appear here.
+          <p className="text-xs text-bone-400 mb-4">
+            As your assistant captures calls, jobs will appear here. Or add one
+            manually now.
           </p>
+          <div className="inline-flex">
+            <AddJobButton />
+          </div>
         </div>
       ) : (
         <div className="panel overflow-hidden">
