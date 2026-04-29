@@ -1,13 +1,14 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
-  <!-- Field favicon — square 64x64. Strokes use currentColor so the
-       browser's native tab background (light or dark) gets a legible mark.
-       Poles use brand colors directly. -->
-  <g stroke="currentColor" stroke-width="3.5" stroke-linecap="round" fill="none">
-    <path d="M 14 32 Q 32 12 50 32"/>
-    <path d="M 14 32 Q 32 22 50 32"/>
-    <path d="M 14 32 Q 32 42 50 32"/>
-    <path d="M 14 32 Q 32 52 50 32"/>
+  <!-- Field favicon — square 64x64. Asymmetric S-curve dipole geometry
+       matches the real Logo component (control points pulled left+right
+       alternately so the curves bow distinctly instead of looking like
+       flat parallel lines). -->
+  <g stroke="currentColor" stroke-width="3" stroke-linecap="round" fill="none">
+    <path d="M 10 32 Q 26 16 54 32"/>
+    <path d="M 10 32 Q 40 25 54 32"/>
+    <path d="M 10 32 Q 25 41 54 32"/>
+    <path d="M 10 32 Q 41 50 54 32"/>
   </g>
-  <circle cx="14" cy="32" r="4.5" fill="#4A9D8E"/>
-  <circle cx="50" cy="32" r="4.5" fill="#BEF264"/>
+  <circle cx="10" cy="32" r="4.5" fill="#4A9D8E"/>
+  <circle cx="54" cy="32" r="4.5" fill="#BEF264"/>
 </svg>

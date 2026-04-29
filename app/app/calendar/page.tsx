@@ -184,7 +184,8 @@ export default async function CalendarPage({
             <div
               key={i}
               className={cn(
-                "border-r border-b border-line min-h-[112px] p-1.5 relative",
+                "border-r border-b border-line p-1 sm:p-1.5 relative",
+                "min-h-[64px] sm:min-h-[88px] md:min-h-[112px]",
                 !isCurMonth && "bg-ink-1/30",
                 isToday && "ring-1 ring-inset ring-field-500/40",
               )}

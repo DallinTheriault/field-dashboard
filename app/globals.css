@@ -179,7 +179,10 @@
   textarea,
   select {
     @apply bg-ink-2 border border-line-strong text-bone-50 placeholder:text-bone-400;
-    @apply rounded-sm px-3 py-2 text-sm;
+    /* font-size: 16px on mobile (text-base) prevents iOS Safari auto-zoom
+     * on focus AND on initial page load. Drop to 14px (text-sm) on desktop
+     * where the issue doesn't apply. This is the documented iOS workaround. */
+    @apply rounded-sm px-3 py-2 text-base md:text-sm;
     @apply focus:border-field-500/60 focus:ring-1 focus:ring-field-500/60;
     @apply transition-colors duration-100;
   }

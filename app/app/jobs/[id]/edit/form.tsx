@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Loader2, Save, Check, Trash2, AlertTriangle } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
@@ -135,8 +136,10 @@ export function JobEditForm({ job }: { job: JobInput }) {
       return;
     }
     setSaved(true);
+    // Go back to the read-only detail page after save so the user sees a
+    // clean view of their changes, not the editor again.
+    router.push(`/app/jobs/${job.id}`);
     router.refresh();
-    setTimeout(() => setSaved(false), 2500);
   }
 
   return (
@@ -302,6 +305,12 @@ export function JobEditForm({ job }: { job: JobInput }) {
               Saved
             </span>
           )}
+          <Link
+            href={`/app/jobs/${job.id}`}
+            className="btn-ghost text-xs h-9"
+          >
+            Cancel
+          </Link>
           <button type="submit" className="btn-primary text-sm" disabled={saving || archiving}>
             {saving ? (
               <>
