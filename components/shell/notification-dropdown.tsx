@@ -24,6 +24,7 @@ const KIND_COLOR: Record<string, string> = {
   message_left: "text-field-500",
   callback_received: "text-status-danger",
   invoice_paid: "text-status-completed",
+  sms_received: "text-field-500",
 };
 
 const KIND_LABEL: Record<string, string> = {
@@ -31,9 +32,10 @@ const KIND_LABEL: Record<string, string> = {
   booking_saved: "Booking",
   booking_rescheduled: "Reschedule",
   booking_cancelled: "Cancel",
-  message_left: "Message",
+  message_left: "Voicemail",
   callback_received: "Callback",
   invoice_paid: "Invoice",
+  sms_received: "Text",
 };
 
 function timeAgo(iso: string): string {

@@ -24,7 +24,7 @@ const NAV = [
   { href: "/app/calls", label: "Calls", icon: Phone, soon: false },
   { href: "/app/jobs", label: "Jobs", icon: Briefcase, soon: false },
   { href: "/app/contacts", label: "Contacts", icon: Users, soon: false },
-  { href: "/app/messages", label: "Messages", icon: MessageSquare, soon: true },
+  { href: "/app/messages", label: "Messages", icon: MessageSquare, soon: false },
   { href: "/app/calendar", label: "Calendar", icon: CalendarDays, soon: false },
   { href: "/app/billing", label: "Billing", icon: CreditCard, soon: false },
   { href: "/app/settings", label: "Settings", icon: Settings, soon: false },

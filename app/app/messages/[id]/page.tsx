@@ -1,132 +1,228 @@
-import { notFound } from "next/navigation";
 import Link from "next/link";
+import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import { ChevronLeft, Phone, Clock, Check } from "lucide-react";
-import { MarkRespondedButton } from "./mark-responded-button";
+import { createAdminClient } from "@/lib/supabase/admin";
+import { ArrowLeft, Phone, User, AlertCircle } from "lucide-react";
+import { fmtPhoneDisplay } from "@/lib/sms/phone";
 
-function fmtPhone(p: string | null): string {
-  if (!p) return "—";
-  const digits = p.replace(/\D/g, "");
-  if (digits.length === 10) {
-    return `(${digits.slice(0, 3)}) ${digits.slice(3, 6)}-${digits.slice(6)}`;
-  }
-  if (digits.length === 11 && digits.startsWith("1")) {
-    return `(${digits.slice(1, 4)}) ${digits.slice(4, 7)}-${digits.slice(7)}`;
-  }
-  return p;
-}
+export const dynamic = "force-dynamic";
 
-function fmtDate(iso: string): string {
-  return new Date(iso).toLocaleString("en-US", {
+type Message = {
+  id: number;
+  direction: string;
+  body: string;
+  created_at: string;
+  twilio_status: string | null;
+  error_code: string | null;
+};
+
+function fmtClock(iso: string): string {
+  const d = new Date(iso);
+  return d.toLocaleString(undefined, {
+    weekday: "short",
     month: "short",
     day: "numeric",
-    year: "numeric",
     hour: "numeric",
     minute: "2-digit",
   });
 }
 
-export default async function MessageDetailPage({
+function sameDay(a: string, b: string): boolean {
+  const da = new Date(a);
+  const db = new Date(b);
+  return (
+    da.getFullYear() === db.getFullYear() &&
+    da.getMonth() === db.getMonth() &&
+    da.getDate() === db.getDate()
+  );
+}
+
+function fmtDayHeader(iso: string): string {
+  const d = new Date(iso);
+  const now = new Date();
+  if (
+    d.getFullYear() === now.getFullYear() &&
+    d.getMonth() === now.getMonth() &&
+    d.getDate() === now.getDate()
+  ) {
+    return "Today";
+  }
+  const yesterday = new Date(now);
+  yesterday.setDate(now.getDate() - 1);
+  if (
+    d.getFullYear() === yesterday.getFullYear() &&
+    d.getMonth() === yesterday.getMonth() &&
+    d.getDate() === yesterday.getDate()
+  ) {
+    return "Yesterday";
+  }
+  return d.toLocaleDateString(undefined, {
+    weekday: "long",
+    month: "short",
+    day: "numeric",
+  });
+}
+
+export default async function MessageThreadPage({
   params,
 }: {
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  const messageId = Number(id);
-  if (!Number.isInteger(messageId) || messageId < 1) notFound();
+  const threadId = Number(id);
+  if (!Number.isFinite(threadId)) notFound();
 
   const supabase = await createClient();
-  const { data: m } = await supabase
-    .from("messages")
-    .select("*")
-    .eq("id", messageId)
+
+  const { data: thread } = await supabase
+    .from("sms_threads")
+    .select(
+      "id, client_id, contact_id, contact_phone, tenant_phone, display_name, consent_status, last_inbound_at, last_read_at, archived_at",
+    )
+    .eq("id", threadId)
     .maybeSingle();
 
-  if (!m) notFound();
+  if (!thread) notFound();
 
-  // Mark read on view if not already (fire-and-forget)
-  if (!m.read_at) {
-    await supabase
-      .from("messages")
-      .update({ read_at: new Date().toISOString() })
-      .eq("id", messageId);
+  const { data: messages } = await supabase
+    .from("sms_messages")
+    .select("id, direction, body, created_at, twilio_status, error_code")
+    .eq("thread_id", threadId)
+    .order("created_at", { ascending: true });
+
+  const msgs: Message[] = messages ?? [];
+
+  // Mark thread read — admin client to bypass RLS write restriction
+  if (
+    thread.last_inbound_at &&
+    (!thread.last_read_at ||
+      new Date(thread.last_inbound_at).getTime() >
+        new Date(thread.last_read_at).getTime())
+  ) {
+    const admin = createAdminClient();
+    await admin
+      .from("sms_threads")
+      .update({ last_read_at: new Date().toISOString() })
+      .eq("id", threadId);
   }
 
-  const callbackNumber = m.callback_phone || m.caller_phone;
+  const displayName =
+    thread.display_name || fmtPhoneDisplay(thread.contact_phone);
+  const phoneDisplay = fmtPhoneDisplay(thread.contact_phone);
 
   return (
-    <div className="max-w-2xl">
+    <div>
       <Link
         href="/app/messages"
-        className="inline-flex items-center gap-1 text-xs text-bone-400 hover:text-bone-50 mb-3"
+        className="text-2xs text-bone-400 hover:text-bone-100 inline-flex items-center gap-1 mb-3"
       >
-        <ChevronLeft size={12} />
-        All messages
+        <ArrowLeft size={11} />
+        Back to messages
       </Link>
 
-      <div className="panel">
-        <div className="px-5 py-4 border-b border-line">
-          <div className="flex items-baseline justify-between gap-3">
-            <h1 className="text-lg font-semibold text-bone-50">
-              {m.contact_id ? (
-                <Link
-                  href={`/app/contacts/${m.contact_id}`}
-                  className="hover:text-field-500"
-                >
-                  {m.caller_name || "Unknown caller"}
-                </Link>
-              ) : (
-                m.caller_name || "Unknown caller"
-              )}
+      {/* Thread header */}
+      <div className="panel mb-4">
+        <div className="px-4 py-3 flex items-start justify-between gap-3 flex-wrap">
+          <div className="flex-1 min-w-0">
+            <div className="label-eyebrow mb-1">Conversation</div>
+            <h1 className="text-lg font-semibold text-bone-50 truncate">
+              {displayName}
             </h1>
-            <span className="text-2xs text-bone-400 flex items-center gap-1 shrink-0">
-              <Clock size={10} />
-              {fmtDate(m.created_at)}
-            </span>
+            <div className="flex items-center gap-3 mt-1 flex-wrap text-2xs text-bone-400">
+              <span className="font-mono">{phoneDisplay}</span>
+              {thread.consent_status === "stopped" && (
+                <span className="text-status-cancelled">opted out (STOP)</span>
+              )}
+            </div>
           </div>
 
-          {callbackNumber && (
-            <div className="mt-2 flex items-center gap-3">
-              <div className="flex items-center gap-1.5 text-sm text-bone-300 num">
-                <Phone size={12} className="text-field-500" />
-                {fmtPhone(callbackNumber)}
-              </div>
-              <a
-                href={`tel:${callbackNumber}`}
-                className="btn-secondary h-7 text-2xs"
+          <div className="flex items-center gap-1.5 shrink-0">
+            <a
+              href={`tel:${thread.contact_phone}`}
+              className="btn-secondary text-xs h-8"
+            >
+              <Phone size={11} />
+              Call
+            </a>
+            {thread.contact_id && (
+              <Link
+                href={`/app/contacts/${thread.contact_id}`}
+                className="btn-secondary text-xs h-8"
               >
-                Call back
-              </a>
-              <a
-                href={`sms:${callbackNumber}`}
-                className="btn-secondary h-7 text-2xs"
-              >
-                Text
-              </a>
-            </div>
-          )}
+                <User size={11} />
+                Contact
+              </Link>
+            )}
+          </div>
         </div>
+      </div>
 
-        <div className="px-5 py-5">
-          <div className="label-eyebrow mb-2">Message</div>
-          <p className="text-sm text-bone-100 leading-relaxed whitespace-pre-wrap">
-            {m.message_body}
-          </p>
-        </div>
-
-        <div className="px-5 py-3 border-t border-line flex items-center justify-between gap-3">
-          {m.responded_at ? (
-            <div className="text-xs text-status-completed flex items-center gap-1.5">
-              <Check size={12} />
-              Marked responded {fmtDate(m.responded_at)}
-            </div>
+      {/* Messages */}
+      <div className="panel">
+        <div className="px-4 py-4">
+          {msgs.length === 0 ? (
+            <p className="text-xs text-bone-400 text-center py-8">
+              No messages yet.
+            </p>
           ) : (
-            <div className="text-xs text-bone-400">Not yet responded</div>
+            <div className="space-y-1">
+              {msgs.map((m, i) => {
+                const showDayHeader =
+                  i === 0 || !sameDay(msgs[i - 1].created_at, m.created_at);
+                const inbound = m.direction === "inbound";
+                const failed =
+                  m.direction === "outbound" &&
+                  (m.twilio_status === "failed" ||
+                    m.twilio_status === "undelivered");
+                return (
+                  <div key={m.id}>
+                    {showDayHeader && (
+                      <div className="text-2xs text-bone-400 text-center py-3 font-medium">
+                        {fmtDayHeader(m.created_at)}
+                      </div>
+                    )}
+                    <div
+                      className={`flex ${inbound ? "justify-start" : "justify-end"} mb-1`}
+                    >
+                      <div className="max-w-[80%] flex flex-col gap-0.5">
+                        <div
+                          className={`px-3 py-2 rounded-md text-sm leading-relaxed whitespace-pre-wrap break-words ${
+                            inbound
+                              ? "bg-ink-2 text-bone-50"
+                              : failed
+                              ? "bg-status-danger/15 text-bone-50 border border-status-danger/30"
+                              : "bg-field-500/15 text-bone-50 border border-field-500/30"
+                          }`}
+                        >
+                          {m.body}
+                        </div>
+                        <div
+                          className={`text-2xs text-bone-400 ${inbound ? "text-left" : "text-right"} px-1`}
+                        >
+                          {fmtClock(m.created_at)}
+                          {failed && (
+                            <span className="text-status-danger ml-1.5 inline-flex items-center gap-0.5">
+                              <AlertCircle size={9} />
+                              {m.error_code || "failed"}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
           )}
-          <MarkRespondedButton
-            messageId={m.id}
-            initiallyResponded={!!m.responded_at}
-          />
+        </div>
+
+        {/* Reply box placeholder — actual send wiring lands in v0.5.1 */}
+        <div className="border-t border-line px-4 py-3 bg-ink-1/40">
+          <div className="text-2xs text-bone-400 italic text-center">
+            Replies from the dashboard ship in v0.5.1. For now, reply from your
+            phone — texts you send manually will appear here once the receive
+            webhook is bidirectional.
+          </div>
         </div>
       </div>
     </div>
