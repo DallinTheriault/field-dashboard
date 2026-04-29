@@ -308,7 +308,7 @@ export default async function CallsPage({
               {(messageRows ?? []).map((m) => (
                 <li key={m.id}>
                   <Link
-                    href={`/app/messages/${m.id}`}
+                    href={`/app/calls/voicemail/${m.id}`}
                     className="block px-4 py-3 hover:bg-ink-2 transition-colors"
                   >
                     <div className="flex items-start gap-3">
