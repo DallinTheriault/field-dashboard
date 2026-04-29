@@ -4,20 +4,18 @@ import { cn } from "@/lib/cn";
 import { Logo } from "@/components/ui/logo";
 import { NotificationDropdown } from "./notification-dropdown";
 import { ThemeToggle } from "./theme-toggle";
-import { NavDrawer } from "./nav-drawer";
+import { NavDrawerTrigger } from "./nav-drawer-trigger";
 
 export function Topbar({
   userEmail,
   businessName,
   businessShortName,
   brandLogoUrl,
-  isAdmin = false,
 }: {
   userEmail: string;
   businessName: string;
   businessShortName?: string | null;
   brandLogoUrl?: string | null;
-  isAdmin?: boolean;
 }) {
   // Compact display name: prefer the TTS-friendly short name; fall back to
   // legal business name. Truncated visually if it gets long.
@@ -34,8 +32,10 @@ export function Topbar({
       )}
     >
       <div className="flex items-center gap-2 sm:gap-3 w-full px-3 sm:px-4 md:px-6 min-w-0">
-        {/* Hamburger menu — mobile only. Reveals full nav drawer. */}
-        <NavDrawer userEmail={userEmail} isAdmin={isAdmin} />
+        {/* Hamburger trigger — mobile only. The drawer itself is mounted at
+            the layout root (NOT here) because backdrop-blur on this header
+            creates a containing block that breaks fixed positioning. */}
+        <NavDrawerTrigger />
 
         {/* Field lockup — always visible on mobile, hidden on desktop where the
             sidebar already shows it. Tap to go home. */}

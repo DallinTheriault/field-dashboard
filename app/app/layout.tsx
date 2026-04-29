@@ -3,6 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import { Sidebar } from "@/components/shell/sidebar";
 import { Topbar } from "@/components/shell/topbar";
 import { MobileNav } from "@/components/shell/mobile-nav";
+import { NavDrawer } from "@/components/shell/nav-drawer";
 import { IdleTimeout } from "@/components/shell/idle-timeout";
 
 export default async function AppLayout({
@@ -91,7 +92,6 @@ export default async function AppLayout({
           businessName={client.business_name ?? "—"}
           businessShortName={client.business_short_name ?? null}
           brandLogoUrl={client.brand_logo_url ?? null}
-          isAdmin={isAdmin}
         />
 
         <main className="flex-1 px-4 md:px-6 py-6 pb-20 md:pb-8 min-w-0 max-w-full overflow-x-hidden">
@@ -100,6 +100,11 @@ export default async function AppLayout({
       </div>
 
       <MobileNav />
+
+      {/* Mobile nav drawer — mounted as a layout-root sibling so it can use
+          position:fixed without being trapped by the topbar's containing
+          block (backdrop-blur on the topbar otherwise breaks fixed children). */}
+      <NavDrawer userEmail={user.email ?? ""} isAdmin={isAdmin} />
 
       {/* Idle session timeout — logs out after 30 min of inactivity */}
       <IdleTimeout />

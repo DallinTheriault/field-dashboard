@@ -42,7 +42,13 @@ export const metadata: Metadata = {
 export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
-  themeColor: "#1A1E1D",
+  // Two variants so iOS status bar / Android URL bar match the active theme.
+  // Single static value here would leave the opposite mode showing the wrong
+  // color (e.g. #1A1E1D under light mode = white strip below cream content).
+  themeColor: [
+    { media: "(prefers-color-scheme: light)", color: "#F5F4F0" },
+    { media: "(prefers-color-scheme: dark)", color: "#1A1E1D" },
+  ],
 };
 
 export default function RootLayout({

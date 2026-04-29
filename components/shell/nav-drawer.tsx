@@ -1,10 +1,9 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
-  Menu,
   X,
   LayoutDashboard,
   Phone,
@@ -20,6 +19,7 @@ import {
 import { cn } from "@/lib/cn";
 import { Logo } from "@/components/ui/logo";
 import packageJson from "../../package.json";
+import { NAV_DRAWER_OPEN_EVENT } from "./nav-drawer-trigger";
 
 const APP_VERSION = `v${packageJson.version}`;
 
@@ -35,13 +35,15 @@ const NAV = [
 ] as const;
 
 /**
- * Mobile-only hamburger menu. Trigger button lives in the topbar (left side,
- * shown only on `md:hidden`). Tapping it opens a drawer covering the left
- * 80% of the screen with the full navigation list. Tapping outside or
- * navigating closes it.
+ * Mobile-only side drawer rendered at the layout root (NOT inside topbar).
  *
- * Desktop never uses this — the always-visible left sidebar serves the
- * same purpose there.
+ * Why root-mounted: the topbar has `backdrop-blur-md` which creates a CSS
+ * containing block. Any `position: fixed` element nested inside it
+ * resolves relative to the topbar's bounds, not the viewport — that broke
+ * the v0.5.3 drawer.
+ *
+ * Listens for the `field:nav-drawer-open` custom event dispatched by
+ * <NavDrawerTrigger />.
  */
 export function NavDrawer({
   userEmail,
@@ -52,7 +54,15 @@ export function NavDrawer({
 }) {
   const [open, setOpen] = useState(false);
   const pathname = usePathname();
-  const drawerRef = useRef<HTMLDivElement>(null);
+
+  // Listen for the trigger event
+  useEffect(() => {
+    function handler() {
+      setOpen(true);
+    }
+    window.addEventListener(NAV_DRAWER_OPEN_EVENT, handler);
+    return () => window.removeEventListener(NAV_DRAWER_OPEN_EVENT, handler);
+  }, []);
 
   // Close on route change
   useEffect(() => {
@@ -82,28 +92,19 @@ export function NavDrawer({
 
   return (
     <>
-      <button
-        type="button"
-        aria-label="Open menu"
-        aria-expanded={open}
-        onClick={() => setOpen(true)}
-        className="md:hidden btn-ghost h-9 w-9 px-0 shrink-0"
-      >
-        <Menu size={18} strokeWidth={1.8} />
-      </button>
-
       {/* Backdrop */}
-      {open && (
-        <div
-          className="md:hidden fixed inset-0 z-40 bg-black/60 backdrop-blur-[2px]"
-          onClick={() => setOpen(false)}
-          aria-hidden
-        />
-      )}
+      <div
+        className={cn(
+          "md:hidden fixed inset-0 z-40 bg-black/60 backdrop-blur-[2px]",
+          "transition-opacity duration-200",
+          open ? "opacity-100" : "opacity-0 pointer-events-none",
+        )}
+        onClick={() => setOpen(false)}
+        aria-hidden
+      />
 
       {/* Drawer */}
       <aside
-        ref={drawerRef}
         className={cn(
           "md:hidden",
           "fixed top-0 left-0 z-50 h-full",
@@ -112,15 +113,16 @@ export function NavDrawer({
           "flex flex-col",
           "transition-transform duration-200 ease-out",
           "pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)]",
-          open ? "translate-x-0" : "-translate-x-full pointer-events-none",
+          open ? "translate-x-0" : "-translate-x-full",
         )}
         role="dialog"
         aria-modal="true"
         aria-label="Navigation menu"
+        aria-hidden={!open}
       >
-        {/* Drawer header — Field lockup + close */}
+        {/* Drawer header */}
         <div className="h-14 flex items-center justify-between px-4 border-b border-line shrink-0">
-          <Link href="/app" onClick={() => setOpen(false)} aria-label="Field home">
+          <Link href="/app" aria-label="Field home">
             <Logo size="sm" />
           </Link>
           <button
@@ -172,7 +174,7 @@ export function NavDrawer({
           </ul>
         </nav>
 
-        {/* Drawer footer — user email, sign out, version */}
+        {/* Drawer footer */}
         <div className="border-t border-line px-3 py-3 shrink-0 space-y-2">
           <div className="text-2xs text-bone-400 px-1 truncate">{userEmail}</div>
           <form action="/auth/logout" method="POST">
