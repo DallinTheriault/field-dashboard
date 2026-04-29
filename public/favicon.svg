@@ -1,8 +1,13 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 60">
-  <path d="M 25 30 Q 50 4 95 30" stroke="#0a0a0a" stroke-width="3" fill="none" stroke-linecap="round"/>
-  <path d="M 25 30 Q 72 18 95 30" stroke="#0a0a0a" stroke-width="3" fill="none" stroke-linecap="round"/>
-  <path d="M 25 30 Q 48 44 95 30" stroke="#0a0a0a" stroke-width="3" fill="none" stroke-linecap="round"/>
-  <path d="M 25 30 Q 74 58 95 30" stroke="#0a0a0a" stroke-width="3" fill="none" stroke-linecap="round"/>
-  <circle cx="25" cy="30" r="5" fill="#FF6B6B"/>
-  <circle cx="95" cy="30" r="5" fill="#BEF264"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <!-- Field favicon — square 64x64. Strokes use currentColor so the
+       browser's native tab background (light or dark) gets a legible mark.
+       Poles use brand colors directly. -->
+  <g stroke="currentColor" stroke-width="3.5" stroke-linecap="round" fill="none">
+    <path d="M 14 32 Q 32 12 50 32"/>
+    <path d="M 14 32 Q 32 22 50 32"/>
+    <path d="M 14 32 Q 32 42 50 32"/>
+    <path d="M 14 32 Q 32 52 50 32"/>
+  </g>
+  <circle cx="14" cy="32" r="4.5" fill="#4A9D8E"/>
+  <circle cx="50" cy="32" r="4.5" fill="#BEF264"/>
 </svg>
