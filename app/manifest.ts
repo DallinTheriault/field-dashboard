@@ -7,8 +7,8 @@ export default function manifest(): MetadataRoute.Manifest {
     description: "AI Voice Receptionist",
     start_url: "/app",
     display: "standalone",
-    background_color: "#0E1614",
-    theme_color: "#0E1614",
+    background_color: "#1A1E1D",
+    theme_color: "#1A1E1D",
     orientation: "portrait",
     icons: [
       {

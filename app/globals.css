@@ -12,12 +12,17 @@
 
 :root,
 [data-theme="dark"] {
-  /* Surfaces — deep teal-tinted off-blacks */
-  --ink-0: 14 22 20;       /* #0E1614 — page canvas */
-  --ink-1: 19 29 27;       /* #131D1B — panel */
-  --ink-2: 25 37 34;       /* #192522 — raised */
-  --ink-3: 34 48 45;       /* #22302D — input/row hover */
-  --ink-4: 45 60 56;       /* heavy borders */
+  /* Surfaces — neutral dark grey with a whisper of cool/teal undertone.
+   * Previous palette was heavily green-shifted (ink-0 had R=14, G=22 — a
+   * ~60% saturation gap). Now we keep R/G/B within ~3 units of each other,
+   * which reads as neutral grey with the merest cool lean. The brand teal
+   * is preserved via field-500, which still appears on links, accents,
+   * focus rings, and the logo. */
+  --ink-0: 26 30 29;       /* #1A1E1D — page canvas */
+  --ink-1: 33 37 36;       /* #212524 — panel */
+  --ink-2: 41 45 44;       /* #292D2C — raised */
+  --ink-3: 51 55 54;       /* #333736 — input/row hover */
+  --ink-4: 65 70 68;       /* #414644 — heavy borders */
 
   /* Text */
   --bone-50: 232 235 233;  /* #E8EBE9 */
@@ -52,18 +57,19 @@
   --status-cancelled: 110 118 114;    /* gray */
   --status-danger: 181 86 78;         /* #B5564E red */
 
-  /* Lines */
-  --line: 34 48 45;          /* #22302D */
-  --line-strong: 45 60 56;
-  --line-subtle: 26 37 34;   /* #1A2522 */
+  /* Lines — match the new ink scale */
+  --line: 51 55 54;          /* #333736 — same as ink-3 */
+  --line-strong: 65 70 68;   /* #414644 — same as ink-4 */
+  --line-subtle: 38 42 41;   /* #262A29 — between ink-1 and ink-2 */
 
   /* Misc */
   --inset-line: 255 255 255; /* used at 0.06 opacity for inset hairline */
-  --scrollbar-thumb: 45 60 56;
-  --scrollbar-track: 14 22 20;
+  --scrollbar-thumb: 65 70 68;
+  --scrollbar-track: 26 30 29;
   --selection-bg: 74 157 142; /* field-500 at 30% in usage */
-  --body-wash-1: 74 157 142;
-  --body-wash-2: 58 130 118;
+  /* Wash — darker teal at lower opacity so it reads as depth, not tint */
+  --body-wash-1: 45 105 96;  /* field-700 */
+  --body-wash-2: 32 75 69;   /* field-800 */
 }
 
 [data-theme="light"] {
@@ -135,10 +141,12 @@
   }
 
   body {
-    /* Field-tinted radial wash to keep ink-0 from feeling sterile */
+    /* Subtle depth wash — darker teal at low opacity. Was 0.06/0.04 with
+     * field-500 which made the canvas read as green-tinted. Now darker
+     * field-700/800 at 0.035/0.02 for atmosphere without coloring. */
     background-image:
-      radial-gradient(1200px 600px at 100% -200px, rgb(var(--body-wash-1) / 0.06), transparent 60%),
-      radial-gradient(900px 500px at -100px 800px, rgb(var(--body-wash-2) / 0.04), transparent 60%);
+      radial-gradient(1200px 600px at 100% -200px, rgb(var(--body-wash-1) / 0.035), transparent 60%),
+      radial-gradient(900px 500px at -100px 800px, rgb(var(--body-wash-2) / 0.02), transparent 60%);
     background-attachment: fixed;
   }
 
