@@ -63,10 +63,12 @@ export default async function AdminLayout({
   return (
     <div className="min-h-screen">
       {/* Admin header — distinct from tenant nav so you always know where you are */}
-      <header className="h-12 border-b border-field-500/30 bg-field-500/[0.04] sticky top-0 z-20 backdrop-blur-md">
-        <div className="h-full max-w-[1100px] mx-auto px-6 flex items-center gap-4">
-          <Logo size="sm" />
-          <span className="label-eyebrow text-field-500">Admin</span>
+      <header className="h-14 border-b border-field-500/30 bg-field-500/[0.04] sticky top-0 z-20 backdrop-blur-md">
+        <div className="h-full max-w-[1100px] mx-auto px-6 flex items-center gap-3">
+          <Link href="/admin" className="flex items-center gap-2.5 shrink-0">
+            <Logo size="sm" />
+            <span className="label-eyebrow text-field-500 leading-none">Admin</span>
+          </Link>
           <nav className="flex items-center gap-1 ml-3">
             <Link
               href="/admin"
@@ -82,7 +84,7 @@ export default async function AdminLayout({
             </Link>
           </nav>
           <div className="ml-auto flex items-center gap-3">
-            <span className="text-2xs text-bone-400">{user.email}</span>
+            <span className="text-2xs text-bone-400 hidden sm:inline">{user.email}</span>
             <Link href="/app" className="btn-ghost text-xs h-7 px-2">
               ← Tenant view
             </Link>

@@ -39,7 +39,7 @@ export default async function OverviewPage() {
   const supabase = await createClient();
 
   const [jobsRes, callsRes, upcomingRes, leadsRes] = await Promise.all([
-    supabase.from("jobs").select("id, status, created_at"),
+    supabase.from("jobs").select("id, status, created_at").is("archived_at", null),
     supabase
       .from("call_summaries")
       .select(
@@ -50,6 +50,7 @@ export default async function OverviewPage() {
     supabase
       .from("jobs")
       .select("id, name, address, service, start_datetime, status")
+      .is("archived_at", null)
       .not("start_datetime", "is", null)
       .gte("start_datetime", new Date().toISOString())
       .not("status", "in", '("completed","cancelled")')
@@ -58,6 +59,7 @@ export default async function OverviewPage() {
     supabase
       .from("jobs")
       .select("id, name, phone, service, created_at")
+      .is("archived_at", null)
       .eq("status", "lead")
       .order("created_at", { ascending: false })
       .limit(5),

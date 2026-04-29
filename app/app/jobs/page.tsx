@@ -35,6 +35,7 @@ export default async function JobsPage({
   let query = supabase
     .from("jobs")
     .select("id, name, phone, address, service, status, quoted_price, start_datetime, created_at")
+    .is("archived_at", null)
     .order("created_at", { ascending: false });
 
   if (status) {

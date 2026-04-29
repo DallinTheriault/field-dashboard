@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { Loader2, Save, Check } from "lucide-react";
+import { Loader2, Save, Check, Trash2, AlertTriangle } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 
 const STATUSES = [
@@ -11,6 +11,8 @@ const STATUSES = [
   "scheduled",
   "in_progress",
   "completed",
+  "callback",
+  "callback_complete",
   "cancelled",
 ] as const;
 
@@ -67,8 +69,31 @@ export function JobEditForm({ job }: { job: JobInput }) {
   );
   const [notes, setNotes] = useState(job.notes);
   const [saving, setSaving] = useState(false);
+  const [archiving, setArchiving] = useState(false);
+  const [confirmArchive, setConfirmArchive] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
+
+  async function handleArchive() {
+    setErr(null);
+    setArchiving(true);
+    const supabase = createClient();
+    const { error } = await supabase
+      .from("jobs")
+      .update({
+        archived_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", job.id);
+    setArchiving(false);
+    setConfirmArchive(false);
+    if (error) {
+      setErr(error.message);
+      return;
+    }
+    router.push("/app/jobs");
+    router.refresh();
+  }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -216,26 +241,81 @@ export function JobEditForm({ job }: { job: JobInput }) {
 
       {err && <div className="form-error">{err}</div>}
 
-      <div className="flex items-center justify-end gap-2 pt-1">
-        {saved && (
-          <span className="text-xs text-status-completed flex items-center gap-1">
-            <Check size={12} />
-            Saved
-          </span>
-        )}
-        <button type="submit" className="btn-primary text-sm" disabled={saving}>
-          {saving ? (
-            <>
-              <Loader2 size={13} className="animate-spin" />
-              Saving…
-            </>
-          ) : (
-            <>
-              <Save size={13} />
-              Save changes
-            </>
-          )}
+      {confirmArchive && (
+        <div className="rounded-sm border border-status-danger/40 bg-status-danger/[0.06] px-3 py-2.5 flex items-start gap-2">
+          <AlertTriangle size={14} className="text-status-danger shrink-0 mt-0.5" />
+          <div className="flex-1 min-w-0">
+            <p className="text-xs text-bone-100 font-medium leading-snug">
+              Delete this job?
+            </p>
+            <p className="text-2xs text-bone-300 mt-0.5 leading-relaxed">
+              The job will be hidden from your views. Call summaries linked to it
+              stay intact for your records. An operator can restore it if needed.
+            </p>
+            <div className="flex items-center gap-2 mt-2">
+              <button
+                type="button"
+                onClick={handleArchive}
+                disabled={archiving}
+                className="btn-primary text-xs h-7 !bg-status-danger hover:!bg-status-danger/90"
+              >
+                {archiving ? (
+                  <>
+                    <Loader2 size={11} className="animate-spin" />
+                    Deleting…
+                  </>
+                ) : (
+                  <>
+                    <Trash2 size={11} />
+                    Yes, delete
+                  </>
+                )}
+              </button>
+              <button
+                type="button"
+                onClick={() => setConfirmArchive(false)}
+                disabled={archiving}
+                className="btn-ghost text-xs h-7"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <div className="flex items-center justify-between gap-2 pt-1 flex-wrap">
+        <button
+          type="button"
+          onClick={() => setConfirmArchive(true)}
+          disabled={saving || archiving || confirmArchive}
+          className="btn-ghost text-xs text-status-danger hover:!bg-status-danger/[0.08]"
+        >
+          <Trash2 size={12} />
+          Delete job
         </button>
+
+        <div className="flex items-center gap-2 ml-auto">
+          {saved && (
+            <span className="text-xs text-status-completed flex items-center gap-1">
+              <Check size={12} />
+              Saved
+            </span>
+          )}
+          <button type="submit" className="btn-primary text-sm" disabled={saving || archiving}>
+            {saving ? (
+              <>
+                <Loader2 size={13} className="animate-spin" />
+                Saving…
+              </>
+            ) : (
+              <>
+                <Save size={13} />
+                Save changes
+              </>
+            )}
+          </button>
+        </div>
       </div>
     </form>
   );

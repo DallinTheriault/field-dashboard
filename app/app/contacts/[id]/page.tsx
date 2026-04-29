@@ -79,6 +79,7 @@ export default async function ContactDetailPage({
       .from("jobs")
       .select("id, name, address, service, status, quoted_price, start_datetime, created_at")
       .eq("contact_id", contact.id)
+      .is("archived_at", null)
       .order("created_at", { ascending: false }),
     supabase
       .from("call_summaries")

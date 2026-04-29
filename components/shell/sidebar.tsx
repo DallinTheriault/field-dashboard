@@ -15,6 +15,9 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/cn";
 import { Logo } from "@/components/ui/logo";
+import packageJson from "../../package.json";
+
+const APP_VERSION = `v${packageJson.version}`;
 
 const NAV = [
   { href: "/app", label: "Overview", icon: LayoutDashboard, soon: false },
@@ -120,7 +123,7 @@ export function Sidebar({
           </Link>
         )}
         <div className="flex items-center justify-between">
-          <span className="text-2xs text-bone-400 font-mono">v0.3.0</span>
+          <span className="text-2xs text-bone-400 font-mono">{APP_VERSION}</span>
           <span className="text-2xs text-bone-400">field</span>
         </div>
       </div>

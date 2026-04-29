@@ -79,6 +79,7 @@ export default async function CalendarPage({
   const { data: rawJobs } = await supabase
     .from("jobs")
     .select("id, name, address, service, status, start_datetime, end_datetime")
+    .is("archived_at", null)
     .gte("start_datetime", gridStart.toISOString())
     .lte("start_datetime", gridEnd.toISOString())
     .order("start_datetime", { ascending: true });
