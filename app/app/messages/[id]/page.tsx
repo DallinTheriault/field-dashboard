@@ -4,6 +4,7 @@ import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { ArrowLeft, Phone, User, AlertCircle } from "lucide-react";
 import { fmtPhoneDisplay } from "@/lib/sms/phone";
+import { ReplyBox } from "./reply-box";
 
 export const dynamic = "force-dynamic";
 
@@ -61,6 +62,27 @@ function fmtDayHeader(iso: string): string {
     month: "short",
     day: "numeric",
   });
+}
+
+/**
+ * Compact label for Twilio outbound delivery status. Shown after the
+ * timestamp on outbound bubbles, e.g. "1:49 PM · delivered".
+ */
+function fmtOutboundStatus(status: string): string {
+  switch (status) {
+    case "queued":
+      return "queued";
+    case "sending":
+      return "sending";
+    case "sent":
+      return "sent";
+    case "delivered":
+      return "delivered";
+    case "read":
+      return "read";
+    default:
+      return status;
+  }
 }
 
 export default async function MessageThreadPage({
@@ -200,10 +222,17 @@ export default async function MessageThreadPage({
                           className={`text-2xs text-bone-400 ${inbound ? "text-left" : "text-right"} px-1`}
                         >
                           {fmtClock(m.created_at)}
+                          {!inbound && !failed && m.twilio_status && (
+                            <span className="ml-1.5 text-bone-400">
+                              · {fmtOutboundStatus(m.twilio_status)}
+                            </span>
+                          )}
                           {failed && (
                             <span className="text-status-danger ml-1.5 inline-flex items-center gap-0.5">
                               <AlertCircle size={9} />
-                              {m.error_code || "failed"}
+                              {m.error_code
+                                ? `failed (${m.error_code})`
+                                : "failed"}
                             </span>
                           )}
                         </div>
@@ -216,14 +245,11 @@ export default async function MessageThreadPage({
           )}
         </div>
 
-        {/* Reply box placeholder — actual send wiring lands in v0.5.1 */}
-        <div className="border-t border-line px-4 py-3 bg-ink-1/40">
-          <div className="text-2xs text-bone-400 italic text-center">
-            Replies from the dashboard ship in v0.5.1. For now, reply from your
-            phone — texts you send manually will appear here once the receive
-            webhook is bidirectional.
-          </div>
-        </div>
+        {/* Reply box — server action sends via Twilio */}
+        <ReplyBox
+          threadId={thread.id}
+          isStopped={thread.consent_status === "stopped"}
+        />
       </div>
     </div>
   );

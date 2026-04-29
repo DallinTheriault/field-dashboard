@@ -1,64 +1,8 @@
 import type { Metadata, Viewport } from "next";
-import { Inter, JetBrains_Mono } from "next/font/google";
 import { themeBootstrapScript } from "@/components/shell/theme-toggle";
 import "./globals.css";
-
-const inter = Inter({
-  subsets: ["latin"],
-  variable: "--font-sans",
-  weight: ["300", "400", "500", "600", "700", "800"],
-  display: "swap",
-});
-
-const jbMono = JetBrains_Mono({
-  subsets: ["latin"],
-  variable: "--font-mono",
-  weight: ["400", "500"],
-  display: "swap",
-});
-
-export const metadata: Metadata = {
-  title: {
-    default: "Field",
-    template: "%s · Field",
-  },
-  description:
-    "AI Voice Receptionist. Every call answered, every lead captured.",
-  manifest: "/manifest.webmanifest",
-  icons: {
-    icon: [
-      { url: "/favicon.svg", type: "image/svg+xml" },
-      { url: "/favicon-32.png", sizes: "32x32", type: "image/png" },
-      { url: "/favicon-16.png", sizes: "16x16", type: "image/png" },
-    ],
-    apple: "/apple-touch-icon.png",
-  },
-};
-
-export const viewport: Viewport = {
-  width: "device-width",
-  initialScale: 1,
-  viewportFit: "cover",
-  themeColor: "#1A1E1D",
-};
-
-export default function RootLayout({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
-  return (
-    <html
-      lang="en"
-      className={`${inter.variable} ${jbMono.variable}`}
-      suppressHydrationWarning
-    >
-      <head>
-        <script
-          dangerouslySetInnerHTML={{ __html: themeBootstrapScript }}
-        />
-      </head>
-      <body className="min-h-screen font-sans">{children}</body>
-    </html>
-  );
+export const metadata: Metadata = { title: { default: "Field", template: "%s · Field" }, description: "AI Voice Receptionist" };
+export const viewport: Viewport = { width: "device-width", initialScale: 1, themeColor: "#1A1E1D" };
+export default function RootLayout({ children }: { children: React.ReactNode }) {
+  return (<html lang="en" suppressHydrationWarning><head><script dangerouslySetInnerHTML={{ __html: themeBootstrapScript }} /></head><body className="min-h-screen font-sans">{children}</body></html>);
 }
