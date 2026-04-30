@@ -201,3 +201,200 @@ function humanizeTwilioError(e: {
         : "Send failed. Try again or check Twilio status.";
   }
 }
+
+/* -------------------------------------------------------------------------- */
+/*  Scheduled SMS (v0.5.9)                                                    */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Schedule an SMS to be sent at a future timestamp. Inserts a row into
+ * sms_scheduled with status='pending'. An n8n cron polls due rows and
+ * ships them via Twilio.
+ *
+ * Validation:
+ *   - body length 1..1600
+ *   - scheduledForIso is a valid future timestamp (server-side check; client
+ *     also enforces "at least 5 minutes in future" but server only requires
+ *     "in the future" for clock-skew tolerance)
+ *   - thread is not consent_status='stopped' AT SCHEDULE TIME (the cron
+ *     checks again at send time and skips if changed since)
+ *
+ * The cron, not this action, will respect timezones. We store an absolute
+ * timestamptz so timezone is handled at the client when picking the time
+ * (we render the picker in tenant timezone).
+ */
+export async function scheduleSmsReply(
+  threadId: number,
+  body: string,
+  scheduledForIso: string,
+): Promise<ActionResult> {
+  const trimmed = body.trim();
+  if (!trimmed) return { ok: false, error: "Message body is empty." };
+  if (trimmed.length > MAX_BODY_CHARS) {
+    return { ok: false, error: `Message too long (${trimmed.length}/${MAX_BODY_CHARS}).` };
+  }
+
+  const scheduledFor = new Date(scheduledForIso);
+  if (isNaN(scheduledFor.getTime())) {
+    return { ok: false, error: "Invalid scheduled time." };
+  }
+  if (scheduledFor.getTime() <= Date.now()) {
+    return { ok: false, error: "Scheduled time must be in the future." };
+  }
+
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { ok: false, error: "Not signed in." };
+
+  const { data: thread } = await supabase
+    .from("sms_threads")
+    .select("id, client_id, tenant_phone, contact_phone, consent_status, archived_at")
+    .eq("id", threadId)
+    .maybeSingle();
+
+  if (!thread) return { ok: false, error: "Thread not found." };
+  if (thread.archived_at) return { ok: false, error: "Thread is archived." };
+  if (thread.consent_status === "stopped") {
+    return {
+      ok: false,
+      error: "This contact has opted out (replied STOP). They can text START to opt back in.",
+    };
+  }
+
+  const tenantPhone = toE164US(thread.tenant_phone);
+  const contactPhone = toE164US(thread.contact_phone);
+  if (!tenantPhone || !contactPhone) {
+    return { ok: false, error: "Phone number formatting error." };
+  }
+
+  const admin = createAdminClient();
+  const { error } = await admin.from("sms_scheduled").insert({
+    client_id: thread.client_id,
+    thread_id: threadId,
+    tenant_phone: tenantPhone,
+    contact_phone: contactPhone,
+    body: trimmed,
+    scheduled_for: scheduledFor.toISOString(),
+    scheduled_by: user.id,
+    status: "pending",
+  });
+
+  if (error) {
+    console.error("[scheduleSmsReply] insert failed", error);
+    return { ok: false, error: error.message };
+  }
+
+  revalidatePath(`/app/messages/${threadId}`);
+  return { ok: true };
+}
+
+/**
+ * Cancel a pending scheduled message. Sets status='cancelled' and stamps
+ * the cancelling user. Once a message has shipped (status='sent') it can't
+ * be cancelled — Twilio doesn't support unsending.
+ */
+export async function cancelScheduledSms(
+  scheduledId: number,
+): Promise<ActionResult> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { ok: false, error: "Not signed in." };
+
+  const { data: row } = await supabase
+    .from("sms_scheduled")
+    .select("id, status, thread_id")
+    .eq("id", scheduledId)
+    .maybeSingle();
+
+  if (!row) return { ok: false, error: "Scheduled message not found." };
+  if (row.status !== "pending") {
+    return {
+      ok: false,
+      error: `Can't cancel — message status is '${row.status}'.`,
+    };
+  }
+
+  const admin = createAdminClient();
+  const { error } = await admin
+    .from("sms_scheduled")
+    .update({
+      status: "cancelled",
+      cancelled_at: new Date().toISOString(),
+      cancelled_by: user.id,
+    })
+    .eq("id", scheduledId)
+    .eq("status", "pending"); // race-safety guard
+
+  if (error) {
+    return { ok: false, error: error.message };
+  }
+
+  revalidatePath(`/app/messages/${row.thread_id}`);
+  return { ok: true };
+}
+
+/**
+ * Edit a pending scheduled message — update body and/or scheduled_for.
+ * Only owner of original schedule can edit (or any member with
+ * owner/manager role since RLS allows).
+ */
+export async function editScheduledSms(
+  scheduledId: number,
+  body: string,
+  scheduledForIso: string,
+): Promise<ActionResult> {
+  const trimmed = body.trim();
+  if (!trimmed) return { ok: false, error: "Message body is empty." };
+  if (trimmed.length > MAX_BODY_CHARS) {
+    return { ok: false, error: `Message too long (${trimmed.length}/${MAX_BODY_CHARS}).` };
+  }
+
+  const scheduledFor = new Date(scheduledForIso);
+  if (isNaN(scheduledFor.getTime())) {
+    return { ok: false, error: "Invalid scheduled time." };
+  }
+  if (scheduledFor.getTime() <= Date.now()) {
+    return { ok: false, error: "Scheduled time must be in the future." };
+  }
+
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { ok: false, error: "Not signed in." };
+
+  const { data: row } = await supabase
+    .from("sms_scheduled")
+    .select("id, status, thread_id")
+    .eq("id", scheduledId)
+    .maybeSingle();
+
+  if (!row) return { ok: false, error: "Scheduled message not found." };
+  if (row.status !== "pending") {
+    return {
+      ok: false,
+      error: `Can't edit — message status is '${row.status}'.`,
+    };
+  }
+
+  const admin = createAdminClient();
+  const { error } = await admin
+    .from("sms_scheduled")
+    .update({
+      body: trimmed,
+      scheduled_for: scheduledFor.toISOString(),
+    })
+    .eq("id", scheduledId)
+    .eq("status", "pending");
+
+  if (error) {
+    return { ok: false, error: error.message };
+  }
+
+  revalidatePath(`/app/messages/${row.thread_id}`);
+  return { ok: true };
+}

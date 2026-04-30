@@ -5,6 +5,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { ArrowLeft, Phone, User, AlertCircle } from "lucide-react";
 import { fmtPhoneDisplay } from "@/lib/sms/phone";
 import { ReplyBox } from "./reply-box";
+import { ScheduledBubble } from "./scheduled-bubble";
 
 export const dynamic = "force-dynamic";
 
@@ -113,6 +114,28 @@ export default async function MessageThreadPage({
     .order("created_at", { ascending: true });
 
   const msgs: Message[] = messages ?? [];
+
+  // Pull tenant timezone for the schedule picker
+  const { data: tenant } = await supabase
+    .from("Clients")
+    .select("timezone")
+    .eq("id", thread.client_id)
+    .maybeSingle();
+
+  const tenantTz = tenant?.timezone || "America/Denver";
+
+  // Pull pending scheduled messages so the thread UI can render them
+  // inline as queued bubbles. Cancelled/sent/failed rows aren't rendered
+  // here — they're either archived (cancelled) or have a corresponding
+  // sms_messages row (sent/failed).
+  const { data: scheduled } = await supabase
+    .from("sms_scheduled")
+    .select("id, body, scheduled_for, status, created_at")
+    .eq("thread_id", threadId)
+    .eq("status", "pending")
+    .order("scheduled_for", { ascending: true });
+
+  const scheduledRows = scheduled ?? [];
 
   // Mark thread read — admin client to bypass RLS write restriction
   if (
@@ -241,6 +264,34 @@ export default async function MessageThreadPage({
                   </div>
                 );
               })}
+
+              {/* Pending scheduled messages — render after sent messages
+                  with a "queued" affordance: dimmed bubble, clock icon,
+                  scheduled time, cancel/edit buttons. Bubble looks like an
+                  outbound message but is visibly distinct from a sent one. */}
+              {scheduledRows.length > 0 && (
+                <div className="pt-2">
+                  {scheduledRows.length > 0 &&
+                    msgs.length > 0 &&
+                    !sameDay(
+                      msgs[msgs.length - 1].created_at,
+                      scheduledRows[0].scheduled_for,
+                    ) && (
+                      <div className="text-2xs text-bone-400 text-center py-3 font-medium">
+                        Scheduled
+                      </div>
+                    )}
+                  {scheduledRows.map((s) => (
+                    <ScheduledBubble
+                      key={s.id}
+                      scheduledId={s.id}
+                      body={s.body}
+                      scheduledFor={s.scheduled_for}
+                      tenantTz={tenantTz}
+                    />
+                  ))}
+                </div>
+              )}
             </div>
           )}
         </div>
@@ -249,6 +300,7 @@ export default async function MessageThreadPage({
         <ReplyBox
           threadId={thread.id}
           isStopped={thread.consent_status === "stopped"}
+          tenantTz={tenantTz}
         />
       </div>
     </div>

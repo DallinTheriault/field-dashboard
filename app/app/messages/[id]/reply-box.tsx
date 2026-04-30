@@ -2,9 +2,10 @@
 
 import { useState, useRef, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { Send, Loader2, AlertCircle, Ban } from "lucide-react";
-import { sendSmsReply } from "./actions";
+import { Send, Loader2, AlertCircle, Ban, Clock, Calendar } from "lucide-react";
+import { sendSmsReply, scheduleSmsReply } from "./actions";
 import { TemplateChips } from "@/components/sms/template-chips";
+import { fromLocalInput } from "./scheduled-bubble";
 
 const SOFT_WARN_AT = 160;
 const HARD_LIMIT = 1600;
@@ -22,15 +23,22 @@ function segmentInfo(len: number): { segs: number; color: string } {
 export function ReplyBox({
   threadId,
   isStopped,
+  tenantTz,
 }: {
   threadId: number;
   isStopped: boolean;
+  tenantTz: string;
 }) {
   const router = useRouter();
   const ref = useRef<HTMLTextAreaElement>(null);
   const [body, setBody] = useState("");
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [scheduleOpen, setScheduleOpen] = useState(false);
+  const [scheduleTime, setScheduleTime] = useState<string>(
+    defaultScheduleTime(tenantTz),
+  );
+  const [scheduling, setScheduling] = useState(false);
 
   // Auto-grow textarea up to a reasonable max
   useEffect(() => {
@@ -71,6 +79,39 @@ export function ReplyBox({
     }
 
     setBody("");
+    router.refresh();
+  }
+
+  async function handleSchedule() {
+    setError(null);
+    if (!trimmed) {
+      setError("Type a message first.");
+      return;
+    }
+    if (overLimit) {
+      setError("Message too long.");
+      return;
+    }
+    const iso = fromLocalInput(scheduleTime, tenantTz);
+    if (!iso) {
+      setError("Invalid date/time.");
+      return;
+    }
+    if (new Date(iso).getTime() <= Date.now() + 30 * 1000) {
+      // Tiny grace for "schedule in 1 hour" preset clicked at the boundary
+      setError("Pick a time at least a minute in the future.");
+      return;
+    }
+    setScheduling(true);
+    const result = await scheduleSmsReply(threadId, body, iso);
+    setScheduling(false);
+    if (!result.ok) {
+      setError(result.error);
+      return;
+    }
+    setBody("");
+    setScheduleOpen(false);
+    setScheduleTime(defaultScheduleTime(tenantTz));
     router.refresh();
   }
 
@@ -152,7 +193,95 @@ export function ReplyBox({
             )}
             Send
           </button>
+          <button
+            type="button"
+            onClick={() => {
+              if (!trimmed) {
+                setError("Type a message first, then schedule.");
+                return;
+              }
+              setError(null);
+              setScheduleOpen((v) => !v);
+            }}
+            disabled={!trimmed || sending || scheduling || overLimit}
+            className="btn-secondary text-sm h-9 shrink-0 px-2.5"
+            title="Schedule for later"
+            aria-label="Schedule for later"
+          >
+            <Clock size={13} />
+          </button>
         </div>
+
+        {scheduleOpen && (
+          <div className="mt-2 bg-ink-2 border border-line rounded-md p-3 space-y-2">
+            <div className="flex items-center gap-2 mb-1">
+              <Calendar size={12} className="text-field-500" />
+              <span className="text-xs font-medium text-bone-100">
+                Schedule for later
+              </span>
+              <span className="text-2xs text-bone-400 ml-auto">
+                Tenant timezone:{" "}
+                <span className="font-mono">{tenantTz}</span>
+              </span>
+            </div>
+
+            {/* Quick presets */}
+            <div className="flex flex-wrap items-center gap-1.5">
+              <button
+                type="button"
+                onClick={() => setScheduleTime(presetIn(tenantTz, 60))}
+                className="text-2xs px-2 h-7 bg-ink-1 hover:bg-ink-3 border border-line rounded-sm text-bone-100"
+              >
+                In 1 hour
+              </button>
+              <button
+                type="button"
+                onClick={() => setScheduleTime(presetTomorrowMorning(tenantTz))}
+                className="text-2xs px-2 h-7 bg-ink-1 hover:bg-ink-3 border border-line rounded-sm text-bone-100"
+              >
+                Tomorrow 9am
+              </button>
+              <button
+                type="button"
+                onClick={() => setScheduleTime(presetIn(tenantTz, 60 * 24 * 7))}
+                className="text-2xs px-2 h-7 bg-ink-1 hover:bg-ink-3 border border-line rounded-sm text-bone-100"
+              >
+                Next week
+              </button>
+            </div>
+
+            <input
+              type="datetime-local"
+              value={scheduleTime}
+              onChange={(e) => setScheduleTime(e.target.value)}
+              className="!bg-ink-1 w-full text-sm font-mono"
+            />
+
+            <div className="flex items-center gap-2 pt-1">
+              <button
+                type="button"
+                onClick={handleSchedule}
+                disabled={scheduling || !trimmed || overLimit}
+                className="btn-primary text-xs h-8"
+              >
+                {scheduling ? (
+                  <Loader2 size={11} className="animate-spin" />
+                ) : (
+                  <Calendar size={11} />
+                )}
+                Schedule send
+              </button>
+              <button
+                type="button"
+                onClick={() => setScheduleOpen(false)}
+                disabled={scheduling}
+                className="btn-ghost text-xs h-8"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        )}
 
         <div className="flex items-center justify-between mt-1.5 px-1">
           <span className="text-2xs text-bone-400">
@@ -173,4 +302,76 @@ export function ReplyBox({
       </div>
     </div>
   );
+}
+
+/* ---------------- schedule-time helpers ---------------- */
+
+/**
+ * Return YYYY-MM-DDTHH:MM (in tenant tz) for "now + minutes minutes".
+ * Used by the preset buttons. We compute the absolute UTC instant first,
+ * then format it in the tenant's wall-clock terms.
+ */
+function presetIn(tz: string, minutes: number): string {
+  const target = new Date(Date.now() + minutes * 60 * 1000);
+  return formatLocal(target, tz);
+}
+
+/**
+ * "Tomorrow at 9am tenant-tz". Compute today's date in tenant tz, add 1
+ * day, set time to 09:00 in that tz.
+ */
+function presetTomorrowMorning(tz: string): string {
+  const now = new Date();
+  // Get today's date components in tenant tz
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: tz,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(now);
+  const get = (t: string) => parts.find((p) => p.type === t)?.value ?? "00";
+  // Construct "tomorrow at 09:00" as an input string, then let
+  // fromLocalInput convert to ISO so we can normalize via formatLocal.
+  const y = Number(get("year"));
+  const m = Number(get("month")) - 1;
+  const d = Number(get("day")) + 1;
+  // Build a "naive" UTC moment for tomorrow midnight tenant-tz, then add 9h.
+  // Easier to just produce the YYYY-MM-DDT09:00 string directly.
+  const tomorrow = new Date(Date.UTC(y, m, d));
+  const yy = tomorrow.getUTCFullYear();
+  const mm = String(tomorrow.getUTCMonth() + 1).padStart(2, "0");
+  const dd = String(tomorrow.getUTCDate()).padStart(2, "0");
+  return `${yy}-${mm}-${dd}T09:00`;
+}
+
+/**
+ * Default initial value for the datetime input — tomorrow morning.
+ */
+function defaultScheduleTime(tz: string): string {
+  return presetTomorrowMorning(tz);
+}
+
+/**
+ * Format a Date as YYYY-MM-DDTHH:MM in the given timezone for use as a
+ * datetime-local input value.
+ */
+function formatLocal(date: Date, tz: string): string {
+  try {
+    const parts = new Intl.DateTimeFormat("en-CA", {
+      timeZone: tz,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false,
+    }).formatToParts(date);
+    const get = (t: string) => parts.find((p) => p.type === t)?.value ?? "00";
+    let hour = get("hour");
+    if (hour === "24") hour = "00";
+    return `${get("year")}-${get("month")}-${get("day")}T${hour}:${get("minute")}`;
+  } catch {
+    const pad = (n: number) => n.toString().padStart(2, "0");
+    return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+  }
 }
