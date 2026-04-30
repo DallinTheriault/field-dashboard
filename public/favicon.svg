@@ -1,14 +1,13 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
-  <!-- Field favicon — square 64x64. Asymmetric S-curve dipole geometry
-       matches the real Logo component (control points pulled left+right
-       alternately so the curves bow distinctly instead of looking like
-       flat parallel lines). -->
-  <g stroke="currentColor" stroke-width="3" stroke-linecap="round" fill="none">
-    <path d="M 10 32 Q 26 16 54 32"/>
-    <path d="M 10 32 Q 40 25 54 32"/>
-    <path d="M 10 32 Q 25 41 54 32"/>
-    <path d="M 10 32 Q 41 50 54 32"/>
+  <!-- Field favicon — faithful to master mark geometry (assets/01-mark/svg/mark-bone.svg)
+       with current product colors (teal + lime, not coral). Source viewBox 120x60 mapped
+       to 64x64 with the leaf scaled up to fill more canvas vs the inline logo. -->
+  <g stroke="currentColor" stroke-width="2.2" stroke-linecap="round" fill="none">
+    <path d="M 8 32 Q 22 4 56 32"/>
+    <path d="M 8 32 Q 38 19 56 32"/>
+    <path d="M 8 32 Q 22 45 56 32"/>
+    <path d="M 8 32 Q 39 60 56 32"/>
   </g>
-  <circle cx="10" cy="32" r="4.5" fill="#4A9D8E"/>
-  <circle cx="54" cy="32" r="4.5" fill="#BEF264"/>
+  <circle cx="8" cy="32" r="4" fill="#4A9D8E"/>
+  <circle cx="56" cy="32" r="4" fill="#BEF264"/>
 </svg>

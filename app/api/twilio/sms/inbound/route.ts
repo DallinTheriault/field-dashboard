@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import twilio from "twilio";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { toE164US, fmtPhoneDisplay } from "@/lib/sms/phone";
+import { detectKeyword, autoReplyBody } from "@/lib/sms/consent-keywords";
 
 /**
  * Twilio "A message comes in" webhook.
@@ -169,16 +170,53 @@ export async function POST(request: Request) {
     return twimlOk();
   }
 
+  // ---- Compliance keyword handling ---------------------------------------
+  // STOP / HELP / START are detected here so we can update the thread's
+  // consent_status and (for STOP/HELP) reply with TwiML inline. Twilio
+  // ALSO does carrier-level handling for these — our handling layers on
+  // top so the dashboard reflects the user's status accurately.
+  const keyword = detectKeyword(body);
+  if (keyword === "stop") {
+    await supabase
+      .from("sms_threads")
+      .update({ consent_status: "stopped" })
+      .eq("id", thread.id);
+  } else if (keyword === "start") {
+    await supabase
+      .from("sms_threads")
+      .update({ consent_status: "active" })
+      .eq("id", thread.id);
+  } else if (keyword === "help") {
+    await supabase
+      .from("sms_threads")
+      .update({ consent_status: "help_sent" })
+      .eq("id", thread.id);
+  }
+
   // ---- Notification -------------------------------------------------------
-  const senderLabel = displayName || fmtPhoneDisplay(fromE164);
-  const preview = body.length > 120 ? body.slice(0, 117) + "…" : body;
-  await supabase.from("notifications").insert({
-    client_id: client.id,
-    kind: "sms_received",
-    title: `New text from ${senderLabel}`,
-    body: preview,
-    link_url: `/app/messages/${thread.id}`,
-  });
+  // Don't fire bell notifications for STOP/HELP — those are compliance
+  // events, not real customer messages the operator needs to action.
+  // (We do still store the message above so it shows in the thread.)
+  if (!keyword) {
+    const senderLabel = displayName || fmtPhoneDisplay(fromE164);
+    const preview = body.length > 120 ? body.slice(0, 117) + "…" : body;
+    await supabase.from("notifications").insert({
+      client_id: client.id,
+      kind: "sms_received",
+      title: `New text from ${senderLabel}`,
+      body: preview,
+      link_url: `/app/messages/${thread.id}`,
+    });
+  }
+
+  // ---- Auto-reply (STOP/HELP only) ---------------------------------------
+  // Twilio will already send its own STOP confirmation if we don't, but a
+  // branded one is clearer for the recipient. For HELP, Twilio doesn't
+  // auto-reply, so this is the only response they get.
+  const replyText = autoReplyBody(keyword, client.business_name || "Field");
+  if (replyText) {
+    return twimlReply(replyText);
+  }
 
   return twimlOk();
 }
@@ -188,4 +226,22 @@ function twimlOk() {
     status: 200,
     headers: { "Content-Type": "text/xml; charset=utf-8" },
   });
+}
+
+/**
+ * Reply with a single SMS. TwiML <Message> escaping: only `&`, `<`, `>`
+ * are special. Body length up to 1600 chars (Twilio splits if needed).
+ */
+function twimlReply(body: string) {
+  const escaped = body
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+  return new NextResponse(
+    `<?xml version="1.0" encoding="UTF-8"?><Response><Message>${escaped}</Message></Response>`,
+    {
+      status: 200,
+      headers: { "Content-Type": "text/xml; charset=utf-8" },
+    },
+  );
 }
