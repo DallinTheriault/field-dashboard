@@ -129,29 +129,30 @@
     color-scheme: light;
   }
 
-  html,
-  body {
+  html {
     @apply bg-ink-0 text-bone-50 antialiased;
     font-feature-settings: "ss01", "cv11";
     /* overscroll-behavior: contain stops iOS rubber-band from bouncing the
-     * page (and visually lifting the fixed bottom nav). Internal scrollers
-     * are unaffected. */
+     * page (and visually lifting the fixed bottom nav). */
     overscroll-behavior-y: contain;
-    /* Prevent stray child overflow from triggering page-level horizontal
-     * scroll on mobile. Internal scroll containers (.scroll-x-hint, tables
-     * wrapped in overflow-x-auto) still scroll within their own bounds.
-     *
-     * Note: we use `100%` not `100vw` here. iOS Safari calculates 100vw
-     * inconsistently during dynamic-toolbar / keyboard transitions, which
-     * caused momentary horizontal overflow → zoom-out → rubber-band scroll
-     * across all pages. 100% is the document element's actual width and
-     * stays stable. */
-    overflow-x: clip;
-    max-width: 100%;
-    width: 100%;
+    /* Don't put overflow-x or width here. iOS Safari's `overflow-x: clip` on
+     * <html> creates a NEW containing block for position:fixed descendants
+     * once the layout engine is invalidated by a child's overflow:auto
+     * (e.g. our calendar grid). After visiting calendar, the bottom nav's
+     * position:fixed starts resolving against a stacking context that
+     * scrolls with the page instead of the viewport — that's the "bottom
+     * nav follows scroll after visiting calendar" bug. Keep <html> simple. */
   }
 
   body {
+    @apply bg-ink-0 text-bone-50 antialiased;
+    /* Horizontal overflow protection lives on body only. body NEVER gets
+     * promoted to a containing block in iOS, so position:fixed children
+     * (bottom nav, drawer) keep resolving against the viewport. */
+    overflow-x: hidden;
+    overscroll-behavior-y: contain;
+    min-height: 100vh;
+    min-height: 100dvh; /* dynamic viewport — accounts for iOS toolbar */
     /* Subtle depth wash — darker teal at low opacity. Was 0.06/0.04 with
      * field-500 which made the canvas read as green-tinted. Now darker
      * field-700/800 at 0.035/0.02 for atmosphere without coloring. */

@@ -69,15 +69,32 @@ export function NavDrawer({
     setOpen(false);
   }, [pathname]);
 
-  // Lock body scroll while open
+  // Lock body scroll while open. iOS Safari ignores overflow:hidden for
+  // touch scrolling — we also pin the body with position:fixed at the
+  // current scroll offset, which is the documented workaround. We restore
+  // the scroll position on close.
   useEffect(() => {
-    if (open) {
-      const original = document.body.style.overflow;
-      document.body.style.overflow = "hidden";
-      return () => {
-        document.body.style.overflow = original;
-      };
-    }
+    if (!open) return;
+    const scrollY = window.scrollY;
+    const body = document.body;
+    const originalOverflow = body.style.overflow;
+    const originalPosition = body.style.position;
+    const originalTop = body.style.top;
+    const originalWidth = body.style.width;
+
+    body.style.overflow = "hidden";
+    body.style.position = "fixed";
+    body.style.top = `-${scrollY}px`;
+    body.style.width = "100%";
+
+    return () => {
+      body.style.overflow = originalOverflow;
+      body.style.position = originalPosition;
+      body.style.top = originalTop;
+      body.style.width = originalWidth;
+      // Restore scroll position
+      window.scrollTo(0, scrollY);
+    };
   }, [open]);
 
   // Esc to close
@@ -100,6 +117,10 @@ export function NavDrawer({
           open ? "opacity-100" : "opacity-0 pointer-events-none",
         )}
         onClick={() => setOpen(false)}
+        // Prevent touchmove on the backdrop from scrolling content
+        // underneath. Defensive — body lock above already handles this on
+        // iOS, but cheap insurance.
+        onTouchMove={(e) => e.preventDefault()}
         aria-hidden
       />
 

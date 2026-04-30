@@ -94,7 +94,7 @@ export default async function AppLayout({
           brandLogoUrl={client.brand_logo_url ?? null}
         />
 
-        <main className="flex-1 px-4 md:px-6 py-6 pb-20 md:pb-8 min-w-0 max-w-full overflow-x-hidden">
+        <main className="flex-1 px-4 md:px-6 py-6 pb-28 md:pb-8 min-w-0 max-w-full overflow-x-hidden">
           <div className="mx-auto max-w-[1200px] min-w-0">{children}</div>
         </main>
       </div>

@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
 import {
   Building2,
   Palette,
@@ -8,15 +9,20 @@ import {
   Volume2,
   ChevronRight,
   MessageSquareText,
+  Users,
 } from "lucide-react";
 import { LogoUploader } from "./logo-uploader";
 import { VoicePicker } from "./voice-picker";
 import { BusinessProfileForm } from "./profile-form";
 import { ColorPicker } from "./color-picker";
 import { ReplyTemplatesManager } from "./reply-templates-manager";
+import { TeamManager } from "./team-manager";
 
 export default async function SettingsPage() {
   const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
 
   const { data: clients } = await supabase
     .from("Clients")
@@ -34,6 +40,42 @@ export default async function SettingsPage() {
         .eq("client_id", client.id)
         .maybeSingle()
     : { data: null };
+
+  // Team members for the current tenant. We need emails which live in
+  // auth.users (only readable by service-role), so this uses the admin
+  // client. Caller's role determines whether they see add/remove buttons.
+  let teamMembers: Array<{
+    id: number;
+    auth_user_id: string;
+    role: string;
+    email: string | null;
+    is_self: boolean;
+  }> = [];
+  let callerIsOwner = false;
+  if (client && user) {
+    const admin = createAdminClient();
+    const { data: memberships } = await admin
+      .from("client_users")
+      .select("id, auth_user_id, role, created_at")
+      .eq("client_id", client.id)
+      .order("created_at", { ascending: true });
+
+    if (memberships && memberships.length > 0) {
+      const { data: usersData } = await admin.auth.admin.listUsers();
+      const userById = new Map(
+        (usersData?.users ?? []).map((u) => [u.id, u.email ?? null]),
+      );
+      teamMembers = memberships.map((m) => ({
+        id: m.id,
+        auth_user_id: m.auth_user_id,
+        role: m.role,
+        email: userById.get(m.auth_user_id) ?? null,
+        is_self: m.auth_user_id === user.id,
+      }));
+      callerIsOwner =
+        memberships.find((m) => m.auth_user_id === user.id)?.role === "owner";
+    }
+  }
 
   return (
     <div>
@@ -182,6 +224,21 @@ export default async function SettingsPage() {
             subtitle="Saved replies you can insert into the SMS reply box with one tap"
           >
             <ReplyTemplatesManager clientId={client.id} />
+          </Section>
+        )}
+
+        {/* Team */}
+        {client && teamMembers.length > 0 && (
+          <Section
+            icon={Users}
+            title="Team"
+            subtitle="People with access to this dashboard"
+          >
+            <TeamManager
+              clientId={client.id}
+              members={teamMembers}
+              callerIsOwner={callerIsOwner}
+            />
           </Section>
         )}
       </div>
