@@ -248,6 +248,17 @@ export async function scheduleSmsReply(
   } = await supabase.auth.getUser();
   if (!user) return { ok: false, error: "Not signed in." };
 
+  // Members are read-only for outbound. Owners and managers only.
+  const { data: memberships } = await supabase
+    .from("client_users")
+    .select("client_id, role")
+    .eq("auth_user_id", user.id)
+    .in("role", ["owner", "manager"]);
+  const allowedClientIds = new Set((memberships ?? []).map((m) => m.client_id));
+  if (allowedClientIds.size === 0) {
+    return { ok: false, error: "You don't have permission to schedule messages." };
+  }
+
   const { data: thread } = await supabase
     .from("sms_threads")
     .select("id, client_id, tenant_phone, contact_phone, consent_status, archived_at")
@@ -255,6 +266,9 @@ export async function scheduleSmsReply(
     .maybeSingle();
 
   if (!thread) return { ok: false, error: "Thread not found." };
+  if (!allowedClientIds.has(thread.client_id)) {
+    return { ok: false, error: "You don't have permission to schedule messages." };
+  }
   if (thread.archived_at) return { ok: false, error: "Thread is archived." };
   if (thread.consent_status === "stopped") {
     return {

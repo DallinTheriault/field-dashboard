@@ -3,22 +3,24 @@
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
+import {
+  type Role,
+  isValidRole,
+  canAddRole,
+  canChangeRole,
+  canRemoveRole,
+} from "@/lib/permissions/roles";
 
 type Result = { ok: true } | { ok: false; error: string };
 
-const ALLOWED_ROLES = ["owner", "manager"] as const;
-type Role = (typeof ALLOWED_ROLES)[number];
-
 /**
- * Add an existing Field user to the current tenant as a member.
+ * Add an existing Field user to the current tenant.
  *
- * v0.5.10 limitation: requires the invitee to have already signed up at
- * Field with the email being added. There's no magic-link invitation
- * flow yet — that's v0.6.0+. This serves the immediate "add my second
- * account" need.
+ * v0.5.11 limitation: invitee must already have a Field auth account.
+ * Real magic-link invitations land in v0.6.0.
  *
- * Auth: caller must be an OWNER of the tenant they're adding to.
- * (Managers can manage day-to-day work but can't add other operators.)
+ * Permission: caller must be owner (can add any role) or manager (can
+ * only add members).
  */
 export async function addTeamMemberByEmail(
   clientId: number,
@@ -29,7 +31,7 @@ export async function addTeamMemberByEmail(
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanedEmail)) {
     return { ok: false, error: "Invalid email address." };
   }
-  if (!ALLOWED_ROLES.includes(role)) {
+  if (!isValidRole(role)) {
     return { ok: false, error: "Invalid role." };
   }
 
@@ -39,7 +41,6 @@ export async function addTeamMemberByEmail(
   } = await supabase.auth.getUser();
   if (!user) return { ok: false, error: "Not signed in." };
 
-  // Caller must be owner of this tenant
   const { data: callerMembership } = await supabase
     .from("client_users")
     .select("role")
@@ -47,17 +48,22 @@ export async function addTeamMemberByEmail(
     .eq("client_id", clientId)
     .maybeSingle();
 
-  if (!callerMembership || callerMembership.role !== "owner") {
+  if (
+    !callerMembership ||
+    !isValidRole(callerMembership.role) ||
+    !canAddRole(callerMembership.role, role)
+  ) {
     return {
       ok: false,
-      error: "Only the owner can add or remove team members.",
+      error:
+        callerMembership?.role === "manager"
+          ? "Managers can only add members. Ask an owner to add managers or owners."
+          : "You don't have permission to add team members.",
     };
   }
 
-  // Look up the auth user by email — admin client because regular users
-  // can't read auth.users. We use the service-role admin API.
   const admin = createAdminClient();
-  // Supabase admin API: list users with email filter
+  // Look up the auth user by email
   const { data: usersData, error: lookupErr } =
     await admin.auth.admin.listUsers();
   if (lookupErr) {
@@ -74,7 +80,6 @@ export async function addTeamMemberByEmail(
     };
   }
 
-  // Check if already a member
   const { data: existing } = await admin
     .from("client_users")
     .select("id, role")
@@ -99,13 +104,24 @@ export async function addTeamMemberByEmail(
     return { ok: false, error: insertErr.message };
   }
 
+  // Audit log entry
+  await admin.from("team_audit_log").insert({
+    client_id: clientId,
+    actor_user_id: user.id,
+    actor_role_at_time: callerMembership.role,
+    action: "member_added",
+    target_user_id: target.id,
+    target_email: cleanedEmail,
+    new_role: role,
+  });
+
   revalidatePath("/app/settings");
   return { ok: true };
 }
 
 /**
- * Remove a team member. Cannot remove yourself, cannot remove the last owner.
- * Caller must be an owner.
+ * Remove a team member. Cannot remove yourself, cannot remove the last
+ * owner. Managers can only remove members.
  */
 export async function removeTeamMember(
   clientId: number,
@@ -124,8 +140,8 @@ export async function removeTeamMember(
     .eq("client_id", clientId)
     .maybeSingle();
 
-  if (!callerMembership || callerMembership.role !== "owner") {
-    return { ok: false, error: "Only the owner can remove team members." };
+  if (!callerMembership || !isValidRole(callerMembership.role)) {
+    return { ok: false, error: "You don't have permission." };
   }
 
   const admin = createAdminClient();
@@ -136,12 +152,21 @@ export async function removeTeamMember(
     .eq("client_id", clientId)
     .maybeSingle();
 
-  if (!target) return { ok: false, error: "Member not found." };
+  if (!target || !isValidRole(target.role)) {
+    return { ok: false, error: "Member not found." };
+  }
 
   if (target.auth_user_id === user.id) {
+    return { ok: false, error: "You can't remove yourself." };
+  }
+
+  if (!canRemoveRole(callerMembership.role, target.role)) {
     return {
       ok: false,
-      error: "You can't remove yourself. Have another owner do it.",
+      error:
+        callerMembership.role === "manager"
+          ? "Managers can only remove members."
+          : "You don't have permission to remove this person.",
     };
   }
 
@@ -160,6 +185,12 @@ export async function removeTeamMember(
     }
   }
 
+  // Get email for audit log before delete
+  const { data: targetUser } = await admin.auth.admin.getUserById(
+    target.auth_user_id,
+  );
+  const targetEmail = targetUser?.user?.email ?? "(unknown)";
+
   const { error } = await admin
     .from("client_users")
     .delete()
@@ -167,19 +198,32 @@ export async function removeTeamMember(
 
   if (error) return { ok: false, error: error.message };
 
+  await admin.from("team_audit_log").insert({
+    client_id: clientId,
+    actor_user_id: user.id,
+    actor_role_at_time: callerMembership.role,
+    action: "member_removed",
+    target_user_id: target.auth_user_id,
+    target_email: targetEmail,
+    old_role: target.role,
+  });
+
   revalidatePath("/app/settings");
   return { ok: true };
 }
 
 /**
- * Change a member's role. Same auth rules as add/remove.
+ * Change a member's role. Permission rules:
+ *   - Owner: can change any role to any role (subject to last-owner)
+ *   - Manager: can promote member → manager, demote manager → member
+ *   - Cannot change own role (use a different owner)
  */
 export async function changeTeamMemberRole(
   clientId: number,
   membershipId: number,
   newRole: Role,
 ): Promise<Result> {
-  if (!ALLOWED_ROLES.includes(newRole)) {
+  if (!isValidRole(newRole)) {
     return { ok: false, error: "Invalid role." };
   }
 
@@ -196,20 +240,35 @@ export async function changeTeamMemberRole(
     .eq("client_id", clientId)
     .maybeSingle();
 
-  if (!callerMembership || callerMembership.role !== "owner") {
-    return { ok: false, error: "Only the owner can change roles." };
+  if (!callerMembership || !isValidRole(callerMembership.role)) {
+    return { ok: false, error: "You don't have permission." };
   }
 
   const admin = createAdminClient();
   const { data: target } = await admin
     .from("client_users")
-    .select("id, role")
+    .select("id, auth_user_id, role")
     .eq("id", membershipId)
     .eq("client_id", clientId)
     .maybeSingle();
 
-  if (!target) return { ok: false, error: "Member not found." };
+  if (!target || !isValidRole(target.role)) {
+    return { ok: false, error: "Member not found." };
+  }
+  if (target.auth_user_id === user.id) {
+    return { ok: false, error: "You can't change your own role." };
+  }
   if (target.role === newRole) return { ok: true }; // no-op
+
+  if (!canChangeRole(callerMembership.role, target.role, newRole)) {
+    return {
+      ok: false,
+      error:
+        callerMembership.role === "manager"
+          ? "Managers can only promote members or demote managers."
+          : "You don't have permission to change this role.",
+    };
+  }
 
   // Don't allow demoting the last owner
   if (target.role === "owner" && newRole !== "owner") {
@@ -232,6 +291,23 @@ export async function changeTeamMemberRole(
     .eq("id", membershipId);
 
   if (error) return { ok: false, error: error.message };
+
+  // Audit log
+  const { data: targetUser } = await admin.auth.admin.getUserById(
+    target.auth_user_id,
+  );
+  const targetEmail = targetUser?.user?.email ?? "(unknown)";
+
+  await admin.from("team_audit_log").insert({
+    client_id: clientId,
+    actor_user_id: user.id,
+    actor_role_at_time: callerMembership.role,
+    action: "role_changed",
+    target_user_id: target.auth_user_id,
+    target_email: targetEmail,
+    old_role: target.role,
+    new_role: newRole,
+  });
 
   revalidatePath("/app/settings");
   return { ok: true };

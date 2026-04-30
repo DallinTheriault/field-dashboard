@@ -2,10 +2,12 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { ArrowLeft, Phone, User, AlertCircle } from "lucide-react";
+import { ArrowLeft, Phone, User, AlertCircle, Eye } from "lucide-react";
 import { fmtPhoneDisplay } from "@/lib/sms/phone";
 import { ReplyBox } from "./reply-box";
 import { ScheduledBubble } from "./scheduled-bubble";
+import { getCurrentUserRole } from "@/lib/permissions/current-role";
+import { canSendSms } from "@/lib/permissions/roles";
 
 export const dynamic = "force-dynamic";
 
@@ -96,6 +98,8 @@ export default async function MessageThreadPage({
   if (!Number.isFinite(threadId)) notFound();
 
   const supabase = await createClient();
+  const session = await getCurrentUserRole();
+  const userCanReply = session ? canSendSms(session.role) : false;
 
   const { data: thread } = await supabase
     .from("sms_threads")
@@ -296,12 +300,22 @@ export default async function MessageThreadPage({
           )}
         </div>
 
-        {/* Reply box — server action sends via Twilio */}
-        <ReplyBox
-          threadId={thread.id}
-          isStopped={thread.consent_status === "stopped"}
-          tenantTz={tenantTz}
-        />
+        {/* Reply box — server action sends via Twilio. Members are read-only. */}
+        {userCanReply ? (
+          <ReplyBox
+            threadId={thread.id}
+            isStopped={thread.consent_status === "stopped"}
+            tenantTz={tenantTz}
+          />
+        ) : (
+          <div className="border-t border-line px-4 py-3 flex items-start gap-2 bg-ink-1/40">
+            <Eye size={12} className="text-bone-400 shrink-0 mt-0.5" />
+            <p className="text-2xs text-bone-400 leading-relaxed">
+              Read-only. To reply, ask a manager or owner — or copy the
+              contact number above and reach out from your personal phone.
+            </p>
+          </div>
+        )}
       </div>
     </div>
   );

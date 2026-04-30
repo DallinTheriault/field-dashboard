@@ -29,6 +29,10 @@ const DEFAULTS: Intake = {
 
 export default function OnboardPage() {
   const [form, setForm] = useState<Intake>(DEFAULTS);
+  // Honeypot field — invisible to humans, appealing to bots that fill
+  // every input on a form. If non-empty on submit, server silently
+  // rejects but still returns success so the bot doesn't iterate.
+  const [websiteUrlConfirm, setWebsiteUrlConfirm] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [result, setResult] = useState<
     | { kind: "ok"; clientId: number; businessName: string }
@@ -49,7 +53,7 @@ export default function OnboardPage() {
       const res = await fetch("/api/onboard", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(form),
+        body: JSON.stringify({ ...form, website_url_confirm: websiteUrlConfirm }),
       });
 
       const data = await res.json();
@@ -146,6 +150,36 @@ export default function OnboardPage() {
         </div>
 
         <form onSubmit={handleSubmit} className="form-card space-y-4">
+          {/*
+           * Honeypot — visually hidden but still in the DOM. Bots fill it
+           * thinking it's a legitimate "confirm website" field; humans
+           * never see it. aria-hidden + tabIndex={-1} keeps it off the
+           * keyboard tab order for screen readers / accessibility.
+           */}
+          <div
+            aria-hidden="true"
+            style={{
+              position: "absolute",
+              left: "-10000px",
+              width: "1px",
+              height: "1px",
+              overflow: "hidden",
+            }}
+          >
+            <label htmlFor="website_url_confirm">
+              Confirm your website (leave empty)
+            </label>
+            <input
+              type="text"
+              id="website_url_confirm"
+              name="website_url_confirm"
+              tabIndex={-1}
+              autoComplete="off"
+              value={websiteUrlConfirm}
+              onChange={(e) => setWebsiteUrlConfirm(e.target.value)}
+            />
+          </div>
+
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div className="field-group">
               <label className="field-label">Business name *</label>
@@ -246,14 +280,14 @@ export default function OnboardPage() {
                 Submitting…
               </>
             ) : (
-              "Submit setup request"
+              "Request setup"
             )}
           </button>
 
           <p className="text-2xs text-bone-400 text-center leading-relaxed">
-            By submitting you agree to a $500 one-time setup fee and $397/month
-            for the Field receptionist service. Billed only after your line
-            goes live.
+            We&apos;ll review your request and reach out within 1 business day
+            to confirm fit and walk through next steps. No charge or
+            commitment at this stage.
           </p>
         </form>
       </div>

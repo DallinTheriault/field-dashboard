@@ -162,14 +162,23 @@ function LoginForm() {
             </button>
           </form>
 
-          <div className="mt-8 pt-6 border-t border-line-subtle">
+          <div className="mt-8 pt-6 border-t border-line-subtle space-y-2">
             <p className="text-xs text-bone-400">
-              New here?{" "}
+              Joining a team?{" "}
+              <Link
+                href="/signup"
+                className="text-bone-100 hover:text-field-500 font-medium"
+              >
+                Create your account →
+              </Link>
+            </p>
+            <p className="text-xs text-bone-400">
+              New business?{" "}
               <Link
                 href="/onboard"
                 className="text-bone-100 hover:text-field-500 font-medium"
               >
-                Set up your business →
+                Request setup →
               </Link>
             </p>
           </div>
