@@ -133,11 +133,22 @@
   body {
     @apply bg-ink-0 text-bone-50 antialiased;
     font-feature-settings: "ss01", "cv11";
+    /* overscroll-behavior: contain stops iOS rubber-band from bouncing the
+     * page (and visually lifting the fixed bottom nav). Internal scrollers
+     * are unaffected. */
+    overscroll-behavior-y: contain;
     /* Prevent stray child overflow from triggering page-level horizontal
      * scroll on mobile. Internal scroll containers (.scroll-x-hint, tables
-     * wrapped in overflow-x-auto) still scroll within their own bounds. */
+     * wrapped in overflow-x-auto) still scroll within their own bounds.
+     *
+     * Note: we use `100%` not `100vw` here. iOS Safari calculates 100vw
+     * inconsistently during dynamic-toolbar / keyboard transitions, which
+     * caused momentary horizontal overflow → zoom-out → rubber-band scroll
+     * across all pages. 100% is the document element's actual width and
+     * stays stable. */
     overflow-x: clip;
-    max-width: 100vw;
+    max-width: 100%;
+    width: 100%;
   }
 
   body {

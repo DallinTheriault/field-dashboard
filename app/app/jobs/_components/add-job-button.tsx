@@ -15,6 +15,31 @@ const STATUSES = [
   { value: "cancelled", label: "Cancelled" },
 ] as const;
 
+/**
+ * Format a phone number as the user types. Strips non-digits and renders
+ * the canonical US display form. Caps at 10 digits (US local) — leading
+ * "1" is dropped if the user pastes E.164 with country code.
+ *
+ *   "" → ""
+ *   "8" → "(8"
+ *   "801" → "(801)"
+ *   "8015551" → "(801) 555-1"
+ *   "8015551234" → "(801) 555-1234"
+ *   "+18015551234" → "(801) 555-1234"
+ */
+function formatPhoneAsTyped(input: string): string {
+  let digits = input.replace(/\D/g, "");
+  if (digits.length === 11 && digits.startsWith("1")) {
+    digits = digits.slice(1);
+  }
+  digits = digits.slice(0, 10); // hard cap
+
+  if (digits.length === 0) return "";
+  if (digits.length <= 3) return `(${digits}`;
+  if (digits.length <= 6) return `(${digits.slice(0, 3)}) ${digits.slice(3)}`;
+  return `(${digits.slice(0, 3)}) ${digits.slice(3, 6)}-${digits.slice(6)}`;
+}
+
 export function AddJobButton() {
   const router = useRouter();
   const [open, setOpen] = useState(false);
@@ -159,10 +184,10 @@ export function AddJobButton() {
                   <input
                     type="tel"
                     value={phone}
-                    onChange={(e) => setPhone(e.target.value)}
+                    onChange={(e) => setPhone(formatPhoneAsTyped(e.target.value))}
                     disabled={submitting}
                     required
-                    placeholder="e.g. 801-555-1234"
+                    placeholder="(801) 555-1234"
                     inputMode="tel"
                     className="!bg-ink-2 w-full text-sm h-9 font-mono"
                   />

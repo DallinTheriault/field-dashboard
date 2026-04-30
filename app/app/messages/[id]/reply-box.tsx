@@ -4,6 +4,7 @@ import { useState, useRef, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { Send, Loader2, AlertCircle, Ban } from "lucide-react";
 import { sendSmsReply } from "./actions";
+import { TemplateChips } from "@/components/sms/template-chips";
 
 const SOFT_WARN_AT = 160;
 const HARD_LIMIT = 1600;
@@ -81,6 +82,29 @@ export function ReplyBox({
     }
   }
 
+  /**
+   * Template chip click. If the textarea is empty, replace; otherwise
+   * append after a space (or newline if user is mid-thought). Refocus
+   * the textarea so the user can keep typing immediately.
+   */
+  function handleInsertTemplate(templateBody: string) {
+    setBody((prev) => {
+      const trimmedPrev = prev.trim();
+      if (!trimmedPrev) return templateBody;
+      // Append. Leading space if previous didn't end on punctuation/whitespace.
+      const sep = /[\s.,!?]$/.test(prev) ? "" : " ";
+      return prev + sep + templateBody;
+    });
+    // Refocus + cursor to end after state settles
+    setTimeout(() => {
+      const el = ref.current;
+      if (el) {
+        el.focus();
+        el.setSelectionRange(el.value.length, el.value.length);
+      }
+    }, 0);
+  }
+
   return (
     <div className="border-t border-line">
       {error && (
@@ -99,6 +123,8 @@ export function ReplyBox({
           </button>
         </div>
       )}
+
+      <TemplateChips onInsert={handleInsertTemplate} />
 
       <div className="px-3 py-2.5">
         <div className="flex items-end gap-2">

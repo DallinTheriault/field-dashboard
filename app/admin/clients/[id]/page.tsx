@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, ShieldCheck } from "lucide-react";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { ClientConfigForm } from "./form";
 
@@ -43,6 +43,15 @@ export default async function AdminClientDetailPage({
           </code>
           to this row.
         </p>
+        <div className="flex flex-wrap gap-2 mt-3">
+          <Link
+            href={`/admin/clients/${client.id}/sms-compliance`}
+            className="btn-secondary text-xs h-8"
+          >
+            <ShieldCheck size={11} />
+            SMS compliance log
+          </Link>
+        </div>
       </div>
 
       <ClientConfigForm

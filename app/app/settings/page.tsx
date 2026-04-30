@@ -7,11 +7,13 @@ import {
   FileText,
   Volume2,
   ChevronRight,
+  MessageSquareText,
 } from "lucide-react";
 import { LogoUploader } from "./logo-uploader";
 import { VoicePicker } from "./voice-picker";
 import { BusinessProfileForm } from "./profile-form";
 import { ColorPicker } from "./color-picker";
+import { ReplyTemplatesManager } from "./reply-templates-manager";
 
 export default async function SettingsPage() {
   const supabase = await createClient();
@@ -171,6 +173,17 @@ export default async function SettingsPage() {
             </Link>
           </div>
         </Section>
+
+        {/* SMS Reply Templates */}
+        {client && (
+          <Section
+            icon={MessageSquareText}
+            title="SMS reply templates"
+            subtitle="Saved replies you can insert into the SMS reply box with one tap"
+          >
+            <ReplyTemplatesManager clientId={client.id} />
+          </Section>
+        )}
       </div>
     </div>
   );

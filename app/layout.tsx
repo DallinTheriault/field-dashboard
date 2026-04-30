@@ -47,7 +47,20 @@ export const metadata: Metadata = {
 export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
+  // minimumScale=1 + maximumScale=1 prevents iOS Safari from auto-zooming
+  // when it momentarily measures content as wider than viewport (which
+  // happens during dynamic-toolbar transitions and keyboard show/hide).
+  // Users can still use accessibility zoom at the OS level — this only
+  // disables the in-page pinch-zoom, which is the right tradeoff for an
+  // app-style PWA.
+  minimumScale: 1,
+  maximumScale: 1,
+  userScalable: false,
   viewportFit: "cover",
+  // interactiveWidget=resizes-content prevents the keyboard from
+  // shrinking the layout viewport on iOS, which was causing the
+  // bottom nav to lift during scroll-bounce.
+  interactiveWidget: "resizes-content",
   // Two variants so iOS status bar / Android URL bar match the active theme.
   // Single static value here would leave the opposite mode showing the wrong
   // color (e.g. #1A1E1D under light mode = white strip below cream content).
