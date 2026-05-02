@@ -2,6 +2,8 @@ import Link from "next/link";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { cn } from "@/lib/cn";
+import { getTenantFeatureFlags } from "@/lib/features/flags";
+import { FeatureDisabledPanel } from "@/components/ui/feature-disabled-panel";
 
 type Job = {
   id: number;
@@ -59,6 +61,16 @@ export default async function CalendarPage({
 }: {
   searchParams: Promise<{ m?: string }>;
 }) {
+  const flags = await getTenantFeatureFlags();
+  if (!flags.calendar) {
+    return (
+      <FeatureDisabledPanel
+        featureName="Calendar"
+        description="Calendar integration is in development and not yet available for your account."
+      />
+    );
+  }
+
   const supabase = await createClient();
   const { m } = await searchParams;
 

@@ -3,9 +3,10 @@ import { createClient } from "@/lib/supabase/server";
 import { StatusChip } from "@/components/ui/status-chip";
 import { ClickableTableRow } from "@/components/ui/clickable-table-row";
 import { MobileJobCard } from "@/components/list-cards/mobile-job-card";
-import { TagFilterDropdown } from "@/components/tags/tag-filter-dropdown";
-import { TagChips } from "@/components/tags/tag-chips";
+import { TagChipList } from "@/components/tags/tag-chip";
 import { AddJobButton } from "./_components/add-job-button";
+import { getTagsByJobIds, listTagsForClient } from "@/lib/tags/server";
+import { Download } from "lucide-react";
 
 function fmtDate(d: string | null): string {
   if (!d) return "—";
@@ -34,55 +35,58 @@ export default async function JobsPage({
   searchParams: Promise<{ status?: string; tag?: string }>;
 }) {
   const supabase = await createClient();
-  const { status, tag } = await searchParams;
+  const { status, tag: tagIdParam } = await searchParams;
 
-  let query = supabase
+  // Identify tenant for tag list
+  const { data: { user } } = await supabase.auth.getUser();
+  const { data: clientUser } = await supabase
+    .from("client_users")
+    .select("client_id")
+    .eq("auth_user_id", user?.id ?? "")
+    .limit(1)
+    .maybeSingle();
+  const clientId = (clientUser as { client_id?: number } | null)?.client_id ?? null;
+
+  let baseQuery = supabase
     .from("jobs")
-    .select(
-      "id, name, phone, address, service, status, quoted_price, start_datetime, created_at, tags",
-    )
+    .select("id, name, phone, address, service, status, quoted_price, start_datetime, created_at")
     .is("archived_at", null)
     .order("created_at", { ascending: false });
 
-  if (status) {
-    query = query.eq("status", status);
-  }
-  if (tag) {
-    // Postgres text[] containment — row tags contains [tag]
-    query = query.contains("tags", [tag]);
+  if (status) baseQuery = baseQuery.eq("status", status);
+
+  // Tag filtering: pass `tag` as the tag NAME from the URL, find its ID,
+  // then query job_tags for jobs with that tag.
+  if (tagIdParam && clientId) {
+    const { data: tagRow } = await supabase
+      .from("tags")
+      .select("id")
+      .eq("client_id", clientId)
+      .eq("name", tagIdParam)
+      .maybeSingle();
+    if (tagRow) {
+      const { data: jt } = await supabase
+        .from("job_tags")
+        .select("job_id")
+        .eq("tag_id", (tagRow as { id: number }).id);
+      const jobIds = (jt ?? []).map((r: { job_id: number }) => r.job_id);
+      if (jobIds.length === 0) {
+        // No matching jobs
+        baseQuery = baseQuery.eq("id", -1);
+      } else {
+        baseQuery = baseQuery.in("id", jobIds);
+      }
+    } else {
+      baseQuery = baseQuery.eq("id", -1);
+    }
   }
 
-  const { data: jobs } = await query;
+  const { data: jobs } = await baseQuery;
   const rows = jobs ?? [];
 
-  // Aggregate all tags for the filter dropdown. Could push this to a
-  // dedicated query later, but reusing the result set is fine for current
-  // volume.
-  const allTagsSet = new Set<string>();
-  for (const j of rows) {
-    for (const t of (j.tags as string[] | null) ?? []) {
-      if (t) allTagsSet.add(t);
-    }
-  }
-  // If a tag filter is ACTIVE, the result set is already narrowed and
-  // wouldn't show other tags. Pull a separate query for the dropdown so
-  // the user can switch between tags without clearing first.
-  let availableTags = Array.from(allTagsSet).sort();
-  if (tag) {
-    const { data: tagSample } = await supabase
-      .from("jobs")
-      .select("tags")
-      .is("archived_at", null)
-      .not("tags", "is", null)
-      .limit(500);
-    const allFromSample = new Set<string>();
-    for (const j of tagSample ?? []) {
-      for (const t of (j.tags as string[] | null) ?? []) {
-        if (t) allFromSample.add(t);
-      }
-    }
-    availableTags = Array.from(allFromSample).sort();
-  }
+  // Bulk-fetch tags for visible jobs in one round-trip
+  const tagsByJob = await getTagsByJobIds(rows.map((j) => j.id));
+  const allTags = clientId ? await listTagsForClient(clientId) : [];
 
   return (
     <div>
@@ -90,8 +94,8 @@ export default async function JobsPage({
         <div>
           <div className="label-eyebrow mb-1">Jobs</div>
           <h1 className="text-2xl font-semibold text-bone-50 tracking-tight">
-            {tag
-              ? `Tagged: ${tag}`
+            {tagIdParam
+              ? `Tagged: ${tagIdParam}`
               : status
                 ? status.charAt(0).toUpperCase() + status.slice(1)
                 : "All jobs"}
@@ -101,18 +105,55 @@ export default async function JobsPage({
           </p>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
-          {availableTags.length > 0 && (
-            <TagFilterDropdown
-              currentTag={tag}
-              currentStatus={status}
-              availableTags={availableTags}
-            />
+          {allTags.length > 0 && (
+            <details className="relative">
+              <summary className="btn-secondary text-xs h-9 cursor-pointer list-none">
+                Tag filter
+                {tagIdParam && (
+                  <span className="ml-1 px-1.5 py-0.5 rounded bg-field-500/20 text-field-400 text-2xs">
+                    {tagIdParam}
+                  </span>
+                )}
+              </summary>
+              <div className="absolute z-20 right-0 top-full mt-1 min-w-[200px] max-h-72 overflow-y-auto rounded-md border border-line-strong bg-ink-2 shadow-lg py-1">
+                <Link
+                  href={status ? `/app/jobs?status=${status}` : "/app/jobs"}
+                  className="block px-3 py-1.5 text-xs text-bone-400 hover:bg-ink-3"
+                >
+                  All tags
+                </Link>
+                {allTags.map((t) => (
+                  <Link
+                    key={t.id}
+                    href={`/app/jobs?${status ? `status=${status}&` : ""}tag=${encodeURIComponent(t.name)}`}
+                    className="flex items-center gap-2 px-3 py-1.5 text-xs hover:bg-ink-3"
+                  >
+                    <span
+                      className="inline-block w-2.5 h-2.5 rounded-full flex-shrink-0"
+                      style={{ backgroundColor: t.color_hex }}
+                    />
+                    <span className="text-bone-50">{t.name}</span>
+                    <span className="ml-auto text-2xs text-bone-500 font-mono">
+                      {t.use_count}
+                    </span>
+                  </Link>
+                ))}
+              </div>
+            </details>
           )}
-          {(status || tag) && (
+          {(status || tagIdParam) && (
             <Link href="/app/jobs" className="btn-ghost text-xs h-9">
               Clear filter
             </Link>
           )}
+          <a
+            href="/api/export/jobs"
+            className="btn-ghost text-xs h-9"
+            title="Download CSV"
+          >
+            <Download size={12} />
+            Export
+          </a>
           <AddJobButton />
         </div>
       </div>
@@ -133,7 +174,11 @@ export default async function JobsPage({
           {/* Mobile: stacked cards */}
           <div className="panel divide-y divide-line-subtle md:hidden">
             {rows.map((j) => (
-              <MobileJobCard key={j.id} job={j} />
+              <MobileJobCard
+                key={j.id}
+                job={j}
+                tags={tagsByJob.get(j.id) ?? []}
+              />
             ))}
           </div>
 
@@ -146,41 +191,43 @@ export default async function JobsPage({
                     <th>Customer</th>
                     <th>Phone</th>
                     <th>Service</th>
-                    <th>Address</th>
+                    <th>Tags</th>
                     <th>Start</th>
                     <th>Status</th>
                     <th className="text-right">Created</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {rows.map((j) => (
-                    <ClickableTableRow key={j.id} href={`/app/jobs/${j.id}`}>
-                      <td className="text-bone-100 font-medium">
-                        <div className="flex flex-col gap-0.5">
-                          <span>{j.name || "—"}</span>
-                          {j.tags && j.tags.length > 0 && (
-                            <TagChips tags={j.tags} maxVisible={3} />
+                  {rows.map((j) => {
+                    const jobTags = tagsByJob.get(j.id) ?? [];
+                    return (
+                      <ClickableTableRow key={j.id} href={`/app/jobs/${j.id}`}>
+                        <td className="text-bone-100 font-medium">
+                          {j.name || "—"}
+                        </td>
+                        <td className="num text-xs text-bone-300">
+                          {fmtPhone(j.phone)}
+                        </td>
+                        <td className="text-bone-300">{j.service || "—"}</td>
+                        <td className="max-w-[200px]">
+                          {jobTags.length > 0 ? (
+                            <TagChipList tags={jobTags} maxVisible={3} size="sm" />
+                          ) : (
+                            <span className="text-xs text-bone-500">—</span>
                           )}
-                        </div>
-                      </td>
-                      <td className="num text-xs text-bone-300">
-                        {fmtPhone(j.phone)}
-                      </td>
-                      <td className="text-bone-300">{j.service || "—"}</td>
-                      <td className="text-bone-300 max-w-[200px] truncate">
-                        {j.address || "—"}
-                      </td>
-                      <td className="num text-xs text-bone-300">
-                        {fmtDate(j.start_datetime)}
-                      </td>
-                      <td>
-                        <StatusChip status={j.status} />
-                      </td>
-                      <td className="num text-xs text-bone-400 text-right">
-                        {fmtDate(j.created_at)}
-                      </td>
-                    </ClickableTableRow>
-                  ))}
+                        </td>
+                        <td className="num text-xs text-bone-300">
+                          {fmtDate(j.start_datetime)}
+                        </td>
+                        <td>
+                          <StatusChip status={j.status} />
+                        </td>
+                        <td className="num text-xs text-bone-400 text-right">
+                          {fmtDate(j.created_at)}
+                        </td>
+                      </ClickableTableRow>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>

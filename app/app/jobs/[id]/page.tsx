@@ -14,13 +14,14 @@ import {
   Activity,
 } from "lucide-react";
 import { TextAndCopyButtons } from "@/components/ui/text-copy-buttons";
-import { StatusChip } from "@/components/ui/status-chip";
-import { TagChips } from "@/components/tags/tag-chips";
+import { TagChipList } from "@/components/tags/tag-chip";
 import { AssignmentChip } from "@/components/assignment/assignment-select";
 import { ActivityTimeline } from "@/components/activity/activity-timeline";
+import { InlineStatusEdit } from "@/components/ui/inline-status-edit";
 import { createClient } from "@/lib/supabase/server";
 import { getTeamMembers } from "@/lib/team/members";
 import { getActivityTimeline } from "@/lib/timeline/fetch";
+import { getJobTags } from "@/lib/tags/server";
 
 function fmtDate(d: string | null): string {
   if (!d) return "—";
@@ -67,11 +68,10 @@ export default async function JobDetailPage({
 
   if (!job) notFound();
 
-  // Parallel fetch: team members (for assignment chip and timeline actor lookup)
-  // and the activity timeline events.
-  const [teamMembers, events] = await Promise.all([
+  const [teamMembers, events, jobTags] = await Promise.all([
     getTeamMembers(job.client_id),
     getActivityTimeline("job", Number(job.id)),
+    getJobTags(Number(job.id)),
   ]);
 
   const assignedMember = job.assigned_user_id
@@ -88,7 +88,6 @@ export default async function JobDetailPage({
         Back to jobs
       </Link>
 
-      {/* Title row */}
       <div className="flex items-start justify-between gap-3 mb-2 flex-wrap">
         <div className="min-w-0">
           <div className="flex items-center gap-2 mb-1">
@@ -117,9 +116,9 @@ export default async function JobDetailPage({
         </Link>
       </div>
 
-      {/* Status + assignment + meta */}
-      <div className="flex flex-wrap items-center gap-2 mb-3">
-        <StatusChip status={job.status} />
+      {/* Inline-editable status + assignment + meta */}
+      <div className="flex flex-wrap items-center gap-3 mb-3">
+        <InlineStatusEdit jobId={job.id} currentStatus={job.status ?? "lead"} />
         <AssignmentChip member={assignedMember} />
         {job.service && (
           <span className="text-2xs text-bone-400">
@@ -129,10 +128,10 @@ export default async function JobDetailPage({
         )}
       </div>
 
-      {/* Tags */}
-      {job.tags && job.tags.length > 0 && (
+      {/* Tag chips */}
+      {jobTags.length > 0 && (
         <div className="mb-5">
-          <TagChips tags={job.tags} maxVisible={10} />
+          <TagChipList tags={jobTags} maxVisible={10} />
         </div>
       )}
 
@@ -171,7 +170,6 @@ export default async function JobDetailPage({
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-5 gap-5">
-        {/* Main info card */}
         <section className="lg:col-span-3 space-y-3">
           <div className="panel">
             <div className="px-4 h-11 flex items-center border-b border-line">
@@ -234,9 +232,6 @@ export default async function JobDetailPage({
         </section>
 
         <aside className="lg:col-span-2 space-y-3">
-          {/* Activity timeline — replaces the old "Linked calls" panel.
-              Shows calls + SMS for the linked contact + status changes from
-              job_status_log, all merged in chronological order. */}
           <div className="panel">
             <div className="px-4 h-11 flex items-center justify-between border-b border-line">
               <div className="flex items-center gap-2">
@@ -256,9 +251,6 @@ export default async function JobDetailPage({
               <Mini label="Created" value={fmtDate(job.created_at)} />
               <Mini label="Updated" value={fmtDate(job.updated_at)} />
               {job.source && <Mini label="Source" value={job.source} />}
-              {job.sms_consent !== null && job.sms_consent !== undefined && (
-                <Mini label="SMS consent" value={String(job.sms_consent)} />
-              )}
             </dl>
           </div>
         </aside>

@@ -1,7 +1,8 @@
 import Link from "next/link";
 import { Phone, MapPin, CalendarDays, Briefcase } from "lucide-react";
 import { StatusChip } from "@/components/ui/status-chip";
-import { TagChips } from "@/components/tags/tag-chips";
+import { TagChipList } from "@/components/tags/tag-chip";
+import type { Tag } from "@/lib/tags/types";
 
 type JobCardData = {
   id: number;
@@ -13,7 +14,6 @@ type JobCardData = {
   quoted_price: number | null;
   start_datetime: string | null;
   created_at: string;
-  tags: string[] | null;
 };
 
 function fmtPhone(p: string | null): string {
@@ -31,19 +31,18 @@ function fmtDate(iso: string | null): string {
   });
 }
 
-/**
- * Mobile-only card representation of a job row. Renders below `md:` where
- * the wide table would otherwise force horizontal scroll. Designed for
- * fast scanning: name + status visible at glance, phone + key info
- * underneath, dates pushed to a low-emphasis footer row.
- */
-export function MobileJobCard({ job }: { job: JobCardData }) {
+export function MobileJobCard({
+  job,
+  tags = [],
+}: {
+  job: JobCardData;
+  tags?: Tag[];
+}) {
   return (
     <Link
       href={`/app/jobs/${job.id}`}
       className="block px-4 py-3 hover:bg-ink-2 active:bg-ink-2 transition-colors"
     >
-      {/* Row 1: Name | Status */}
       <div className="flex items-center justify-between gap-3 mb-1.5">
         <div className="text-sm font-medium text-bone-100 truncate">
           {job.name || "—"}
@@ -51,7 +50,6 @@ export function MobileJobCard({ job }: { job: JobCardData }) {
         <StatusChip status={job.status} className="shrink-0" />
       </div>
 
-      {/* Row 2: Phone */}
       {job.phone && (
         <div className="flex items-center gap-1.5 text-xs text-bone-300 font-mono mb-1">
           <Phone size={11} className="text-bone-400 shrink-0" />
@@ -59,7 +57,6 @@ export function MobileJobCard({ job }: { job: JobCardData }) {
         </div>
       )}
 
-      {/* Row 3: Service + address (whichever exist) */}
       {(job.service || job.address) && (
         <div className="flex items-start gap-1.5 text-xs text-bone-300 mb-1">
           {job.service && (
@@ -73,22 +70,19 @@ export function MobileJobCard({ job }: { job: JobCardData }) {
           )}
           {job.address && (
             <span className="inline-flex items-start gap-1 min-w-0">
-              <MapPin
-                size={11}
-                className="text-bone-400 shrink-0 mt-0.5"
-              />
+              <MapPin size={11} className="text-bone-400 shrink-0 mt-0.5" />
               <span className="truncate">{job.address}</span>
             </span>
           )}
         </div>
       )}
 
-      {/* Tags */}
-      {job.tags && job.tags.length > 0 && (
-        <TagChips tags={job.tags} maxVisible={4} className="mb-1" />
+      {tags.length > 0 && (
+        <div className="mt-2 mb-1">
+          <TagChipList tags={tags} maxVisible={4} size="sm" />
+        </div>
       )}
 
-      {/* Row 4: Footer — start datetime + created */}
       <div className="flex items-center gap-3 text-2xs text-bone-400 mt-1.5">
         {job.start_datetime && (
           <span className="inline-flex items-center gap-1">

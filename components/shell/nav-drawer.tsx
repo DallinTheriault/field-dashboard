@@ -23,35 +23,34 @@ import { NAV_DRAWER_OPEN_EVENT } from "./nav-drawer-trigger";
 
 const APP_VERSION = `v${packageJson.version}`;
 
-const NAV = [
-  { href: "/app", label: "Overview", icon: LayoutDashboard },
-  { href: "/app/calls", label: "Calls", icon: Phone },
-  { href: "/app/jobs", label: "Jobs", icon: Briefcase },
-  { href: "/app/contacts", label: "Contacts", icon: Users },
-  { href: "/app/messages", label: "Messages", icon: MessageSquare },
-  { href: "/app/calendar", label: "Calendar", icon: CalendarDays },
-  { href: "/app/billing", label: "Billing", icon: CreditCard },
-  { href: "/app/settings", label: "Settings", icon: Settings },
+import type { FeatureFlags } from "./sidebar";
+
+const ALL_NAV = [
+  { href: "/app", label: "Overview", icon: LayoutDashboard, flag: null as keyof FeatureFlags | null },
+  { href: "/app/calls", label: "Calls", icon: Phone, flag: "voice" as const },
+  { href: "/app/jobs", label: "Jobs", icon: Briefcase, flag: null },
+  { href: "/app/contacts", label: "Contacts", icon: Users, flag: null },
+  { href: "/app/messages", label: "Messages", icon: MessageSquare, flag: "sms" as const },
+  { href: "/app/calendar", label: "Calendar", icon: CalendarDays, flag: "calendar" as const },
+  { href: "/app/billing", label: "Billing", icon: CreditCard, flag: "billing" as const },
+  { href: "/app/settings", label: "Settings", icon: Settings, flag: null },
 ] as const;
 
 /**
  * Mobile-only side drawer rendered at the layout root (NOT inside topbar).
- *
- * Why root-mounted: the topbar has `backdrop-blur-md` which creates a CSS
- * containing block. Any `position: fixed` element nested inside it
- * resolves relative to the topbar's bounds, not the viewport — that broke
- * the v0.5.3 drawer.
- *
- * Listens for the `field:nav-drawer-open` custom event dispatched by
- * <NavDrawerTrigger />.
  */
 export function NavDrawer({
   userEmail,
   isAdmin = false,
+  featureFlags,
 }: {
   userEmail: string;
   isAdmin?: boolean;
+  featureFlags: FeatureFlags;
 }) {
+  const NAV = ALL_NAV.filter(
+    (item) => item.flag === null || featureFlags[item.flag],
+  );
   const [open, setOpen] = useState(false);
   const pathname = usePathname();
 

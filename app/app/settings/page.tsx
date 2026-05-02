@@ -18,6 +18,8 @@ import { BusinessProfileForm } from "./profile-form";
 import { ColorPicker } from "./color-picker";
 import { ReplyTemplatesManager } from "./reply-templates-manager";
 import { TeamManager } from "./team-manager";
+import { MyProfileForm } from "./my-profile-form";
+import { NotificationPrefsForm } from "./notification-prefs-form";
 import { getCurrentUserRole } from "@/lib/permissions/current-role";
 import {
   canViewSettings,
@@ -45,11 +47,18 @@ export default async function SettingsPage() {
   const { data: clients } = await supabase
     .from("Clients")
     .select(
-      "id, business_name, business_short_name, owner_first_name, owner_email, owner_phone, twilio_number, timezone, services, brand_logo_url, brand_primary_color, vapi_voice_id, calendar_id, business_website, business_hours, service_area, pricing_block, scope_values, service_constraints, escalation_phone",
+      "id, business_name, business_short_name, owner_first_name, owner_email, owner_phone, twilio_number, timezone, services, brand_logo_url, brand_primary_color, vapi_voice_id, calendar_id, business_website, business_hours, service_area, pricing_block, scope_values, service_constraints, escalation_phone, notify_email, notify_dashboard_ping, notify_sms",
     )
     .limit(1);
 
   const client = clients?.[0];
+
+  // Fetch current user for "My profile" section
+  const { data: { user: currentUser } } = await supabase.auth.getUser();
+  const currentUserDisplayName =
+    (currentUser?.user_metadata as { display_name?: string } | null | undefined)
+      ?.display_name ?? "";
+  const currentUserEmail = currentUser?.email ?? "";
 
   const { data: calCx } = client
     ? await supabase
@@ -136,6 +145,24 @@ export default async function SettingsPage() {
       </p>
 
       <div className="space-y-3 max-w-3xl">
+        {/* My profile — display name editor for the signed-in user */}
+        <MyProfileForm
+          initialDisplayName={currentUserDisplayName}
+          email={currentUserEmail}
+        />
+
+        {/* Notifications — owner-level prefs for new lead alerts */}
+        {client && (
+          <NotificationPrefsForm
+            clientId={client.id}
+            initial={{
+              notify_email: client.notify_email ?? true,
+              notify_dashboard_ping: client.notify_dashboard_ping ?? true,
+              notify_sms: client.notify_sms ?? false,
+            }}
+          />
+        )}
+
         {/* Team — top of page since it's account-level, not business-level */}
         {client && teamMembers.length > 0 && (
           <Section

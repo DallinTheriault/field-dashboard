@@ -19,27 +19,39 @@ import packageJson from "../../package.json";
 
 const APP_VERSION = `v${packageJson.version}`;
 
-const NAV = [
-  { href: "/app", label: "Overview", icon: LayoutDashboard, soon: false },
-  { href: "/app/calls", label: "Calls", icon: Phone, soon: false },
-  { href: "/app/jobs", label: "Jobs", icon: Briefcase, soon: false },
-  { href: "/app/contacts", label: "Contacts", icon: Users, soon: false },
-  { href: "/app/messages", label: "Messages", icon: MessageSquare, soon: false },
-  { href: "/app/calendar", label: "Calendar", icon: CalendarDays, soon: false },
-  { href: "/app/billing", label: "Billing", icon: CreditCard, soon: false },
-  { href: "/app/settings", label: "Settings", icon: Settings, soon: false },
+export type FeatureFlags = {
+  voice: boolean;
+  sms: boolean;
+  calendar: boolean;
+  billing: boolean;
+};
+
+const ALL_NAV = [
+  { href: "/app", label: "Overview", icon: LayoutDashboard, flag: null as keyof FeatureFlags | null, soon: false },
+  { href: "/app/calls", label: "Calls", icon: Phone, flag: "voice" as const, soon: false },
+  { href: "/app/jobs", label: "Jobs", icon: Briefcase, flag: null, soon: false },
+  { href: "/app/contacts", label: "Contacts", icon: Users, flag: null, soon: false },
+  { href: "/app/messages", label: "Messages", icon: MessageSquare, flag: "sms" as const, soon: false },
+  { href: "/app/calendar", label: "Calendar", icon: CalendarDays, flag: "calendar" as const, soon: false },
+  { href: "/app/billing", label: "Billing", icon: CreditCard, flag: "billing" as const, soon: false },
+  { href: "/app/settings", label: "Settings", icon: Settings, flag: null, soon: false },
 ] as const;
 
 export function Sidebar({
   businessName,
   planStatus,
   isAdmin = false,
+  featureFlags,
 }: {
   businessName: string;
   planStatus: "active" | "past_due" | "paused" | "cancelled" | "trialing" | "incomplete";
   isAdmin?: boolean;
+  featureFlags: FeatureFlags;
 }) {
   const pathname = usePathname();
+  const NAV = ALL_NAV.filter(
+    (item) => item.flag === null || featureFlags[item.flag],
+  );
   return (
     <aside
       className={cn(

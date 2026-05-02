@@ -5,6 +5,8 @@ import { cn } from "@/lib/cn";
 import { ClickableTableRow } from "@/components/ui/clickable-table-row";
 import { FilterDropdown } from "@/components/ui/filter-dropdown";
 import { MobileCallCard } from "@/components/list-cards/mobile-call-card";
+import { getTenantFeatureFlags } from "@/lib/features/flags";
+import { FeatureDisabledPanel } from "@/components/ui/feature-disabled-panel";
 
 function fmtDate(d: string | null): string {
   if (!d) return "—";
@@ -65,6 +67,16 @@ export default async function CallsPage({
 }: {
   searchParams: Promise<{ q?: string; outcomes?: string; tab?: string }>;
 }) {
+  const flags = await getTenantFeatureFlags();
+  if (!flags.voice) {
+    return (
+      <FeatureDisabledPanel
+        featureName="Calls"
+        description="Inbound voice receptionist is not currently enabled for your account."
+      />
+    );
+  }
+
   const supabase = await createClient();
   const params = await searchParams;
   const q = params.q;

@@ -1,5 +1,7 @@
 import Link from "next/link";
 import { Phone, Mail, MapPin } from "lucide-react";
+import type { Tag } from "@/lib/tags/types";
+import { TagChipList } from "@/components/tags/tag-chip";
 
 type ContactCardData = {
   id: number;
@@ -29,7 +31,13 @@ function fmtDate(iso: string | null): string {
   return d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
 }
 
-export function MobileContactCard({ contact }: { contact: ContactCardData }) {
+export function MobileContactCard({
+  contact,
+  tags = [],
+}: {
+  contact: ContactCardData;
+  tags?: Tag[];
+}) {
   return (
     <Link
       href={`/app/contacts/${contact.id}`}
@@ -62,6 +70,12 @@ export function MobileContactCard({ contact }: { contact: ContactCardData }) {
         <div className="flex items-start gap-1.5 text-xs text-bone-300">
           <MapPin size={11} className="text-bone-400 shrink-0 mt-0.5" />
           <span className="truncate">{contact.address}</span>
+        </div>
+      )}
+
+      {tags.length > 0 && (
+        <div className="mt-2">
+          <TagChipList tags={tags} maxVisible={4} size="sm" />
         </div>
       )}
     </Link>

@@ -1,31 +1,62 @@
-# Field Dashboard v0.6.0
+# Field Dashboard v0.6.1
 
-Next.js 15 + Supabase + Tailwind dashboard for **Field** — productized AI voice
-receptionist SaaS for service businesses.
+Next.js 15 + Supabase + Tailwind dashboard for **Field AI** — productized AI
+voice receptionist SaaS for service businesses.
 
-Brand kit lives separately. Domain: `getfield.co`. Dashboard subdomain: `app.getfield.co`.
+Brand kit lives separately. Domain: `getfield.co`. Dashboard: `app.getfield.co`.
 
-## What's new in v0.6.0
+## What's new in v0.6.1
 
-- **Lead assignment** — every job and contact can be assigned to a team member.
-  Dropdown on edit forms, chip on detail pages. Backed by `assigned_user_id`.
-- **Activity timeline** — unified read-time view of calls + SMS + status changes
-  on job and contact detail pages. Replaces the old "linked calls" panel on
-  jobs and adds an "Activity" tab as the default on contacts.
-- **Tags on contacts** — same `TagInput` UX as jobs, GIN-indexed for filtering.
-- **Resend scaffolding** — `lib/email/send.ts` wraps the Resend SDK. Dev-mode
-  stub if `RESEND_API_KEY` is unset (logs instead of sending). DNS setup is in
-  `docs/v060-setup.md`.
-- **Modular VAPI prompt template** — `prompt_templates` table + `render_system_prompt`
-  RPC. Already round-trips with Sharpline. Adding a new tenant = filling 14 tokens.
+**Tag system rebuild.** Replaced the old `text[]` arrays with a first-class
+`tags` table + `job_tags` / `contact_tags` join tables. Tags now have:
 
-Magic-link invitations deferred to v0.6.1 (needs Resend SMTP fully wired).
+- A 16-color curated palette (rotating assignment, no two new tags get the same
+  color until the palette wraps)
+- Search-and-suggest picker UI with most-used + most-recent suggestions
+- Live filter as you type
+- Create-new-tag inline from the picker
+- Shared between jobs and contacts (one `vip` tag can apply to both)
+- Larger, color-coded chips on detail pages and list rows
+- Bulk-fetched on list pages so adding tags doesn't hurt page perf
+
+**Inline status edit.** Click the status chip on a job detail page to change
+status without going to the edit form. Auto-saves, refreshes the activity
+timeline.
+
+**Dashboard background fix.** Removed the green tint that was bleeding through
+in v0.6.0. Now neutral near-black (`#0A0A0A` page, `#141414` panels).
+
+**Add Contact button.** Manually create contacts from the contacts list. New
+form with TagPicker + AssignmentSelect.
+
+**Display name editor.** "My profile" section in Settings to set
+`raw_user_meta_data.display_name`. Replaces the email-prefix fallback in
+assignment dropdowns and activity timeline events. Also improved the fallback
+itself: `dallin.theriault` → `dallin t.` instead of `dallin.theriault`.
+
+**Feature flags.** Admin can toggle voice / SMS / calendar / billing per
+tenant from `/admin/clients/[id]`. Disabled features hide from the sidebar and
+mobile nav, and pages render a "Disabled by admin" panel.
+
+**Admin recent-activity debug page.** When a tenant calls support saying "the
+call from 10 min ago didn't save," look up `/admin/clients/[id]/recent-activity`
+to see last 50 calls, SMS, jobs, and intakes.
+
+**CSV export.** Download contacts or jobs as CSV from the list page header.
+RLS enforces tenant scoping on the endpoint.
+
+**Notification preferences UI.** Owners can toggle email / dashboard / SMS
+notifications from Settings. Backend columns already existed.
+
+**Sentry integration.** `@sentry/nextjs` wired up. Will silently no-op if
+`NEXT_PUBLIC_SENTRY_DSN` is unset, so dev unaffected. Set the DSN in Netlify
+env to start receiving production error reports.
 
 ## Setup
 
 ```bash
-unzip field-dashboard-v060.zip
-cd field-dashboard-v060
+unzip field-dashboard-v061.zip
+cd field-dashboard-v061
 npm install
 cp .env.local.example .env.local
 # Edit .env.local — fill in all required values
@@ -33,7 +64,7 @@ npm run dev
 # → http://localhost:3000
 ```
 
-## Required environment variables
+## Environment variables (v0.6.1 adds Sentry)
 
 ```bash
 # Supabase
@@ -42,7 +73,7 @@ NEXT_PUBLIC_SUPABASE_ANON_KEY=<anon JWT>
 SUPABASE_SERVICE_ROLE_KEY=<service role key — for /admin/*>
 ADMIN_EMAILS=dallintheriault@live.com
 
-# App URL (used for redirects, email links)
+# App URL
 NEXT_PUBLIC_APP_URL=https://app.getfield.co
 
 # Twilio (SMS)
@@ -53,88 +84,82 @@ TWILIO_AUTH_TOKEN=...
 STRIPE_SECRET_KEY=sk_...
 STRIPE_WEBHOOK_SECRET=whsec_...
 
-# Resend (email — v0.6.0 NEW)
+# Resend (email)
 RESEND_API_KEY=re_...
-EMAIL_FROM_NOREPLY="Field <noreply@getfield.co>"
-EMAIL_FROM_SUPPORT="Field Support <support@getfield.co>"
+EMAIL_FROM_NOREPLY="Field AI <noreply@getfield.co>"
+EMAIL_FROM_SUPPORT="Field AI Support <support@getfield.co>"
 
-# Cron (scheduled SMS tick)
+# Cron
 CRON_SECRET=<random string>
 
-# n8n (intake webhook)
+# n8n
 N8N_ONBOARD_WEBHOOK=https://dtheriault.app.n8n.cloud/webhook/onboard-client
+
+# v0.6.1 NEW — Sentry (optional, for error monitoring)
+NEXT_PUBLIC_SENTRY_DSN=https://xxx@o123.ingest.sentry.io/456
+SENTRY_DSN=https://xxx@o123.ingest.sentry.io/456
 ```
-
-See `docs/v060-setup.md` for end-to-end DNS/Netlify/Resend/Supabase setup
-instructions for the new `getfield.co` domain.
-
-## Project structure
-
-```
-app/                 — Next.js app router pages + API routes
-  app/               — authenticated dashboard (`/app/*` routes)
-    jobs/[id]        — job detail + edit
-    contacts/[id]    — contact detail + edit
-    calls/[id]       — call detail
-    messages         — SMS conversations
-  admin/             — cross-tenant admin (gated by ADMIN_EMAILS)
-  api/               — server routes (twilio, stripe, branding, etc.)
-  onboard/           — public onboarding form
-  signup/            — self-serve signup
-components/
-  activity/          — activity-timeline
-  assignment/        — assignment-select, assignment-chip
-  tags/              — tag-input, tag-chips, tag-filter-dropdown
-  shell/             — app shell (sidebar, mobile nav)
-  sms/               — SMS thread/composer
-  ui/                — generic primitives
-lib/
-  supabase/          — server, client, admin, middleware
-  permissions/       — role-based capability checks
-  team/              — types (client-safe), members (server fetch)
-  timeline/          — activity timeline fetcher
-  email/             — Resend wrapper
-  twilio/            — Twilio client + helpers
-  sms/               — phone normalization, consent keywords
-docs/                — operator runbooks and setup guides
-supabase/            — migrations
-```
-
-## Key invariants
-
-- **All client-side imports must avoid `next/headers`.** Server-only modules
-  (anything importing `lib/supabase/server`) cannot be imported from a `"use client"`
-  component. Use `lib/team/types` for client, `lib/team/members` for server.
-- **Tenant scoping is enforced by RLS, not by app code.** All policies use
-  `IN (SELECT public.current_user_client_ids())`.
-- **`Sharpline = id 1`. Never use as test data.** Use `is_test=true` tenants for
-  dev work.
-- **Modular VAPI prompt** — when adding a new tenant, fill `Clients` row tokens
-  then call `save_rendered_system_prompt(client_id)`. The RPC reads from
-  `prompt_templates` and substitutes.
 
 ## Deploy
 
 ```bash
-# After Netlify credits return:
 cd ~/Documents/projects/field-dashboard
-unzip -o ~/Downloads/field-dashboard-v060.zip -d /tmp/fd-new
+unzip -o ~/Downloads/field-dashboard-v061.zip -d /tmp/fd-new
 rsync -av --delete --exclude='.git' --exclude='.gitignore' \
-  /tmp/fd-new/field-dashboard-v060/ ./
+  /tmp/fd-new/field-dashboard-v061/ ./
 npm install && npm run build
-git add -A && git commit -m "v0.6.0: lead assignment + activity timeline + Resend"
+git add -A
+git commit -m "v0.6.1: tag rebuild, inline status, feature flags, Sentry, CSV export"
 git push origin main
-# Netlify auto-deploys
+```
+
+## Migrations (already applied to live Supabase)
+
+- `v061_tags_table_with_colors.sql` — tags + job_tags + contact_tags + RLS + triggers
+- `v061_feature_flags.sql` — feature_sms/voice/calendar/billing_enabled columns
+
+Both committed to `supabase/migrations/` for repo history but already live in
+production. Re-running them is safe (`IF NOT EXISTS` guards).
+
+## Project structure (additions in v0.6.1)
+
+```
+lib/
+  features/flags.ts              — server helper for feature-flag pages
+  tags/
+    types.ts                     — Tag type, client-safe
+    server.ts                    — list, getJobTags, getContactTags, bulk fetch
+    colors.ts                    — 16-color palette + nextTagColor helpers
+components/
+  tags/
+    tag-chip.tsx                 — TagChip + TagChipList (replaces tag-chips.tsx)
+    tag-picker.tsx               — search-and-suggest picker (replaces tag-input.tsx)
+  ui/
+    inline-status-edit.tsx       — click-to-edit status chip
+    feature-disabled-panel.tsx   — "Disabled by admin" panel
+app/
+  app/contacts/new/              — Add Contact page + form
+  app/settings/
+    my-profile-form.tsx          — display name editor
+    notification-prefs-form.tsx  — owner notification toggles
+  admin/clients/[id]/
+    feature-flags-form.tsx       — admin feature toggles
+    recent-activity/page.tsx     — debug page (calls/SMS/jobs/intakes)
+  api/export/
+    contacts/route.ts            — CSV export endpoint
+    jobs/route.ts                — CSV export endpoint
+sentry.client.config.ts          — Sentry browser init
+sentry.server.config.ts          — Sentry server init
+sentry.edge.config.ts            — Sentry edge init
+instrumentation.ts               — Next.js instrumentation hook for Sentry
 ```
 
 ## Version history
 
-- **v0.6.0** (this) — lead assignment, activity timeline, contact tags, Resend scaffolding
-- **v0.5.12** — tags on jobs, test-tenant flag, auth callback hardening, lead-assignment foundations (schema only)
-- **v0.5.11** — three-tier roles (owner/manager/member), `team_audit_log`, signup page, intake hardening
-- **v0.5.10** — admin pending-intake queue
-- **v0.5.0–9** — SMS conversations, scheduling, templates
+- **v0.6.1** (this) — tag system rebuild, inline status edit, feature flags, Sentry, CSV export, dashboard bg fix, Add Contact, display names, notification prefs UI
+- **v0.6.0** — lead assignment, activity timeline, contact tags, Resend scaffolding
+- **v0.5.12** — tags on jobs, test-tenant flag, lead-assignment foundations
+- **v0.5.11** — three-tier roles, team_audit_log, signup, intake hardening
+- **v0.5.0–10** — SMS conversations, scheduling, templates, admin queue
 - **v0.4** — IRIS → Field rebrand
 - **v0.1–3** — initial dashboard build
-
-See git history for details on individual versions.

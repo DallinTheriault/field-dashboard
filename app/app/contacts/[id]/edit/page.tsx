@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { ArrowLeft } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { getTeamMembers } from "@/lib/team/members";
+import { getContactTags, listTagsForClient } from "@/lib/tags/server";
 import { ContactEditForm } from "./form";
 
 export default async function ContactEditPage({
@@ -21,24 +22,11 @@ export default async function ContactEditPage({
 
   if (!contact) notFound();
 
-  const [{ data: otherContacts }, teamMembers] = await Promise.all([
-    supabase
-      .from("contacts")
-      .select("tags")
-      .eq("client_id", contact.client_id)
-      .neq("id", contact.id)
-      .not("tags", "is", null)
-      .limit(200),
+  const [allTags, contactTags, teamMembers] = await Promise.all([
+    listTagsForClient(contact.client_id),
+    getContactTags(Number(contact.id)),
     getTeamMembers(contact.client_id),
   ]);
-
-  const tagSet = new Set<string>();
-  for (const c of otherContacts ?? []) {
-    for (const t of (c.tags as string[] | null) ?? []) {
-      if (t) tagSet.add(t);
-    }
-  }
-  const tagSuggestions = Array.from(tagSet).sort();
 
   return (
     <div className="max-w-2xl">
@@ -60,14 +48,15 @@ export default async function ContactEditPage({
       <ContactEditForm
         contact={{
           id: contact.id,
+          client_id: contact.client_id,
           name: contact.name ?? "",
           email: contact.email ?? "",
           address: contact.address ?? "",
           notes: contact.notes ?? "",
-          tags: contact.tags ?? [],
           assigned_user_id: contact.assigned_user_id ?? null,
         }}
-        tagSuggestions={tagSuggestions}
+        initialTags={contactTags}
+        allTags={allTags}
         teamMembers={teamMembers}
       />
     </div>

@@ -12,17 +12,14 @@
 
 :root,
 [data-theme="dark"] {
-  /* Surfaces — neutral dark grey with a whisper of cool/teal undertone.
-   * Previous palette was heavily green-shifted (ink-0 had R=14, G=22 — a
-   * ~60% saturation gap). Now we keep R/G/B within ~3 units of each other,
-   * which reads as neutral grey with the merest cool lean. The brand teal
-   * is preserved via field-500, which still appears on links, accents,
-   * focus rings, and the logo. */
-  --ink-0: 26 30 29;       /* #1A1E1D — page canvas */
-  --ink-1: 33 37 36;       /* #212524 — panel */
-  --ink-2: 41 45 44;       /* #292D2C — raised */
-  --ink-3: 51 55 54;       /* #333736 — input/row hover */
-  --ink-4: 65 70 68;       /* #414644 — heavy borders */
+  /* Surfaces — neutral near-black, the premium SaaS standard.
+   * Apple, Stripe, Vercel, Linear all use values in this exact range.
+   * R/G/B all equal — zero color cast. Brand teal still pops via field-500. */
+  --ink-0: 10 10 10;       /* #0A0A0A — page canvas */
+  --ink-1: 20 20 20;       /* #141414 — panel */
+  --ink-2: 28 28 28;       /* #1C1C1C — raised */
+  --ink-3: 38 38 38;       /* #262626 — input/row hover */
+  --ink-4: 56 56 56;       /* #383838 — heavy borders */
 
   /* Text */
   --bone-50: 232 235 233;  /* #E8EBE9 */
@@ -43,10 +40,10 @@
   --field-800: 32 75 69;
   --field-900: 22 52 47;
 
-  /* Lime offset — only the logo's right pole */
-  --lime-300: 190 242 100;
-  --lime-400: 163 230 53;
-  --lime-500: 132 204 22;
+  /* Tuned green — brand pole color (replaces old lime) */
+  --lime-300: 122 213 142;   /* #7AD58E lighter */
+  --lime-400: 93 201 125;    /* #5DC97D ★ brand pole */
+  --lime-500: 74 174 102;    /* #4AAE66 deeper for hovers */
 
   /* Status — muted, distinct enough to read at a glance */
   --status-lead: 196 180 84;          /* #C4B454 mustard yellow */
@@ -57,19 +54,19 @@
   --status-cancelled: 110 118 114;    /* gray */
   --status-danger: 181 86 78;         /* #B5564E red */
 
-  /* Lines — match the new ink scale */
-  --line: 51 55 54;          /* #333736 — same as ink-3 */
-  --line-strong: 65 70 68;   /* #414644 — same as ink-4 */
-  --line-subtle: 38 42 41;   /* #262A29 — between ink-1 and ink-2 */
+  /* Lines — neutral grey scale */
+  --line: 38 38 38;          /* #262626 */
+  --line-strong: 56 56 56;   /* #383838 */
+  --line-subtle: 26 26 26;   /* #1A1A1A */
 
   /* Misc */
   --inset-line: 255 255 255; /* used at 0.06 opacity for inset hairline */
-  --scrollbar-thumb: 65 70 68;
-  --scrollbar-track: 26 30 29;
+  --scrollbar-thumb: 56 56 56;
+  --scrollbar-track: 10 10 10;
   --selection-bg: 74 157 142; /* field-500 at 30% in usage */
-  /* Wash — darker teal at lower opacity so it reads as depth, not tint */
-  --body-wash-1: 45 105 96;  /* field-700 */
-  --body-wash-2: 32 75 69;   /* field-800 */
+  /* Wash — neutral darks, no color cast */
+  --body-wash-1: 20 20 20;
+  --body-wash-2: 14 14 14;
 }
 
 [data-theme="light"] {

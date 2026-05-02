@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { ArrowLeft, Briefcase } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { getTeamMembers } from "@/lib/team/members";
+import { getJobTags, listTagsForClient } from "@/lib/tags/server";
 import { JobEditForm } from "./form";
 
 export default async function JobEditPage({
@@ -21,24 +22,11 @@ export default async function JobEditPage({
 
   if (!job) notFound();
 
-  const [{ data: otherJobs }, teamMembers] = await Promise.all([
-    supabase
-      .from("jobs")
-      .select("tags")
-      .eq("client_id", job.client_id)
-      .neq("id", job.id)
-      .not("tags", "is", null)
-      .limit(200),
+  const [allTags, jobTags, teamMembers] = await Promise.all([
+    listTagsForClient(job.client_id),
+    getJobTags(Number(job.id)),
     getTeamMembers(job.client_id),
   ]);
-
-  const tagSet = new Set<string>();
-  for (const j of otherJobs ?? []) {
-    for (const t of (j.tags as string[] | null) ?? []) {
-      if (t) tagSet.add(t);
-    }
-  }
-  const tagSuggestions = Array.from(tagSet).sort();
 
   return (
     <div>
@@ -66,6 +54,7 @@ export default async function JobEditPage({
       <JobEditForm
         job={{
           id: job.id,
+          client_id: job.client_id,
           name: job.name ?? "",
           phone: job.phone ?? "",
           email: job.email ?? "",
@@ -77,10 +66,10 @@ export default async function JobEditPage({
           end_datetime: job.end_datetime ?? null,
           status: job.status ?? "lead",
           notes: job.notes ?? "",
-          tags: job.tags ?? [],
           assigned_user_id: job.assigned_user_id ?? null,
         }}
-        tagSuggestions={tagSuggestions}
+        initialJobTags={jobTags}
+        allTags={allTags}
         teamMembers={teamMembers}
       />
     </div>

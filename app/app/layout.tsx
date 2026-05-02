@@ -20,7 +20,9 @@ export default async function AppLayout({
 
   const { data: clients } = await supabase
     .from("Clients")
-    .select("id, business_name, business_short_name, is_active, brand_logo_url, brand_primary_color")
+    .select(
+      "id, business_name, business_short_name, is_active, brand_logo_url, brand_primary_color, feature_sms_enabled, feature_voice_enabled, feature_calendar_enabled, feature_billing_enabled",
+    )
     .order("id")
     .limit(1);
 
@@ -89,6 +91,13 @@ export default async function AppLayout({
   // default when the tenant hasn't set a custom color.
   const tenantAccentRgb = hexToRgbTriplet(client.brand_primary_color);
 
+  const featureFlags = {
+    voice: client.feature_voice_enabled ?? true,
+    sms: client.feature_sms_enabled ?? true,
+    calendar: client.feature_calendar_enabled ?? false,
+    billing: client.feature_billing_enabled ?? true,
+  };
+
   return (
     <div
       className="flex min-h-screen w-full overflow-x-hidden"
@@ -102,6 +111,7 @@ export default async function AppLayout({
         businessName={client.business_name ?? "—"}
         planStatus={planStatus}
         isAdmin={isAdmin}
+        featureFlags={featureFlags}
       />
 
       <div className="flex-1 flex flex-col min-w-0 max-w-full">
@@ -117,12 +127,12 @@ export default async function AppLayout({
         </main>
       </div>
 
-      <MobileNav />
+      <MobileNav featureFlags={featureFlags} />
 
       {/* Mobile nav drawer — mounted as a layout-root sibling so it can use
           position:fixed without being trapped by the topbar's containing
           block (backdrop-blur on the topbar otherwise breaks fixed children). */}
-      <NavDrawer userEmail={user.email ?? ""} isAdmin={isAdmin} />
+      <NavDrawer userEmail={user.email ?? ""} isAdmin={isAdmin} featureFlags={featureFlags} />
 
       {/* Idle session timeout — logs out after 30 min of inactivity */}
       <IdleTimeout />

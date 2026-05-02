@@ -9,88 +9,76 @@ import { AssignmentSelect } from "@/components/assignment/assignment-select";
 import type { Tag } from "@/lib/tags/types";
 import type { TeamMember } from "@/lib/team/types";
 
-type ContactInput = {
-  id: string | number;
-  client_id: number;
-  name: string;
-  email: string;
-  address: string;
-  notes: string;
-  assigned_user_id: string | null;
-};
-
-export function ContactEditForm({
-  contact,
-  initialTags = [],
-  allTags = [],
-  teamMembers = [],
+export function NewContactForm({
+  clientId,
+  allTags,
+  teamMembers,
 }: {
-  contact: ContactInput;
-  initialTags?: Tag[];
-  allTags?: Tag[];
-  teamMembers?: TeamMember[];
+  clientId: number;
+  allTags: Tag[];
+  teamMembers: TeamMember[];
 }) {
   const router = useRouter();
-  const [name, setName] = useState(contact.name);
-  const [email, setEmail] = useState(contact.email);
-  const [address, setAddress] = useState(contact.address);
-  const [notes, setNotes] = useState(contact.notes);
-  const [tags, setTags] = useState<Tag[]>(initialTags);
-  const [assignedUserId, setAssignedUserId] = useState<string | null>(
-    contact.assigned_user_id ?? null,
-  );
+  const [name, setName] = useState("");
+  const [phone, setPhone] = useState("");
+  const [email, setEmail] = useState("");
+  const [address, setAddress] = useState("");
+  const [notes, setNotes] = useState("");
+  const [tags, setTags] = useState<Tag[]>([]);
+  const [assignedUserId, setAssignedUserId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setErr(null);
+    if (!name.trim() && !phone.trim()) {
+      setErr("Add a name or phone number at minimum.");
+      return;
+    }
     setSaving(true);
     const supabase = createClient();
 
-    // 1. Update contact basics
-    const { error: updateErr } = await supabase
+    // 1. Insert contact
+    const { data: contact, error: insertErr } = await supabase
       .from("contacts")
-      .update({
-        name: name || null,
-        email: email || null,
-        address: address || null,
-        notes: notes || null,
+      .insert({
+        client_id: clientId,
+        name: name.trim() || null,
+        phone: phone.trim() || null,
+        email: email.trim() || null,
+        address: address.trim() || null,
+        notes: notes.trim() || null,
         assigned_user_id: assignedUserId,
-        updated_at: new Date().toISOString(),
       })
-      .eq("id", contact.id);
-    if (updateErr) {
+      .select()
+      .single();
+
+    if (insertErr || !contact) {
       setSaving(false);
-      setErr(updateErr.message);
+      setErr(insertErr?.message || "Failed to create contact");
       return;
     }
 
-    // 2. Diff tags: detach removed, attach new
-    const initialIds = new Set(initialTags.map((t) => t.id));
-    const currentIds = new Set(tags.map((t) => t.id));
-    const toRemove = initialTags.filter((t) => !currentIds.has(t.id));
-    const toAdd = tags.filter((t) => !initialIds.has(t.id));
+    const newContactId = (contact as { id: number }).id;
 
-    if (toRemove.length > 0) {
-      await supabase
-        .from("contact_tags")
-        .delete()
-        .eq("contact_id", contact.id)
-        .in("tag_id", toRemove.map((t) => t.id));
-    }
-    if (toAdd.length > 0) {
-      await supabase.from("contact_tags").insert(
-        toAdd.map((t) => ({
-          contact_id: contact.id,
+    // 2. Attach tags via join table (if any)
+    if (tags.length > 0) {
+      const { error: tagErr } = await supabase.from("contact_tags").insert(
+        tags.map((t) => ({
+          contact_id: newContactId,
           tag_id: t.id,
-          client_id: contact.client_id,
+          client_id: clientId,
         })),
       );
+      if (tagErr) {
+        // Contact created but tag attach failed — surface but don't block
+        console.warn("Tags attach failed:", tagErr.message);
+      }
     }
 
     setSaving(false);
-    router.push(`/app/contacts/${contact.id}`);
+    router.push(`/app/contacts/${newContactId}`);
     router.refresh();
   }
 
@@ -102,6 +90,18 @@ export function ContactEditForm({
           value={name}
           onChange={(e) => setName(e.target.value)}
           autoFocus
+          placeholder="Jane Doe"
+          className="w-full"
+        />
+      </div>
+
+      <div className="field-group">
+        <label className="field-label">Phone</label>
+        <input
+          type="tel"
+          value={phone}
+          onChange={(e) => setPhone(e.target.value)}
+          placeholder="(555) 123-4567"
           className="w-full"
         />
       </div>
@@ -112,6 +112,7 @@ export function ContactEditForm({
           type="email"
           value={email}
           onChange={(e) => setEmail(e.target.value)}
+          placeholder="jane@example.com"
           className="w-full"
         />
       </div>
@@ -121,6 +122,7 @@ export function ContactEditForm({
         <input
           value={address}
           onChange={(e) => setAddress(e.target.value)}
+          placeholder="123 Main St"
           className="w-full"
         />
       </div>
@@ -130,13 +132,13 @@ export function ContactEditForm({
         <textarea
           value={notes}
           onChange={(e) => setNotes(e.target.value)}
-          rows={4}
+          rows={3}
           className="w-full"
         />
       </div>
 
       <TagPicker
-        clientId={contact.client_id}
+        clientId={clientId}
         allTags={allTags}
         selected={tags}
         onChange={setTags}
@@ -153,7 +155,7 @@ export function ContactEditForm({
       <div className="flex items-center justify-end gap-2 pt-2">
         <button
           type="button"
-          onClick={() => router.push(`/app/contacts/${contact.id}`)}
+          onClick={() => router.push("/app/contacts")}
           className="btn-ghost text-sm"
           disabled={saving}
         >
@@ -163,10 +165,10 @@ export function ContactEditForm({
           {saving ? (
             <>
               <Loader2 size={13} className="animate-spin" />
-              Saving…
+              Creating…
             </>
           ) : (
-            "Save changes"
+            "Create contact"
           )}
         </button>
       </div>

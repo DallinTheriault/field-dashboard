@@ -2,6 +2,8 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { MessageSquare, Search } from "lucide-react";
 import { fmtPhoneDisplay } from "@/lib/sms/phone";
+import { getTenantFeatureFlags } from "@/lib/features/flags";
+import { FeatureDisabledPanel } from "@/components/ui/feature-disabled-panel";
 
 function EmptyState({
   icon: Icon,
@@ -72,6 +74,16 @@ export default async function MessagesPage({
 }: {
   searchParams: Promise<{ q?: string }>;
 }) {
+  const flags = await getTenantFeatureFlags();
+  if (!flags.sms) {
+    return (
+      <FeatureDisabledPanel
+        featureName="Messages"
+        description="Two-way SMS conversations are not currently enabled for your account."
+      />
+    );
+  }
+
   const supabase = await createClient();
   const { q } = await searchParams;
 

@@ -14,7 +14,8 @@ import {
 import { createClient } from "@/lib/supabase/server";
 import { StatusChip } from "@/components/ui/status-chip";
 import { TextAndCopyButtons } from "@/components/ui/text-copy-buttons";
-import { TagChips } from "@/components/tags/tag-chips";
+import { TagChipList } from "@/components/tags/tag-chip";
+import { getContactTags } from "@/lib/tags/server";
 import { AssignmentChip } from "@/components/assignment/assignment-select";
 import { ActivityTimeline } from "@/components/activity/activity-timeline";
 import { getTeamMembers } from "@/lib/team/members";
@@ -89,6 +90,7 @@ export default async function ContactDetailPage({
     { data: messages },
     teamMembers,
     events,
+    contactTags,
   ] = await Promise.all([
     supabase
       .from("jobs")
@@ -108,6 +110,7 @@ export default async function ContactDetailPage({
       .order("created_at", { ascending: false }),
     getTeamMembers(contact.client_id),
     getActivityTimeline("contact", Number(contact.id)),
+    getContactTags(Number(contact.id)),
   ]);
 
   const assignedMember = contact.assigned_user_id
@@ -139,8 +142,8 @@ export default async function ContactDetailPage({
           )}
           <div className="flex flex-wrap items-center gap-2 mt-2">
             <AssignmentChip member={assignedMember} />
-            {contact.tags && contact.tags.length > 0 && (
-              <TagChips tags={contact.tags} maxVisible={6} />
+            {contactTags.length > 0 && (
+              <TagChipList tags={contactTags} maxVisible={6} />
             )}
           </div>
         </div>

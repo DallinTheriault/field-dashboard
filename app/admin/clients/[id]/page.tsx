@@ -1,8 +1,9 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { ArrowLeft, ShieldCheck } from "lucide-react";
+import { ArrowLeft, ShieldCheck, Activity } from "lucide-react";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { ClientConfigForm } from "./form";
+import { AdminFeatureFlagsForm } from "./feature-flags-form";
 
 export default async function AdminClientDetailPage({
   params,
@@ -51,7 +52,26 @@ export default async function AdminClientDetailPage({
             <ShieldCheck size={11} />
             SMS compliance log
           </Link>
+          <Link
+            href={`/admin/clients/${client.id}/recent-activity`}
+            className="btn-secondary text-xs h-8"
+          >
+            <Activity size={11} />
+            Recent activity
+          </Link>
         </div>
+      </div>
+
+      <div className="mb-4">
+        <AdminFeatureFlagsForm
+          clientId={client.id}
+          initial={{
+            feature_sms_enabled: client.feature_sms_enabled ?? true,
+            feature_voice_enabled: client.feature_voice_enabled ?? true,
+            feature_calendar_enabled: client.feature_calendar_enabled ?? false,
+            feature_billing_enabled: client.feature_billing_enabled ?? true,
+          }}
+        />
       </div>
 
       <ClientConfigForm

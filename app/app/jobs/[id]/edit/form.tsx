@@ -5,9 +5,10 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Loader2, Save, Check, Trash2, AlertTriangle } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
-import { TagInput } from "@/components/tags/tag-input";
+import { TagPicker } from "@/components/tags/tag-picker";
 import { AssignmentSelect } from "@/components/assignment/assignment-select";
-import type { TeamMember } from "@/lib/team/members";
+import type { Tag } from "@/lib/tags/types";
+import type { TeamMember } from "@/lib/team/types";
 
 const STATUSES = [
   "lead",
@@ -24,6 +25,7 @@ type Status = (typeof STATUSES)[number];
 
 type JobInput = {
   id: number | string;
+  client_id: number;
   name: string;
   phone: string;
   email: string;
@@ -35,7 +37,6 @@ type JobInput = {
   end_datetime: string | null;
   status: string;
   notes: string;
-  tags: string[];
   assigned_user_id: string | null;
 };
 
@@ -59,11 +60,13 @@ function fromLocalInput(value: string): string | null {
 
 export function JobEditForm({
   job,
-  tagSuggestions = [],
+  initialJobTags = [],
+  allTags = [],
   teamMembers = [],
 }: {
   job: JobInput;
-  tagSuggestions?: string[];
+  initialJobTags?: Tag[];
+  allTags?: Tag[];
   teamMembers?: TeamMember[];
 }) {
   const router = useRouter();
@@ -82,7 +85,7 @@ export function JobEditForm({
     (STATUSES.includes(job.status as Status) ? job.status : "lead") as Status,
   );
   const [notes, setNotes] = useState(job.notes);
-  const [tags, setTags] = useState<string[]>(job.tags ?? []);
+  const [selectedTags, setSelectedTags] = useState<Tag[]>(initialJobTags);
   const [assignedUserId, setAssignedUserId] = useState<string | null>(
     job.assigned_user_id ?? null,
   );
@@ -143,20 +146,42 @@ export function JobEditForm({
         end_datetime: fromLocalInput(endDt),
         status,
         notes: notes || null,
-        tags,
         assigned_user_id: assignedUserId,
         updated_at: new Date().toISOString(),
       })
       .eq("id", job.id);
 
-    setSaving(false);
     if (error) {
+      setSaving(false);
       setErr(error.message);
       return;
     }
+
+    // Diff tags: detach removed, attach new
+    const initialIds = new Set(initialJobTags.map((t) => t.id));
+    const currentIds = new Set(selectedTags.map((t) => t.id));
+    const toRemove = initialJobTags.filter((t) => !currentIds.has(t.id));
+    const toAdd = selectedTags.filter((t) => !initialIds.has(t.id));
+
+    if (toRemove.length > 0) {
+      await supabase
+        .from("job_tags")
+        .delete()
+        .eq("job_id", job.id)
+        .in("tag_id", toRemove.map((t) => t.id));
+    }
+    if (toAdd.length > 0) {
+      await supabase.from("job_tags").insert(
+        toAdd.map((t) => ({
+          job_id: job.id,
+          tag_id: t.id,
+          client_id: job.client_id,
+        })),
+      );
+    }
+
+    setSaving(false);
     setSaved(true);
-    // Go back to the read-only detail page after save so the user sees a
-    // clean view of their changes, not the editor again.
     router.push(`/app/jobs/${job.id}`);
     router.refresh();
   }
@@ -261,21 +286,12 @@ export function JobEditForm({
         />
       </div>
 
-      <div className="field-group">
-        <label className="field-label">Tags</label>
-        <TagInput
-          value={tags}
-          onChange={setTags}
-          suggestions={tagSuggestions}
-          placeholder="Add tag (Enter or comma to confirm)"
-        />
-        <p className="text-2xs text-bone-400 mt-1">
-          Use to group jobs — e.g. <span className="font-mono">repeat-customer</span>,{" "}
-          <span className="font-mono">callback-needed</span>,{" "}
-          <span className="font-mono">apartment</span>. Filter by tag on the
-          jobs list.
-        </p>
-      </div>
+      <TagPicker
+        clientId={job.client_id}
+        allTags={allTags}
+        selected={selectedTags}
+        onChange={setSelectedTags}
+      />
 
       <AssignmentSelect
         value={assignedUserId}

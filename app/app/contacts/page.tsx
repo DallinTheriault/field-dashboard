@@ -1,8 +1,10 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
-import { Users, Search } from "lucide-react";
+import { Users, Search, Plus, Download } from "lucide-react";
 import { ClickableTableRow } from "@/components/ui/clickable-table-row";
 import { MobileContactCard } from "@/components/list-cards/mobile-contact-card";
+import { TagChipList } from "@/components/tags/tag-chip";
+import { getTagsByContactIds } from "@/lib/tags/server";
 
 function fmtPhone(p: string | null): string {
   if (!p) return "—";
@@ -49,6 +51,9 @@ export default async function ContactsPage({
   const { data: contacts, error } = await query;
   const rows = contacts ?? [];
 
+  // Bulk-fetch tags for all visible contacts in one round-trip
+  const tagsByContact = await getTagsByContactIds(rows.map((c) => c.id));
+
   return (
     <div>
       <div className="flex items-end justify-between mb-6 gap-4 flex-wrap">
@@ -63,26 +68,40 @@ export default async function ContactsPage({
           </p>
         </div>
 
-        <form className="flex items-center gap-2">
-          <div className="relative">
-            <Search
-              size={13}
-              className="absolute left-2.5 top-1/2 -translate-y-1/2 text-bone-400 pointer-events-none"
-            />
-            <input
-              type="text"
-              name="q"
-              defaultValue={q ?? ""}
-              placeholder="Search name, phone, email…"
-              className="!bg-ink-1 pl-7 h-8 w-64 text-xs"
-            />
-          </div>
-          {q && (
-            <Link href="/app/contacts" className="btn-ghost text-xs h-8">
-              Clear
-            </Link>
-          )}
-        </form>
+        <div className="flex items-center gap-2">
+          <form className="flex items-center gap-2">
+            <div className="relative">
+              <Search
+                size={13}
+                className="absolute left-2.5 top-1/2 -translate-y-1/2 text-bone-400 pointer-events-none"
+              />
+              <input
+                type="text"
+                name="q"
+                defaultValue={q ?? ""}
+                placeholder="Search name, phone, email…"
+                className="!bg-ink-1 pl-7 h-8 w-64 text-xs"
+              />
+            </div>
+            {q && (
+              <Link href="/app/contacts" className="btn-ghost text-xs h-8">
+                Clear
+              </Link>
+            )}
+          </form>
+          <a
+            href="/api/export/contacts"
+            className="btn-ghost text-xs h-8"
+            title="Download CSV"
+          >
+            <Download size={12} />
+            Export
+          </a>
+          <Link href="/app/contacts/new" className="btn-primary text-xs h-8">
+            <Plus size={12} />
+            Add contact
+          </Link>
+        </div>
       </div>
 
       {error && (
@@ -115,7 +134,11 @@ export default async function ContactsPage({
           {/* Mobile: stacked cards */}
           <div className="panel divide-y divide-line-subtle md:hidden">
             {rows.map((c) => (
-              <MobileContactCard key={c.id} contact={c} />
+              <MobileContactCard
+                key={c.id}
+                contact={c}
+                tags={tagsByContact.get(c.id) ?? []}
+              />
             ))}
           </div>
 
@@ -127,34 +150,45 @@ export default async function ContactsPage({
                   <tr>
                     <th>Name</th>
                     <th>Phone</th>
-                    <th>Email</th>
+                    <th>Tags</th>
                     <th>Address</th>
                     <th className="text-right">Last activity</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {rows.map((c) => (
-                    <ClickableTableRow
-                      key={c.id}
-                      href={`/app/contacts/${c.id}`}
-                    >
-                      <td className="text-bone-100 font-medium">
-                        {c.name || "—"}
-                      </td>
-                      <td className="num text-xs text-bone-300">
-                        {fmtPhone(c.phone)}
-                      </td>
-                      <td className="text-xs text-bone-300 max-w-[220px] truncate">
-                        {c.email || "—"}
-                      </td>
-                      <td className="text-bone-300 max-w-[200px] truncate text-xs">
-                        {c.address || "—"}
-                      </td>
-                      <td className="num text-xs text-bone-400 text-right">
-                        {fmtDate(c.updated_at ?? c.created_at)}
-                      </td>
-                    </ClickableTableRow>
-                  ))}
+                  {rows.map((c) => {
+                    const contactTags = tagsByContact.get(c.id) ?? [];
+                    return (
+                      <ClickableTableRow
+                        key={c.id}
+                        href={`/app/contacts/${c.id}`}
+                      >
+                        <td className="text-bone-100 font-medium">
+                          {c.name || "—"}
+                        </td>
+                        <td className="num text-xs text-bone-300">
+                          {fmtPhone(c.phone)}
+                        </td>
+                        <td className="max-w-[240px]">
+                          {contactTags.length > 0 ? (
+                            <TagChipList
+                              tags={contactTags}
+                              maxVisible={3}
+                              size="sm"
+                            />
+                          ) : (
+                            <span className="text-xs text-bone-500">—</span>
+                          )}
+                        </td>
+                        <td className="text-bone-300 max-w-[200px] truncate text-xs">
+                          {c.address || "—"}
+                        </td>
+                        <td className="num text-xs text-bone-400 text-right">
+                          {fmtDate(c.updated_at ?? c.created_at)}
+                        </td>
+                      </ClickableTableRow>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>

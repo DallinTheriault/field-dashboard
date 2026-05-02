@@ -6,6 +6,8 @@ import {
   ExternalLink,
   Clock,
 } from "lucide-react";
+import { getTenantFeatureFlags } from "@/lib/features/flags";
+import { FeatureDisabledPanel } from "@/components/ui/feature-disabled-panel";
 
 function fmtDollar(c: number | null): string {
   if (c == null) return "—";
@@ -22,6 +24,16 @@ function fmtDate(d: string | null): string {
 }
 
 export default async function BillingPage() {
+  const flags = await getTenantFeatureFlags();
+  if (!flags.billing) {
+    return (
+      <FeatureDisabledPanel
+        featureName="Billing"
+        description="Self-service billing is not enabled for your account. You're likely on a custom contract."
+      />
+    );
+  }
+
   const supabase = await createClient();
 
   const { data: clients } = await supabase
