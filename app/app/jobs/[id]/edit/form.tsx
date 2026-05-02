@@ -5,6 +5,9 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Loader2, Save, Check, Trash2, AlertTriangle } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
+import { TagInput } from "@/components/tags/tag-input";
+import { AssignmentSelect } from "@/components/assignment/assignment-select";
+import type { TeamMember } from "@/lib/team/members";
 
 const STATUSES = [
   "lead",
@@ -32,6 +35,8 @@ type JobInput = {
   end_datetime: string | null;
   status: string;
   notes: string;
+  tags: string[];
+  assigned_user_id: string | null;
 };
 
 // Convert ISO string → "YYYY-MM-DDTHH:mm" local for <input type="datetime-local">
@@ -52,7 +57,15 @@ function fromLocalInput(value: string): string | null {
   return d.toISOString();
 }
 
-export function JobEditForm({ job }: { job: JobInput }) {
+export function JobEditForm({
+  job,
+  tagSuggestions = [],
+  teamMembers = [],
+}: {
+  job: JobInput;
+  tagSuggestions?: string[];
+  teamMembers?: TeamMember[];
+}) {
   const router = useRouter();
   const [name, setName] = useState(job.name);
   const [phone, setPhone] = useState(job.phone);
@@ -69,6 +82,10 @@ export function JobEditForm({ job }: { job: JobInput }) {
     (STATUSES.includes(job.status as Status) ? job.status : "lead") as Status,
   );
   const [notes, setNotes] = useState(job.notes);
+  const [tags, setTags] = useState<string[]>(job.tags ?? []);
+  const [assignedUserId, setAssignedUserId] = useState<string | null>(
+    job.assigned_user_id ?? null,
+  );
   const [saving, setSaving] = useState(false);
   const [archiving, setArchiving] = useState(false);
   const [confirmArchive, setConfirmArchive] = useState(false);
@@ -126,6 +143,8 @@ export function JobEditForm({ job }: { job: JobInput }) {
         end_datetime: fromLocalInput(endDt),
         status,
         notes: notes || null,
+        tags,
+        assigned_user_id: assignedUserId,
         updated_at: new Date().toISOString(),
       })
       .eq("id", job.id);
@@ -241,6 +260,28 @@ export function JobEditForm({ job }: { job: JobInput }) {
           rows={4}
         />
       </div>
+
+      <div className="field-group">
+        <label className="field-label">Tags</label>
+        <TagInput
+          value={tags}
+          onChange={setTags}
+          suggestions={tagSuggestions}
+          placeholder="Add tag (Enter or comma to confirm)"
+        />
+        <p className="text-2xs text-bone-400 mt-1">
+          Use to group jobs — e.g. <span className="font-mono">repeat-customer</span>,{" "}
+          <span className="font-mono">callback-needed</span>,{" "}
+          <span className="font-mono">apartment</span>. Filter by tag on the
+          jobs list.
+        </p>
+      </div>
+
+      <AssignmentSelect
+        value={assignedUserId}
+        onChange={setAssignedUserId}
+        members={teamMembers}
+      />
 
       {err && <div className="form-error">{err}</div>}
 

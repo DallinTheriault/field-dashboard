@@ -31,13 +31,31 @@ export default async function AppLayout({
       <main className="max-w-md mx-auto mt-20 p-6">
         <div className="panel p-6">
           <h1 className="text-lg font-semibold text-bone-50 mb-2">
-            Account not provisioned
+            You&apos;re signed in, but not on a team yet
           </h1>
+          <p className="text-sm text-bone-300 mb-2">
+            Your account is created but hasn&apos;t been added to a business
+            dashboard.
+          </p>
           <p className="text-sm text-bone-300 mb-4">
-            Your user isn&apos;t linked to a business yet. Reach out to your Field operator to finish setup.
+            If a team owner invited you, ask them to go to{" "}
+            <span className="font-mono text-bone-100">Settings → Team</span>{" "}
+            and add{" "}
+            <span className="font-mono text-bone-100">{user.email}</span>.
+          </p>
+          <p className="text-xs text-bone-400 mb-4">
+            If you&apos;re a new business owner setting up Field, the public
+            intake form is at{" "}
+            <a
+              href="/onboard"
+              className="text-bone-100 underline underline-offset-2"
+            >
+              /onboard
+            </a>
+            .
           </p>
           <form action="/auth/logout" method="POST">
-            <button type="submit" className="btn-secondary">
+            <button type="submit" className="btn-secondary text-xs h-8">
               Sign out
             </button>
           </form>

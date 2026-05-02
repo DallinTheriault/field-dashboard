@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { Phone, MapPin, CalendarDays, Briefcase } from "lucide-react";
 import { StatusChip } from "@/components/ui/status-chip";
+import { TagChips } from "@/components/tags/tag-chips";
 
 type JobCardData = {
   id: number;
@@ -12,6 +13,7 @@ type JobCardData = {
   quoted_price: number | null;
   start_datetime: string | null;
   created_at: string;
+  tags: string[] | null;
 };
 
 function fmtPhone(p: string | null): string {
@@ -79,6 +81,11 @@ export function MobileJobCard({ job }: { job: JobCardData }) {
             </span>
           )}
         </div>
+      )}
+
+      {/* Tags */}
+      {job.tags && job.tags.length > 0 && (
+        <TagChips tags={job.tags} maxVisible={4} className="mb-1" />
       )}
 
       {/* Row 4: Footer — start datetime + created */}

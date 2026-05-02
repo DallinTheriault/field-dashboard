@@ -30,6 +30,7 @@ type ClientConfig = {
   notify_dashboard_ping: boolean;
   notify_sms: boolean;
   is_active: boolean;
+  is_test: boolean;
 };
 
 export function ClientConfigForm({ client }: { client: ClientConfig }) {
@@ -248,6 +249,11 @@ export function ClientConfigForm({ client }: { client: ClientConfig }) {
             label="Tenant active"
             checked={form.is_active}
             onChange={(v) => update("is_active", v)}
+          />
+          <Toggle
+            label="Test tenant (excluded from production analytics)"
+            checked={form.is_test}
+            onChange={(v) => update("is_test", v)}
           />
         </div>
       </Section>

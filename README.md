@@ -1,13 +1,31 @@
-# Field Dashboard v0.4
+# Field Dashboard v0.6.0
 
-Next.js 15 + Supabase + Tailwind dashboard for Field (Intelligent Receptionist & Intake System).
-Dark-first, salmon-accent with lime offset, Inter-fonted, production-grade.
+Next.js 15 + Supabase + Tailwind dashboard for **Field** — productized AI voice
+receptionist SaaS for service businesses.
+
+Brand kit lives separately. Domain: `getfield.co`. Dashboard subdomain: `app.getfield.co`.
+
+## What's new in v0.6.0
+
+- **Lead assignment** — every job and contact can be assigned to a team member.
+  Dropdown on edit forms, chip on detail pages. Backed by `assigned_user_id`.
+- **Activity timeline** — unified read-time view of calls + SMS + status changes
+  on job and contact detail pages. Replaces the old "linked calls" panel on
+  jobs and adds an "Activity" tab as the default on contacts.
+- **Tags on contacts** — same `TagInput` UX as jobs, GIN-indexed for filtering.
+- **Resend scaffolding** — `lib/email/send.ts` wraps the Resend SDK. Dev-mode
+  stub if `RESEND_API_KEY` is unset (logs instead of sending). DNS setup is in
+  `docs/v060-setup.md`.
+- **Modular VAPI prompt template** — `prompt_templates` table + `render_system_prompt`
+  RPC. Already round-trips with Sharpline. Adding a new tenant = filling 14 tokens.
+
+Magic-link invitations deferred to v0.6.1 (needs Resend SMTP fully wired).
 
 ## Setup
 
 ```bash
-unzip field-dashboard.zip
-cd field-dashboard
+unzip field-dashboard-v060.zip
+cd field-dashboard-v060
 npm install
 cp .env.local.example .env.local
 # Edit .env.local — fill in all required values
@@ -15,113 +33,108 @@ npm run dev
 # → http://localhost:3000
 ```
 
-## Environment variables
+## Required environment variables
 
 ```bash
-# Required for app to load
+# Supabase
 NEXT_PUBLIC_SUPABASE_URL=https://your-project-ref.supabase.co
-NEXT_PUBLIC_SUPABASE_ANON_KEY=<anon JWT from Supabase → Project Settings → API>
+NEXT_PUBLIC_SUPABASE_ANON_KEY=<anon JWT>
+SUPABASE_SERVICE_ROLE_KEY=<service role key — for /admin/*>
+ADMIN_EMAILS=dallintheriault@live.com
 
-# Required for Billing portal + admin payment-link generator
-STRIPE_SECRET_KEY=sk_test_<your_test_secret_key>
+# App URL (used for redirects, email links)
+NEXT_PUBLIC_APP_URL=https://app.getfield.co
 
-# Required for /admin/* pages (cross-tenant queries)
-SUPABASE_SERVICE_ROLE_KEY=<service_role key from Supabase → Project Settings → API>
-ADMIN_EMAILS=dallintheriault@live.com   # comma-separated allowlist
+# Twilio (SMS)
+TWILIO_ACCOUNT_SID=AC...
+TWILIO_AUTH_TOKEN=...
 
-# Optional
+# Stripe (billing)
+STRIPE_SECRET_KEY=sk_...
+STRIPE_WEBHOOK_SECRET=whsec_...
+
+# Resend (email — v0.6.0 NEW)
+RESEND_API_KEY=re_...
+EMAIL_FROM_NOREPLY="Field <noreply@getfield.co>"
+EMAIL_FROM_SUPPORT="Field Support <support@getfield.co>"
+
+# Cron (scheduled SMS tick)
+CRON_SECRET=<random string>
+
+# n8n (intake webhook)
 N8N_ONBOARD_WEBHOOK=https://dtheriault.app.n8n.cloud/webhook/onboard-client
 ```
 
-## What's new in v0.4
+See `docs/v060-setup.md` for end-to-end DNS/Netlify/Resend/Supabase setup
+instructions for the new `getfield.co` domain.
 
-**Rebrand from IRIS to Field:**
-- New mark: asymmetric four-curve dipole (replaces the IRIS eye/almond)
-- Ember (#FF6B35) accent dropped; replaced with **salmon** (#FF6B6B) as primary
-- New offset accent token: **lime** (#BEF264) — added to the system but not yet placed in components (see "What's NOT yet built")
-- All `ember-*` Tailwind classes mechanically swapped to `salmon-*` (55 replacements across 23 files)
-- Idle-timeout localStorage key migrated: `aria.lastActivity` → `field.lastActivity` (existing users will see a one-time idle reset on first login post-deploy — expected and harmless)
-- Page title, manifest, favicons, app icons, apple-touch-icon all rebuilt from new brand kit
-- Logo component rewritten — uses dipole geometry, "field" lowercase wordmark, salmon + lime poles
-- Body background gradient warm wash recolored salmon (was ember)
+## Project structure
 
-**Carried over from v0.3 (kept):**
-- Real Calls page with searchable filters
-- Real Call detail page with summary, transcript link, audio player, linked job
-- Real Calendar page with month grid + conflict highlighting
-- Real Job detail page
-- Settings page foundation (business profile, branding, voice, calendar)
-- Settings prompt viewer (read-only)
-- Stripe Customer Portal wired up
-- Idle session timeout (30 min, 5-min warning)
-- All Overview metric cards click through
-- All list rows on Overview navigate to detail
+```
+app/                 — Next.js app router pages + API routes
+  app/               — authenticated dashboard (`/app/*` routes)
+    jobs/[id]        — job detail + edit
+    contacts/[id]    — contact detail + edit
+    calls/[id]       — call detail
+    messages         — SMS conversations
+  admin/             — cross-tenant admin (gated by ADMIN_EMAILS)
+  api/               — server routes (twilio, stripe, branding, etc.)
+  onboard/           — public onboarding form
+  signup/            — self-serve signup
+components/
+  activity/          — activity-timeline
+  assignment/        — assignment-select, assignment-chip
+  tags/              — tag-input, tag-chips, tag-filter-dropdown
+  shell/             — app shell (sidebar, mobile nav)
+  sms/               — SMS thread/composer
+  ui/                — generic primitives
+lib/
+  supabase/          — server, client, admin, middleware
+  permissions/       — role-based capability checks
+  team/              — types (client-safe), members (server fetch)
+  timeline/          — activity timeline fetcher
+  email/             — Resend wrapper
+  twilio/            — Twilio client + helpers
+  sms/               — phone normalization, consent keywords
+docs/                — operator runbooks and setup guides
+supabase/            — migrations
+```
 
-## Routes
+## Key invariants
 
-| Path | Auth | Purpose |
-|---|---|---|
-| `/` | — | Auth-aware redirect |
-| `/login` | public | Sign-in (with idle banner) |
-| `/onboard` | public | New-client onboarding form |
-| `/app` | protected | Overview |
-| `/app/calls` | protected | Call log |
-| `/app/calls/[id]` | protected | Call detail |
-| `/app/jobs` | protected | Jobs table |
-| `/app/jobs/[id]` | protected | Job detail |
-| `/app/calendar` | protected | Month grid |
-| `/app/invoices` | protected | (placeholder, real version in v0.5) |
-| `/app/billing` | protected | Subscription + Stripe portal |
-| `/app/settings` | protected | Business settings |
-| `/app/settings/prompt` | protected | Read-only prompt viewer |
-| `/api/stripe/portal` | protected POST | Creates Stripe portal session |
-| `/dashboard` | — | Compat redirect to `/app` |
+- **All client-side imports must avoid `next/headers`.** Server-only modules
+  (anything importing `lib/supabase/server`) cannot be imported from a `"use client"`
+  component. Use `lib/team/types` for client, `lib/team/members` for server.
+- **Tenant scoping is enforced by RLS, not by app code.** All policies use
+  `IN (SELECT public.current_user_client_ids())`.
+- **`Sharpline = id 1`. Never use as test data.** Use `is_test=true` tenants for
+  dev work.
+- **Modular VAPI prompt** — when adding a new tenant, fill `Clients` row tokens
+  then call `save_rendered_system_prompt(client_id)`. The RPC reads from
+  `prompt_templates` and substitutes.
 
-## Brand reference
+## Deploy
 
-Colors (defined in `tailwind.config.ts` as Tailwind tokens):
+```bash
+# After Netlify credits return:
+cd ~/Documents/projects/field-dashboard
+unzip -o ~/Downloads/field-dashboard-v060.zip -d /tmp/fd-new
+rsync -av --delete --exclude='.git' --exclude='.gitignore' \
+  /tmp/fd-new/field-dashboard-v060/ ./
+npm install && npm run build
+git add -A && git commit -m "v0.6.0: lead assignment + activity timeline + Resend"
+git push origin main
+# Netlify auto-deploys
+```
 
-| Token | Hex | Role |
-|---|---|---|
-| `ink-0` | `#0a0a0a` | page background |
-| `ink-1`–`ink-4` | … | layered surfaces |
-| `bone-50` | `#f7f5f0` | primary text on dark |
-| `bone-100`–`bone-500` | … | text hierarchy |
-| `salmon-500` | `#FF6B6B` | **primary brand accent** — buttons, focus rings, key icons |
-| `salmon-50`–`salmon-900` | … | full scale for hover/active/tint states |
-| `lime-500` | `#BEF264` | offset accent — used at moments only (right pole of mark, accent ticks) |
-| `lime-50`–`lime-900` | … | full scale (currently unused outside the logo) |
+## Version history
 
-Discipline rule baked into the system: salmon dominates wherever brand color appears. Lime punctuates — used at deliberate moments, never as primary. Reserve red for UI errors and yellow for UI warnings (don't compete with brand colors).
+- **v0.6.0** (this) — lead assignment, activity timeline, contact tags, Resend scaffolding
+- **v0.5.12** — tags on jobs, test-tenant flag, auth callback hardening, lead-assignment foundations (schema only)
+- **v0.5.11** — three-tier roles (owner/manager/member), `team_audit_log`, signup page, intake hardening
+- **v0.5.10** — admin pending-intake queue
+- **v0.5.0–9** — SMS conversations, scheduling, templates
+- **v0.4** — IRIS → Field rebrand
+- **v0.1–3** — initial dashboard build
 
-Typography:
-- Inter (300/400/500/600/700/800) for UI and headings
-- JetBrains Mono for tabular data
-- Wordmark uses General Sans Medium 500 (rendered as SVG paths in the brand kit, no font dependency in dashboard)
-
-## What's NOT yet built
-
-- **Lime placement in components** — currently lime exists only in the logo mark. Strategic placements (e.g., featured-row hover, "new lead" pulse, accent ticks on charts) are a follow-up. Don't introduce lime ad-hoc; pick deliberate moments.
-- Invoices page (real flow): generate from job, send Stripe invoice
-- Outbound calling
-- Logo upload UI (DB column exists; UI disabled)
-- Voice picker UI (DB column exists; UI read-only)
-- Google Calendar OAuth flow (DB table exists; button disabled)
-- Self-serve prompt editor (read-only for now)
-- Reset-password page restyle (still on v0.1 plain CSS)
-- Per-client Twilio number auto-provisioning
-- Call summary email after each call
-
-## Migration notes (IRIS → Field)
-
-If you're upgrading an existing deployment, also update these external systems (the dashboard repo doesn't reach them):
-
-1. **VAPI assistants** — replace `firstMessage` ("This is Iris…") and system prompts in each live assistant. Default persona is now Wren.
-2. **Supabase `Clients.system_prompt` rows** — align with VAPI updates.
-3. **Stripe product name** — rename product (currently "IRIS — [Tier]") to "Field — [Tier]".
-4. **Resend sender domain** — switch to `hirefield.app` if it currently references `iris-*`.
-5. **Netlify deployment URL** — point at `hirefield.app` once domain is locked.
-6. **GitHub repo rename** — `iris-dashboard` → `field-dashboard`.
-7. **DBA filing** — `Dallin Paul Ventures LLC dba HireField` (Utah business registration, ~$22).
-
-The dashboard's `Clients.brand_primary_color` column still exists. The default fallback is now `#FF6B6B` (salmon-500). Existing client rows with custom hex values are preserved.
+See git history for details on individual versions.

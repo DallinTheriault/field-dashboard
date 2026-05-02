@@ -31,7 +31,7 @@ export default async function AdminClientsPage() {
   const { data: clients, error } = await supabase
     .from("Clients")
     .select(
-      "id, business_name, business_phone, owner_email, intake_mode, is_active, created_at, service_type, service_constraints",
+      "id, business_name, business_phone, owner_email, intake_mode, is_active, is_test, created_at, service_type, service_constraints",
     )
     .neq("id", 6) // hide platform sentinel row
     .order("created_at", { ascending: false });
@@ -186,8 +186,15 @@ export default async function AdminClientsPage() {
                         )}
                       />
                       <div className="flex-1 min-w-0">
-                        <div className="text-sm font-medium text-bone-100 truncate">
-                          {c.business_name || `Client #${c.id}`}
+                        <div className="text-sm font-medium text-bone-100 truncate flex items-center gap-2">
+                          <span className="truncate">
+                            {c.business_name || `Client #${c.id}`}
+                          </span>
+                          {c.is_test && (
+                            <span className="shrink-0 text-2xs uppercase tracking-wider font-bold px-1.5 py-0.5 rounded-xs bg-status-progress/20 text-status-progress border border-status-progress/40">
+                              Test
+                            </span>
+                          )}
                         </div>
                         <div className="text-2xs text-bone-400 mt-0.5 flex items-center gap-2 flex-wrap">
                           <span className="font-mono">#{c.id}</span>

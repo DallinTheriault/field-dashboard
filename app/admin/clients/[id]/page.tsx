@@ -81,6 +81,7 @@ export default async function AdminClientDetailPage({
           notify_dashboard_ping: client.notify_dashboard_ping ?? true,
           notify_sms: client.notify_sms ?? false,
           is_active: client.is_active ?? false,
+          is_test: client.is_test ?? false,
         }}
       />
     </div>

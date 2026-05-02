@@ -11,10 +11,16 @@ import {
   DollarSign,
   FileText,
   User,
+  Activity,
 } from "lucide-react";
 import { TextAndCopyButtons } from "@/components/ui/text-copy-buttons";
 import { StatusChip } from "@/components/ui/status-chip";
+import { TagChips } from "@/components/tags/tag-chips";
+import { AssignmentChip } from "@/components/assignment/assignment-select";
+import { ActivityTimeline } from "@/components/activity/activity-timeline";
 import { createClient } from "@/lib/supabase/server";
+import { getTeamMembers } from "@/lib/team/members";
+import { getActivityTimeline } from "@/lib/timeline/fetch";
 
 function fmtDate(d: string | null): string {
   if (!d) return "—";
@@ -25,16 +31,6 @@ function fmtDate(d: string | null): string {
     year: "numeric",
     hour: "numeric",
     minute: "2-digit",
-  });
-}
-
-function fmtDateOnly(d: string | null): string {
-  if (!d) return "—";
-  return new Date(d).toLocaleDateString("en-US", {
-    weekday: "short",
-    month: "short",
-    day: "numeric",
-    year: "numeric",
   });
 }
 
@@ -71,11 +67,16 @@ export default async function JobDetailPage({
 
   if (!job) notFound();
 
-  const { data: calls } = await supabase
-    .from("call_summaries")
-    .select("id, caller_name, intent, outcome, duration_seconds, started_at")
-    .eq("job_id", job.id)
-    .order("started_at", { ascending: false });
+  // Parallel fetch: team members (for assignment chip and timeline actor lookup)
+  // and the activity timeline events.
+  const [teamMembers, events] = await Promise.all([
+    getTeamMembers(job.client_id),
+    getActivityTimeline("job", Number(job.id)),
+  ]);
+
+  const assignedMember = job.assigned_user_id
+    ? teamMembers.find((m) => m.user_id === job.assigned_user_id) ?? null
+    : null;
 
   return (
     <div>
@@ -116,9 +117,10 @@ export default async function JobDetailPage({
         </Link>
       </div>
 
-      {/* Status + meta */}
-      <div className="flex flex-wrap items-center gap-2 mb-5">
+      {/* Status + assignment + meta */}
+      <div className="flex flex-wrap items-center gap-2 mb-3">
         <StatusChip status={job.status} />
+        <AssignmentChip member={assignedMember} />
         {job.service && (
           <span className="text-2xs text-bone-400">
             {job.service}
@@ -126,6 +128,13 @@ export default async function JobDetailPage({
           </span>
         )}
       </div>
+
+      {/* Tags */}
+      {job.tags && job.tags.length > 0 && (
+        <div className="mb-5">
+          <TagChips tags={job.tags} maxVisible={10} />
+        </div>
+      )}
 
       {/* Quick contact actions */}
       <div className="flex flex-wrap items-center gap-1.5 mb-6">
@@ -166,9 +175,7 @@ export default async function JobDetailPage({
         <section className="lg:col-span-3 space-y-3">
           <div className="panel">
             <div className="px-4 h-11 flex items-center border-b border-line">
-              <h2 className="text-sm font-semibold text-bone-100">
-                Customer
-              </h2>
+              <h2 className="text-sm font-semibold text-bone-100">Customer</h2>
             </div>
             <dl className="px-4 py-3 divide-y divide-line-subtle">
               <Field icon={User} label="Name" value={job.name || "—"} />
@@ -189,9 +196,7 @@ export default async function JobDetailPage({
 
           <div className="panel">
             <div className="px-4 h-11 flex items-center border-b border-line">
-              <h2 className="text-sm font-semibold text-bone-100">
-                Job
-              </h2>
+              <h2 className="text-sm font-semibold text-bone-100">Job</h2>
             </div>
             <dl className="px-4 py-3 divide-y divide-line-subtle">
               <Field
@@ -211,10 +216,7 @@ export default async function JobDetailPage({
                 label="Start"
                 value={fmtDate(job.start_datetime)}
               />
-              <Field
-                label="End"
-                value={fmtDate(job.end_datetime)}
-              />
+              <Field label="End" value={fmtDate(job.end_datetime)} />
             </dl>
           </div>
 
@@ -232,6 +234,22 @@ export default async function JobDetailPage({
         </section>
 
         <aside className="lg:col-span-2 space-y-3">
+          {/* Activity timeline — replaces the old "Linked calls" panel.
+              Shows calls + SMS for the linked contact + status changes from
+              job_status_log, all merged in chronological order. */}
+          <div className="panel">
+            <div className="px-4 h-11 flex items-center justify-between border-b border-line">
+              <div className="flex items-center gap-2">
+                <Activity size={13} className="text-bone-400" />
+                <h2 className="text-sm font-semibold text-bone-100">Activity</h2>
+              </div>
+              <span className="text-2xs text-bone-400">{events.length}</span>
+            </div>
+            <div className="px-4 py-3">
+              <ActivityTimeline events={events} members={teamMembers} />
+            </div>
+          </div>
+
           <div className="panel p-4">
             <div className="label-eyebrow mb-3">Timestamps</div>
             <dl className="space-y-2 text-xs">
@@ -243,48 +261,12 @@ export default async function JobDetailPage({
               )}
             </dl>
           </div>
-
-          {calls && calls.length > 0 && (
-            <div className="panel">
-              <div className="px-4 h-11 flex items-center justify-between border-b border-line">
-                <div className="flex items-center gap-2">
-                  <Phone size={13} className="text-bone-400" />
-                  <h2 className="text-sm font-semibold text-bone-100">
-                    Linked calls
-                  </h2>
-                </div>
-                <span className="text-2xs text-bone-400">{calls.length}</span>
-              </div>
-              <ul className="divide-y divide-line-subtle">
-                {calls.map((c) => (
-                  <li key={c.id}>
-                    <Link
-                      href={`/app/calls/${c.id}`}
-                      className="block px-4 py-3 hover:bg-ink-2"
-                    >
-                      <div className="text-sm text-bone-100 truncate">
-                        {c.caller_name || "Unknown"}
-                      </div>
-                      <div className="text-2xs text-bone-400 mt-0.5">
-                        {c.intent?.replace(/_/g, " ") ?? "—"}
-                        {c.outcome && ` · ${c.outcome.replace(/_/g, " ")}`}
-                      </div>
-                    </Link>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
         </aside>
       </div>
     </div>
   );
 }
 
-/**
- * Read-only key/value row. Used inside the Customer and Job cards to
- * present details cleanly without inline form chrome.
- */
 function Field({
   icon: Icon,
   label,

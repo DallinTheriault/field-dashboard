@@ -8,11 +8,17 @@ import {
   MessageSquare,
   Briefcase,
   Pencil,
+  Activity,
   type LucideIcon,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { StatusChip } from "@/components/ui/status-chip";
 import { TextAndCopyButtons } from "@/components/ui/text-copy-buttons";
+import { TagChips } from "@/components/tags/tag-chips";
+import { AssignmentChip } from "@/components/assignment/assignment-select";
+import { ActivityTimeline } from "@/components/activity/activity-timeline";
+import { getTeamMembers } from "@/lib/team/members";
+import { getActivityTimeline } from "@/lib/timeline/fetch";
 import { DeleteContactButton } from "./delete-contact-button";
 import { cn } from "@/lib/cn";
 
@@ -49,6 +55,7 @@ function fmtDateShort(d: string | null): string {
 }
 
 const TABS = [
+  { key: "activity", label: "Activity", icon: Activity },
   { key: "jobs", label: "Jobs", icon: Briefcase },
   { key: "calls", label: "Calls", icon: Phone },
   { key: "messages", label: "Messages", icon: MessageSquare },
@@ -65,7 +72,7 @@ export default async function ContactDetailPage({
 }) {
   const { id } = await params;
   const { tab } = await searchParams;
-  const activeTab: TabKey = (TABS.some((t) => t.key === tab) ? tab : "jobs") as TabKey;
+  const activeTab: TabKey = (TABS.some((t) => t.key === tab) ? tab : "activity") as TabKey;
 
   const supabase = await createClient();
   const { data: contact } = await supabase
@@ -76,7 +83,13 @@ export default async function ContactDetailPage({
 
   if (!contact) notFound();
 
-  const [{ data: jobs }, { data: calls }, { data: messages }] = await Promise.all([
+  const [
+    { data: jobs },
+    { data: calls },
+    { data: messages },
+    teamMembers,
+    events,
+  ] = await Promise.all([
     supabase
       .from("jobs")
       .select("id, name, address, service, status, quoted_price, start_datetime, created_at")
@@ -93,7 +106,13 @@ export default async function ContactDetailPage({
       .select("id, message_body, read_at, responded_at, created_at")
       .eq("contact_id", contact.id)
       .order("created_at", { ascending: false }),
+    getTeamMembers(contact.client_id),
+    getActivityTimeline("contact", Number(contact.id)),
   ]);
+
+  const assignedMember = contact.assigned_user_id
+    ? teamMembers.find((m) => m.user_id === contact.assigned_user_id) ?? null
+    : null;
 
   const callbackPhone = contact.phone;
 
@@ -118,6 +137,12 @@ export default async function ContactDetailPage({
               {fmtPhone(callbackPhone)}
             </p>
           )}
+          <div className="flex flex-wrap items-center gap-2 mt-2">
+            <AssignmentChip member={assignedMember} />
+            {contact.tags && contact.tags.length > 0 && (
+              <TagChips tags={contact.tags} maxVisible={6} />
+            )}
+          </div>
         </div>
         <div className="flex items-center gap-1.5 shrink-0">
           <Link
@@ -181,6 +206,7 @@ export default async function ContactDetailPage({
               {TABS.map(({ key, label, icon: Icon }) => {
                 const isActive = key === activeTab;
                 const counts: Record<TabKey, number> = {
+                  activity: events.length,
                   jobs: jobs?.length ?? 0,
                   calls: calls?.length ?? 0,
                   messages: messages?.length ?? 0,
@@ -208,6 +234,11 @@ export default async function ContactDetailPage({
             </div>
 
             {/* Tab content */}
+            {activeTab === "activity" && (
+              <div className="px-4 py-4">
+                <ActivityTimeline events={events} members={teamMembers} />
+              </div>
+            )}
             {activeTab === "jobs" && (
               <JobsTab jobs={jobs ?? []} />
             )}

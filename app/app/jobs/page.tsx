@@ -3,6 +3,8 @@ import { createClient } from "@/lib/supabase/server";
 import { StatusChip } from "@/components/ui/status-chip";
 import { ClickableTableRow } from "@/components/ui/clickable-table-row";
 import { MobileJobCard } from "@/components/list-cards/mobile-job-card";
+import { TagFilterDropdown } from "@/components/tags/tag-filter-dropdown";
+import { TagChips } from "@/components/tags/tag-chips";
 import { AddJobButton } from "./_components/add-job-button";
 
 function fmtDate(d: string | null): string {
@@ -29,23 +31,58 @@ function fmtPhone(phone: string | null): string {
 export default async function JobsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ status?: string }>;
+  searchParams: Promise<{ status?: string; tag?: string }>;
 }) {
   const supabase = await createClient();
-  const { status } = await searchParams;
+  const { status, tag } = await searchParams;
 
   let query = supabase
     .from("jobs")
-    .select("id, name, phone, address, service, status, quoted_price, start_datetime, created_at")
+    .select(
+      "id, name, phone, address, service, status, quoted_price, start_datetime, created_at, tags",
+    )
     .is("archived_at", null)
     .order("created_at", { ascending: false });
 
   if (status) {
     query = query.eq("status", status);
   }
+  if (tag) {
+    // Postgres text[] containment — row tags contains [tag]
+    query = query.contains("tags", [tag]);
+  }
 
   const { data: jobs } = await query;
   const rows = jobs ?? [];
+
+  // Aggregate all tags for the filter dropdown. Could push this to a
+  // dedicated query later, but reusing the result set is fine for current
+  // volume.
+  const allTagsSet = new Set<string>();
+  for (const j of rows) {
+    for (const t of (j.tags as string[] | null) ?? []) {
+      if (t) allTagsSet.add(t);
+    }
+  }
+  // If a tag filter is ACTIVE, the result set is already narrowed and
+  // wouldn't show other tags. Pull a separate query for the dropdown so
+  // the user can switch between tags without clearing first.
+  let availableTags = Array.from(allTagsSet).sort();
+  if (tag) {
+    const { data: tagSample } = await supabase
+      .from("jobs")
+      .select("tags")
+      .is("archived_at", null)
+      .not("tags", "is", null)
+      .limit(500);
+    const allFromSample = new Set<string>();
+    for (const j of tagSample ?? []) {
+      for (const t of (j.tags as string[] | null) ?? []) {
+        if (t) allFromSample.add(t);
+      }
+    }
+    availableTags = Array.from(allFromSample).sort();
+  }
 
   return (
     <div>
@@ -53,14 +90,25 @@ export default async function JobsPage({
         <div>
           <div className="label-eyebrow mb-1">Jobs</div>
           <h1 className="text-2xl font-semibold text-bone-50 tracking-tight">
-            {status ? status.charAt(0).toUpperCase() + status.slice(1) : "All jobs"}
+            {tag
+              ? `Tagged: ${tag}`
+              : status
+                ? status.charAt(0).toUpperCase() + status.slice(1)
+                : "All jobs"}
           </h1>
           <p className="text-sm text-bone-300 mt-1">
             {rows.length} {rows.length === 1 ? "job" : "jobs"}
           </p>
         </div>
-        <div className="flex items-center gap-2">
-          {status && (
+        <div className="flex items-center gap-2 flex-wrap">
+          {availableTags.length > 0 && (
+            <TagFilterDropdown
+              currentTag={tag}
+              currentStatus={status}
+              availableTags={availableTags}
+            />
+          )}
+          {(status || tag) && (
             <Link href="/app/jobs" className="btn-ghost text-xs h-9">
               Clear filter
             </Link>
@@ -108,7 +156,12 @@ export default async function JobsPage({
                   {rows.map((j) => (
                     <ClickableTableRow key={j.id} href={`/app/jobs/${j.id}`}>
                       <td className="text-bone-100 font-medium">
-                        {j.name || "—"}
+                        <div className="flex flex-col gap-0.5">
+                          <span>{j.name || "—"}</span>
+                          {j.tags && j.tags.length > 0 && (
+                            <TagChips tags={j.tags} maxVisible={3} />
+                          )}
+                        </div>
                       </td>
                       <td className="num text-xs text-bone-300">
                         {fmtPhone(j.phone)}
