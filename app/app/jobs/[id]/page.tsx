@@ -15,13 +15,14 @@ import {
 } from "lucide-react";
 import { TextAndCopyButtons } from "@/components/ui/text-copy-buttons";
 import { TagChipList } from "@/components/tags/tag-chip";
+import { InlineAddTagButton } from "@/components/tags/inline-add-tag";
 import { AssignmentChip } from "@/components/assignment/assignment-select";
 import { ActivityTimeline } from "@/components/activity/activity-timeline";
 import { InlineStatusEdit } from "@/components/ui/inline-status-edit";
 import { createClient } from "@/lib/supabase/server";
 import { getTeamMembers } from "@/lib/team/members";
 import { getActivityTimeline } from "@/lib/timeline/fetch";
-import { getJobTags } from "@/lib/tags/server";
+import { getJobTags, listTagsForClient } from "@/lib/tags/server";
 
 function fmtDate(d: string | null): string {
   if (!d) return "—";
@@ -68,10 +69,11 @@ export default async function JobDetailPage({
 
   if (!job) notFound();
 
-  const [teamMembers, events, jobTags] = await Promise.all([
+  const [teamMembers, events, jobTags, allTags] = await Promise.all([
     getTeamMembers(job.client_id),
     getActivityTimeline("job", Number(job.id)),
     getJobTags(Number(job.id)),
+    listTagsForClient(job.client_id),
   ]);
 
   const assignedMember = job.assigned_user_id
@@ -116,8 +118,21 @@ export default async function JobDetailPage({
         </Link>
       </div>
 
-      {/* Inline-editable status + assignment + meta */}
-      <div className="flex flex-wrap items-center gap-3 mb-3">
+      {/* Tags row — directly under the name so they're clearly the job's,
+          not the assignee's. Includes the inline +tag quick-add button. */}
+      <div className="flex flex-wrap items-center gap-2 mb-3">
+        {jobTags.length > 0 && <TagChipList tags={jobTags} maxVisible={10} />}
+        <InlineAddTagButton
+          entityType="job"
+          entityId={Number(job.id)}
+          clientId={job.client_id}
+          allTags={allTags}
+          attachedTagIds={jobTags.map((t) => t.id)}
+        />
+      </div>
+
+      {/* Status + assignment + service meta, on their own row */}
+      <div className="flex flex-wrap items-center gap-3 mb-5">
         <InlineStatusEdit jobId={job.id} currentStatus={job.status ?? "lead"} />
         <AssignmentChip member={assignedMember} />
         {job.service && (
@@ -127,13 +142,6 @@ export default async function JobDetailPage({
           </span>
         )}
       </div>
-
-      {/* Tag chips */}
-      {jobTags.length > 0 && (
-        <div className="mb-5">
-          <TagChipList tags={jobTags} maxVisible={10} />
-        </div>
-      )}
 
       {/* Quick contact actions */}
       <div className="flex flex-wrap items-center gap-1.5 mb-6">

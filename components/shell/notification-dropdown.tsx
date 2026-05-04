@@ -135,20 +135,32 @@ export function NotificationDropdown() {
         aria-label={`Notifications${unread > 0 ? `, ${unread} unread` : ""}`}
         className="btn-ghost h-8 w-8 px-0 relative"
       >
-        <Bell size={15} strokeWidth={1.8} />
+        <Bell
+          size={15}
+          strokeWidth={unread > 0 ? 2.25 : 1.8}
+          className={unread > 0 ? "text-coral-500" : ""}
+        />
         {unread > 0 && (
-          <span
-            className={cn(
-              "absolute top-0.5 right-0.5",
-              "min-w-[14px] h-[14px] px-1",
-              "rounded-full bg-field-500",
-              "text-[9px] font-bold text-ink-0",
-              "flex items-center justify-center",
-              "shadow-sm",
-            )}
-          >
-            {unread > 9 ? "9+" : unread}
-          </span>
+          <>
+            {/* Pulse ring — draws the eye */}
+            <span
+              className="absolute -top-0.5 -right-0.5 w-4 h-4 rounded-full bg-coral-500/40 animate-ping"
+              aria-hidden="true"
+            />
+            {/* Solid count badge on top */}
+            <span
+              className={cn(
+                "absolute -top-0.5 -right-0.5",
+                "min-w-[16px] h-[16px] px-1",
+                "rounded-full bg-coral-500",
+                "text-[10px] font-bold text-bone-50",
+                "flex items-center justify-center",
+                "ring-2 ring-ink-1",
+              )}
+            >
+              {unread > 9 ? "9+" : unread}
+            </span>
+          </>
         )}
       </button>
 

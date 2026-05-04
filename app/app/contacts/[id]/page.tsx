@@ -15,7 +15,8 @@ import { createClient } from "@/lib/supabase/server";
 import { StatusChip } from "@/components/ui/status-chip";
 import { TextAndCopyButtons } from "@/components/ui/text-copy-buttons";
 import { TagChipList } from "@/components/tags/tag-chip";
-import { getContactTags } from "@/lib/tags/server";
+import { InlineAddTagButton } from "@/components/tags/inline-add-tag";
+import { getContactTags, listTagsForClient } from "@/lib/tags/server";
 import { AssignmentChip } from "@/components/assignment/assignment-select";
 import { ActivityTimeline } from "@/components/activity/activity-timeline";
 import { getTeamMembers } from "@/lib/team/members";
@@ -59,7 +60,7 @@ const TABS = [
   { key: "activity", label: "Activity", icon: Activity },
   { key: "jobs", label: "Jobs", icon: Briefcase },
   { key: "calls", label: "Calls", icon: Phone },
-  { key: "messages", label: "Messages", icon: MessageSquare },
+  { key: "messages", label: "Voicemails", icon: MessageSquare },
 ] as const;
 
 type TabKey = (typeof TABS)[number]["key"];
@@ -91,6 +92,7 @@ export default async function ContactDetailPage({
     teamMembers,
     events,
     contactTags,
+    allTags,
   ] = await Promise.all([
     supabase
       .from("jobs")
@@ -111,6 +113,7 @@ export default async function ContactDetailPage({
     getTeamMembers(contact.client_id),
     getActivityTimeline("contact", Number(contact.id)),
     getContactTags(Number(contact.id)),
+    listTagsForClient(contact.client_id),
   ]);
 
   const assignedMember = contact.assigned_user_id
@@ -140,11 +143,24 @@ export default async function ContactDetailPage({
               {fmtPhone(callbackPhone)}
             </p>
           )}
+          {/* Tags row — directly under phone so they read as the contact's,
+              not the assignee's. Inline +tag quick-add included. */}
           <div className="flex flex-wrap items-center gap-2 mt-2">
-            <AssignmentChip member={assignedMember} />
             {contactTags.length > 0 && (
               <TagChipList tags={contactTags} maxVisible={6} />
             )}
+            <InlineAddTagButton
+              entityType="contact"
+              entityId={Number(contact.id)}
+              clientId={contact.client_id}
+              allTags={allTags}
+              attachedTagIds={contactTags.map((t) => t.id)}
+            />
+          </div>
+          {/* Assignment chip — separate row from tags so it doesn't look
+              like the tags belong to the assignee. */}
+          <div className="mt-2">
+            <AssignmentChip member={assignedMember} />
           </div>
         </div>
         <div className="flex items-center gap-1.5 shrink-0">
@@ -435,7 +451,7 @@ function MessagesTab({
           className="mx-auto text-bone-400 mb-2"
           strokeWidth={1.6}
         />
-        <p className="text-sm text-bone-100 font-medium">No messages</p>
+        <p className="text-sm text-bone-100 font-medium">No voicemails</p>
         <p className="text-xs text-bone-400 mt-1">
           Voicemails from this contact will appear here.
         </p>

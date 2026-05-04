@@ -2,12 +2,15 @@
 
 import { X } from "lucide-react";
 import type { Tag } from "@/lib/tags/types";
-import { tagTextColor } from "@/lib/tags/colors";
 
 /**
- * Display a colored tag chip. Background = tag.color_hex, text contrast
- * computed from luminance. Sized larger than v0.6.0 chips for better
- * visibility per user feedback.
+ * Display a tag chip — outline-only (border + text in the tag color, no fill).
+ * Reads cleaner than the v0.6.0/0.6.1 filled chips, especially in dense layouts.
+ *
+ * Sizing (per user feedback in v0.6.1 testing — chips should be more visible):
+ *   sm:      11px text, 0.5px borders, tighter padding — for table rows + meta
+ *   default: 12px text, full border, comfortable padding — for header chips
+ *   lg:      13px text, slightly heavier border — for empty-state hero use
  */
 export function TagChip({
   tag,
@@ -18,7 +21,6 @@ export function TagChip({
   onRemove?: () => void;
   size?: "sm" | "default" | "lg";
 }) {
-  const textColor = tagTextColor(tag.color_hex);
   const sizeClasses = {
     sm: "text-[11px] px-2 py-0.5",
     default: "text-xs px-2.5 py-1",
@@ -27,8 +29,11 @@ export function TagChip({
 
   return (
     <span
-      className={`inline-flex items-center gap-1 rounded-full font-medium ${sizeClasses}`}
-      style={{ backgroundColor: tag.color_hex, color: textColor }}
+      className={`inline-flex items-center gap-1 rounded-full font-medium border bg-transparent ${sizeClasses}`}
+      style={{
+        borderColor: tag.color_hex,
+        color: tag.color_hex,
+      }}
     >
       {tag.name}
       {onRemove && (
@@ -37,7 +42,7 @@ export function TagChip({
           onClick={onRemove}
           className="hover:opacity-70 transition-opacity"
           aria-label={`Remove ${tag.name} tag`}
-          style={{ color: textColor }}
+          style={{ color: tag.color_hex }}
         >
           <X size={size === "sm" ? 10 : size === "lg" ? 14 : 12} strokeWidth={2.5} />
         </button>

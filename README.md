@@ -1,165 +1,76 @@
-# Field Dashboard v0.6.1
+# Field Dashboard v0.6.2
 
-Next.js 15 + Supabase + Tailwind dashboard for **Field AI** — productized AI
-voice receptionist SaaS for service businesses.
+Polish + perf release on top of v0.6.1.
 
-Brand kit lives separately. Domain: `getfield.co`. Dashboard: `app.getfield.co`.
+## What's new in v0.6.2
 
-## What's new in v0.6.1
+### Bug fixes
 
-**Tag system rebuild.** Replaced the old `text[]` arrays with a first-class
-`tags` table + `job_tags` / `contact_tags` join tables. Tags now have:
+- **Settings save error** — fixed via a Postgres `NOTIFY pgrst, 'reload schema'` to refresh PostgREST's schema cache. The `Clients.updated_at` column was missing from the cache, not the table. No code change needed; already live.
+- **30+ second page loads** — diagnosed and addressed. Two causes:
+  1. Activity timeline had a wasted SMS query (filtered `thread_id = contactId` which is never true) followed by a re-fetch. Fixed: now does at most 2 query waves with no waste.
+  2. Supabase free-tier auto-pause (project sleeps after 7 days of idle, first request takes 30-60s to wake up). Fixed: new `/api/cron/keepwarm` endpoint plus n8n schedule to ping every 5 minutes. Real fix is upgrading to Supabase Pro ($25/mo).
+- **Layout queries parallelized** — was 3 sequential round-trips on every page load, now 2 (auth + parallel data fetch). Saves ~80-150ms.
 
-- A 16-color curated palette (rotating assignment, no two new tags get the same
-  color until the palette wraps)
-- Search-and-suggest picker UI with most-used + most-recent suggestions
-- Live filter as you type
-- Create-new-tag inline from the picker
-- Shared between jobs and contacts (one `vip` tag can apply to both)
-- Larger, color-coded chips on detail pages and list rows
-- Bulk-fetched on list pages so adding tags doesn't hurt page perf
+### Tag UX rebuild
 
-**Inline status edit.** Click the status chip on a job detail page to change
-status without going to the edit form. Auto-saves, refreshes the activity
-timeline.
+- Tags moved next to phone number in detail page headers (was under assignment chip, looked like the assignee's tags)
+- Tags are now **outline-only** (border + text colored, transparent fill) instead of solid pills — cleaner in dense layouts
+- **Manual color picker** when creating a new tag — pick from the 16-color palette via swatch grid, default rotates as before
+- **`+ Tag` quick-add button** on detail page headers — small inline search bar, attach without going to edit form
 
-**Dashboard background fix.** Removed the green tint that was bleeding through
-in v0.6.0. Now neutral near-black (`#0A0A0A` page, `#141414` panels).
+### Other UX
 
-**Add Contact button.** Manually create contacts from the contacts list. New
-form with TagPicker + AssignmentSelect.
+- **Assignment chip larger and pillowed** — pill background, colored dot, more visible at a glance
+- **"Messages" tab in contact card → "Voicemails"** — was confusingly the same name as the SMS page
+- **SMS thread auto-update via Supabase realtime** — new messages appear without page refresh
+- **Notification badge improvements** — count number with "9+" overflow, coral-colored bell when unread, bigger and more visible
+- **Translucent backdrop-blur header** — applied to desktop topbar (already on mobile)
 
-**Display name editor.** "My profile" section in Settings to set
-`raw_user_meta_data.display_name`. Replaces the email-prefix fallback in
-assignment dropdowns and activity timeline events. Also improved the fallback
-itself: `dallin.theriault` → `dallin t.` instead of `dallin.theriault`.
+### Infrastructure
 
-**Feature flags.** Admin can toggle voice / SMS / calendar / billing per
-tenant from `/admin/clients/[id]`. Disabled features hide from the sidebar and
-mobile nav, and pages render a "Disabled by admin" panel.
+- **`/api/cron/keepwarm` endpoint** — POST with `x-cron-secret` header, n8n WF13 should ping every 5 min
+- All migrations from v0.6.1 still apply (no new schema changes in v0.6.2)
 
-**Admin recent-activity debug page.** When a tenant calls support saying "the
-call from 10 min ago didn't save," look up `/admin/clients/[id]/recent-activity`
-to see last 50 calls, SMS, jobs, and intakes.
+## Setup additions
 
-**CSV export.** Download contacts or jobs as CSV from the list page header.
-RLS enforces tenant scoping on the endpoint.
+### n8n keep-warm cron (one-time setup)
 
-**Notification preferences UI.** Owners can toggle email / dashboard / SMS
-notifications from Settings. Backend columns already existed.
+1. n8n → New workflow "WF13 — Keep Warm"
+2. Schedule trigger: every 5 minutes
+3. HTTP Request node:
+   - Method: POST
+   - URL: `https://app.getfield.co/api/cron/keepwarm`
+   - Headers: `x-cron-secret: <CRON_SECRET from Netlify env>`
+4. Activate workflow
 
-**Sentry integration.** `@sentry/nextjs` wired up. Will silently no-op if
-`NEXT_PUBLIC_SENTRY_DSN` is unset, so dev unaffected. Set the DSN in Netlify
-env to start receiving production error reports.
-
-## Setup
-
-```bash
-unzip field-dashboard-v061.zip
-cd field-dashboard-v061
-npm install
-cp .env.local.example .env.local
-# Edit .env.local — fill in all required values
-npm run dev
-# → http://localhost:3000
-```
-
-## Environment variables (v0.6.1 adds Sentry)
-
-```bash
-# Supabase
-NEXT_PUBLIC_SUPABASE_URL=https://your-project-ref.supabase.co
-NEXT_PUBLIC_SUPABASE_ANON_KEY=<anon JWT>
-SUPABASE_SERVICE_ROLE_KEY=<service role key — for /admin/*>
-ADMIN_EMAILS=dallintheriault@live.com
-
-# App URL
-NEXT_PUBLIC_APP_URL=https://app.getfield.co
-
-# Twilio (SMS)
-TWILIO_ACCOUNT_SID=AC...
-TWILIO_AUTH_TOKEN=...
-
-# Stripe (billing)
-STRIPE_SECRET_KEY=sk_...
-STRIPE_WEBHOOK_SECRET=whsec_...
-
-# Resend (email)
-RESEND_API_KEY=re_...
-EMAIL_FROM_NOREPLY="Field AI <noreply@getfield.co>"
-EMAIL_FROM_SUPPORT="Field AI Support <support@getfield.co>"
-
-# Cron
-CRON_SECRET=<random string>
-
-# n8n
-N8N_ONBOARD_WEBHOOK=https://dtheriault.app.n8n.cloud/webhook/onboard-client
-
-# v0.6.1 NEW — Sentry (optional, for error monitoring)
-NEXT_PUBLIC_SENTRY_DSN=https://xxx@o123.ingest.sentry.io/456
-SENTRY_DSN=https://xxx@o123.ingest.sentry.io/456
-```
+This is a workaround. The real fix is upgrading Supabase to Pro before onboarding mock-business #1.
 
 ## Deploy
 
 ```bash
 cd ~/Documents/projects/field-dashboard
-unzip -o ~/Downloads/field-dashboard-v061.zip -d /tmp/fd-new
-rsync -av --delete --exclude='.git' --exclude='.gitignore' \
-  /tmp/fd-new/field-dashboard-v061/ ./
-npm install && npm run build
+unzip -o ~/Downloads/field-dashboard-v062.zip -d /tmp/fd-new
+rsync -av --delete --exclude='.git' --exclude='.gitignore' /tmp/fd-new/field-dashboard-v062/ ./
 git add -A
-git commit -m "v0.6.1: tag rebuild, inline status, feature flags, Sentry, CSV export"
+git commit -m "v0.6.2: tag UX rebuild, perf fixes, realtime SMS, keep-warm cron"
 git push origin main
 ```
 
-## Migrations (already applied to live Supabase)
+## Smoke tests
 
-- `v061_tags_table_with_colors.sql` — tags + job_tags + contact_tags + RLS + triggers
-- `v061_feature_flags.sql` — feature_sms/voice/calendar/billing_enabled columns
-
-Both committed to `supabase/migrations/` for repo history but already live in
-production. Re-running them is safe (`IF NOT EXISTS` guards).
-
-## Project structure (additions in v0.6.1)
-
-```
-lib/
-  features/flags.ts              — server helper for feature-flag pages
-  tags/
-    types.ts                     — Tag type, client-safe
-    server.ts                    — list, getJobTags, getContactTags, bulk fetch
-    colors.ts                    — 16-color palette + nextTagColor helpers
-components/
-  tags/
-    tag-chip.tsx                 — TagChip + TagChipList (replaces tag-chips.tsx)
-    tag-picker.tsx               — search-and-suggest picker (replaces tag-input.tsx)
-  ui/
-    inline-status-edit.tsx       — click-to-edit status chip
-    feature-disabled-panel.tsx   — "Disabled by admin" panel
-app/
-  app/contacts/new/              — Add Contact page + form
-  app/settings/
-    my-profile-form.tsx          — display name editor
-    notification-prefs-form.tsx  — owner notification toggles
-  admin/clients/[id]/
-    feature-flags-form.tsx       — admin feature toggles
-    recent-activity/page.tsx     — debug page (calls/SMS/jobs/intakes)
-  api/export/
-    contacts/route.ts            — CSV export endpoint
-    jobs/route.ts                — CSV export endpoint
-sentry.client.config.ts          — Sentry browser init
-sentry.server.config.ts          — Sentry server init
-sentry.edge.config.ts            — Sentry edge init
-instrumentation.ts               — Next.js instrumentation hook for Sentry
-```
+1. Open a contact with tags — tags should be next to phone, not under assignment
+2. Tags should be outline-only (border + text, no fill)
+3. Click `+ Tag` next to existing tags — small search bar appears
+4. Type new tag name — color picker grid appears below
+5. Click a color swatch — picked color highlights, ready for create
+6. Click create — tag attaches with chosen color
+7. Open a job, click status chip — inline dropdown still works (from v0.6.1)
+8. Open SMS thread, send a text from another device — appears without refresh
+9. Bell icon shows count with red coral when unread
 
 ## Version history
 
-- **v0.6.1** (this) — tag system rebuild, inline status edit, feature flags, Sentry, CSV export, dashboard bg fix, Add Contact, display names, notification prefs UI
-- **v0.6.0** — lead assignment, activity timeline, contact tags, Resend scaffolding
-- **v0.5.12** — tags on jobs, test-tenant flag, lead-assignment foundations
-- **v0.5.11** — three-tier roles, team_audit_log, signup, intake hardening
-- **v0.5.0–10** — SMS conversations, scheduling, templates, admin queue
-- **v0.4** — IRIS → Field rebrand
-- **v0.1–3** — initial dashboard build
+- **v0.6.2** (this) — perf, tag UX rebuild, realtime SMS, keep-warm cron
+- **v0.6.1** — tag system, inline status, feature flags, Sentry, CSV export
+- **v0.6.0** — lead assignment, activity timeline, Resend

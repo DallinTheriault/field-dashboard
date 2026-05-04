@@ -6,6 +6,7 @@ import { ArrowLeft, Phone, User, AlertCircle, Eye } from "lucide-react";
 import { fmtPhoneDisplay } from "@/lib/sms/phone";
 import { ReplyBox } from "./reply-box";
 import { ScheduledBubble } from "./scheduled-bubble";
+import { SmsThreadRealtime } from "./realtime";
 import { getCurrentUserRole } from "@/lib/permissions/current-role";
 import { canSendSms } from "@/lib/permissions/roles";
 
@@ -161,6 +162,7 @@ export default async function MessageThreadPage({
 
   return (
     <div>
+      <SmsThreadRealtime threadId={Number(thread.id)} />
       <Link
         href="/app/messages"
         className="text-2xs text-bone-400 hover:text-bone-100 inline-flex items-center gap-1 mb-3"

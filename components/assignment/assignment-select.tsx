@@ -60,7 +60,9 @@ export function AssignmentSelect({
 
 /**
  * Inline display chip for showing who a lead is assigned to.
- * Used in list views and detail headers where editing isn't appropriate.
+ * v0.6.2: heavier visual treatment per user feedback - background pill,
+ * colored dot for assigned (transparent for unassigned), larger text size
+ * so it's harder to miss next to status chip.
  */
 export function AssignmentChip({
   member,
@@ -71,15 +73,15 @@ export function AssignmentChip({
 }) {
   if (!member) {
     return (
-      <span className="inline-flex items-center gap-1 text-xs text-bone-500">
-        <User size={11} />
+      <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-ink-2 border border-line-subtle text-xs text-bone-400">
+        <span className="w-1.5 h-1.5 rounded-full bg-bone-500" />
         {unassignedLabel}
       </span>
     );
   }
   return (
-    <span className="inline-flex items-center gap-1 text-xs text-bone-300">
-      <UserCheck size={11} className="text-field-500" />
+    <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-field-500/10 border border-field-500/30 text-xs text-field-400 font-medium">
+      <span className="w-1.5 h-1.5 rounded-full bg-field-500" />
       {formatMemberLabel(member)}
     </span>
   );
