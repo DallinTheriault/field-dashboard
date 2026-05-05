@@ -137,25 +137,26 @@ export function NotificationDropdown() {
       >
         <Bell
           size={15}
-          strokeWidth={unread > 0 ? 2.25 : 1.8}
-          className={unread > 0 ? "text-coral-500" : ""}
+          strokeWidth={unread > 0 ? 2.5 : 1.8}
+          className={unread > 0 ? "text-status-danger" : ""}
         />
         {unread > 0 && (
           <>
             {/* Pulse ring — draws the eye */}
             <span
-              className="absolute -top-0.5 -right-0.5 w-4 h-4 rounded-full bg-coral-500/40 animate-ping"
+              className="absolute -top-1 -right-1 w-[18px] h-[18px] rounded-full bg-status-danger/50 animate-ping"
               aria-hidden="true"
             />
             {/* Solid count badge on top */}
             <span
               className={cn(
-                "absolute -top-0.5 -right-0.5",
-                "min-w-[16px] h-[16px] px-1",
-                "rounded-full bg-coral-500",
+                "absolute -top-1 -right-1",
+                "min-w-[18px] h-[18px] px-1",
+                "rounded-full bg-status-danger",
                 "text-[10px] font-bold text-bone-50",
                 "flex items-center justify-center",
                 "ring-2 ring-ink-1",
+                "shadow-[0_0_8px_rgb(var(--status-danger)/0.6)]",
               )}
             >
               {unread > 9 ? "9+" : unread}

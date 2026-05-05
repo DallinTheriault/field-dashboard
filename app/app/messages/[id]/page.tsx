@@ -161,18 +161,18 @@ export default async function MessageThreadPage({
   const phoneDisplay = fmtPhoneDisplay(thread.contact_phone);
 
   return (
-    <div>
+    <div className="flex flex-col h-[calc(100dvh-9rem)] md:h-[calc(100dvh-6rem)]">
       <SmsThreadRealtime threadId={Number(thread.id)} />
       <Link
         href="/app/messages"
-        className="text-2xs text-bone-400 hover:text-bone-100 inline-flex items-center gap-1 mb-3"
+        className="text-2xs text-bone-400 hover:text-bone-100 inline-flex items-center gap-1 mb-3 shrink-0"
       >
         <ArrowLeft size={11} />
         Back to messages
       </Link>
 
-      {/* Thread header */}
-      <div className="panel mb-4">
+      {/* Thread header — stays pinned at top */}
+      <div className="panel mb-4 shrink-0">
         <div className="px-4 py-3 flex items-start justify-between gap-3 flex-wrap">
           <div className="flex-1 min-w-0">
             <div className="label-eyebrow mb-1">Conversation</div>
@@ -208,9 +208,9 @@ export default async function MessageThreadPage({
         </div>
       </div>
 
-      {/* Messages */}
-      <div className="panel">
-        <div className="px-4 py-4">
+      {/* Messages panel — fills remaining height; messages scroll, reply box pinned */}
+      <div className="panel flex-1 min-h-0 flex flex-col overflow-hidden">
+        <div className="flex-1 overflow-y-auto px-4 py-4">
           {msgs.length === 0 ? (
             <p className="text-xs text-bone-400 text-center py-8">
               No messages yet.

@@ -184,7 +184,7 @@ function SmsEvent({
         {failedLabel && (
           <>
             <span className="text-[10px] text-bone-500">·</span>
-            <span className="text-xs text-coral-500">{failedLabel}</span>
+            <span className="text-xs text-status-danger">{failedLabel}</span>
           </>
         )}
       </div>

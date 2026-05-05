@@ -1,3 +1,38 @@
+# Field Dashboard v0.6.3
+
+Polish + lessons-learned release on top of v0.6.2.
+
+## What's new in v0.6.3
+
+### Bug fixes
+
+- **Notification badge actually visible** — `coral-500` was an undefined Tailwind class, so the badge had been rendering with no background color since v0.6.1. Replaced with `status-danger` (theme-aware, defined in globals.css), bumped size to 18px, added a glow shadow, and brighter pulse ring. Bell icon now also shows in red when unread. Same fix applied to activity timeline failed-message indicator.
+- **SMS thread page layout** — was a single growing scroll. Now a flex column that fills viewport height: thread header pinned at top, messages scroll between, reply box pinned at bottom. Especially noticeable on mobile.
+
+### Database hardening (Supabase migrations applied)
+
+- **`normalize_e164(text)` SQL helper** + **trigger on Clients** — auto-normalizes `twilio_number`, `business_phone`, `owner_phone`, `escalation_phone` to E.164 on insert/update. Handles paste from any source: `(801) 555-0142`, `8015550142`, `+18015550142` all become `+18015550142`. Trims whitespace and newlines. Prevents the silent webhook-routing bugs from v0.6.x.
+- **`render_system_prompt()` fails loudly** — now refuses to render if any of `business_name`, `business_short_name`, `service_type`, `primary_service`, `business_phone`, `business_hours`, `scope_values`, `escalation_phone` are null/empty, AND scans the rendered output for unreplaced `{{tokens}}` (catches typos in the master template). Error message lists ALL missing fields at once instead of fix-one-find-next.
+
+### n8n WF1 hardening
+
+- **Normalize Payload code** — hardened phone handling. Now checks 4 paths in the VAPI artifact for the real caller phone, validates against E.164 format, rejects model-passed placeholder strings like `caller_phone_number` or `unknown`, trims whitespace from ALL string fields, adds `_phoneSource` debug field. Authoritative tenant `client_id` injection from upstream Supabase lookup remains unchanged.
+
+### Documentation
+
+- New: `docs/tenant-onboarding-checklist.md` — manual onboarding playbook with all v0.6.x lessons baked in. Explicit warnings about per-tool webhook_secret replacement (the #1 onboarding bug).
+- New: `docs/save-message-tool-spec.md` — VAPI tool spec for the missing 6th tool. Apply to both Sharpline and Cascade.
+
+### v0.7 trajectory (not in this release)
+
+- Refactor VAPI tools from per-tenant to shared/referenced (single set of 6 tools, all assistants reference them — eliminates the webhook-secret-per-tool pattern)
+- Move from per-tenant `webhook_secret` to single env-var auth + `client_id` in body (proper auth/identity separation)
+- `create_test_tenant(json)` SQL function for one-shot tenant provisioning
+- `/admin/clients/new` form for self-serve onboarding
+- Marketing landing page at `getfield.co` apex (separate deploy)
+
+---
+
 # Field Dashboard v0.6.2
 
 Polish + perf release on top of v0.6.1.
