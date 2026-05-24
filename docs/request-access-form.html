@@ -1,0 +1,382 @@
+<!--
+  Field — Request Access Form
+  
+  Drop-in replacement for the existing #signup section on getfield.co.
+  Self-contained: HTML + scoped CSS + Supabase JS via CDN.
+  
+  Setup before going live:
+  1. Replace SUPABASE_ANON_KEY below with the actual anon key from Supabase Dashboard
+     (Settings → API → "anon public" key)
+  2. Verify the section uses CSS custom properties already defined in the landing page
+     (--ink-0, --paper-0, --field-500, etc.)
+  3. Test: submit a fake lead, verify it appears in lead_intake table
+  
+  Schema reference: public.lead_intake (created in v063_create_lead_intake migration)
+-->
+
+<section id="signup" class="surface-ink signup">
+  <div class="container">
+    <div class="signup-card reveal">
+      <h2>Request access. <em>Get an AI receptionist built for you.</em></h2>
+      <p>Tell us about your business. We'll reach out within 24 hours to schedule a 15-minute discovery call. No instant signup, no credit card. Field is configured by hand for each business.</p>
+
+      <form id="request-access-form" class="request-form" novalidate>
+        <!-- Honeypot — hidden field, bots fill it in, humans don't see it -->
+        <div aria-hidden="true" class="hp">
+          <label>Website (leave blank)
+            <input type="text" name="website" tabindex="-1" autocomplete="off" />
+          </label>
+        </div>
+
+        <div class="form-grid">
+          <label class="form-field">
+            <span class="form-label">Business name <em>*</em></span>
+            <input type="text" name="business_name" required maxlength="200" autocomplete="organization" />
+          </label>
+
+          <label class="form-field">
+            <span class="form-label">Industry <em>*</em></span>
+            <select name="industry" required>
+              <option value="">Select…</option>
+              <option value="hvac">HVAC</option>
+              <option value="painting">Painting</option>
+              <option value="plumbing">Plumbing</option>
+              <option value="electrical">Electrical</option>
+              <option value="lawn_care">Lawn care / landscaping</option>
+              <option value="roofing">Roofing</option>
+              <option value="cleaning">Cleaning</option>
+              <option value="general_contractor">General contracting</option>
+              <option value="other">Other (tell us in notes)</option>
+            </select>
+          </label>
+
+          <label class="form-field">
+            <span class="form-label">Your name <em>*</em></span>
+            <input type="text" name="contact_name" required maxlength="100" autocomplete="name" />
+          </label>
+
+          <label class="form-field">
+            <span class="form-label">Email <em>*</em></span>
+            <input type="email" name="contact_email" required maxlength="200" autocomplete="email" />
+          </label>
+
+          <label class="form-field">
+            <span class="form-label">Phone <em>*</em></span>
+            <input type="tel" name="contact_phone" required placeholder="(801) 555-0142" autocomplete="tel" />
+          </label>
+
+          <label class="form-field">
+            <span class="form-label">Roughly how many employees?</span>
+            <select name="employee_count_estimate">
+              <option value="">Prefer not to say</option>
+              <option value="1">Just me</option>
+              <option value="3">2-3</option>
+              <option value="5">4-5</option>
+              <option value="10">6-10</option>
+              <option value="20">11-20</option>
+              <option value="50">21+</option>
+            </select>
+          </label>
+        </div>
+
+        <label class="form-field full-width">
+          <span class="form-label">Anything else we should know?</span>
+          <textarea
+            name="notes"
+            rows="3"
+            maxlength="1000"
+            placeholder="Optional. Current call volume, what's not working with voicemail/answering services, what made you reach out today."
+          ></textarea>
+        </label>
+
+        <div class="form-actions">
+          <button type="submit" class="btn btn-fill submit-btn">
+            <span class="submit-label">Request access →</span>
+          </button>
+          <p class="form-fine">We'll respond within 24 hours, M-F. By submitting, you agree to our <a href="/privacy">privacy policy</a>.</p>
+        </div>
+      </form>
+
+      <div class="form-success" hidden>
+        <svg class="success-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M20 6L9 17l-5-5"/>
+        </svg>
+        <h3>Thanks. We got your request.</h3>
+        <p class="success-detail">We'll reach out within 24 hours to schedule a quick discovery call. Check your email for a confirmation in a few minutes.</p>
+      </div>
+
+      <div class="form-error" hidden role="alert">
+        <h3>Something went wrong.</h3>
+        <p class="form-error-detail">Network error. Please try again.</p>
+        <p class="form-error-fallback">Or email <a href="mailto:dallin@getfield.co">dallin@getfield.co</a> directly and we'll sort it out.</p>
+        <button type="button" class="btn btn-outline-paper retry-btn">Try again</button>
+      </div>
+
+      <div class="signup-fine">Built in Utah · Live for HVAC + painting · Q3 2026: plumbing, lawn care, roofing</div>
+    </div>
+  </div>
+</section>
+
+<style>
+  /* ─── Form-specific styles (scoped to #signup) ──── */
+
+  #signup .request-form {
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
+    margin: 1.75rem 0 0;
+  }
+
+  #signup .form-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1rem;
+  }
+  @media (max-width: 600px) {
+    #signup .form-grid { grid-template-columns: 1fr; gap: 0.85rem; }
+  }
+
+  #signup .form-field {
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+  }
+  #signup .form-field.full-width { grid-column: 1 / -1; }
+
+  #signup .form-label {
+    font-size: 0.85rem;
+    font-weight: 500;
+    color: var(--on-paper-strong);
+    letter-spacing: -0.005em;
+  }
+  #signup .form-label em {
+    color: var(--rust-500, #b5564e);
+    font-style: normal;
+    font-weight: 700;
+  }
+
+  #signup .form-field input,
+  #signup .form-field select,
+  #signup .form-field textarea {
+    padding: 0.7rem 0.85rem;
+    font-size: 0.95rem;
+    background: var(--paper-0);
+    border: 1.5px solid var(--paper-rule);
+    border-radius: 0;
+    color: var(--on-paper-strong);
+    font-family: inherit;
+    transition: border-color 0.15s ease, box-shadow 0.15s ease;
+    width: 100%;
+    -webkit-appearance: none;
+    appearance: none;
+  }
+  #signup .form-field select {
+    background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'><path fill='none' stroke='%230c0f0e' stroke-width='2' d='M1 1l5 5 5-5'/></svg>");
+    background-repeat: no-repeat;
+    background-position: right 0.85rem center;
+    padding-right: 2.25rem;
+  }
+  #signup .form-field input:focus,
+  #signup .form-field select:focus,
+  #signup .form-field textarea:focus {
+    outline: none;
+    border-color: var(--field-500);
+    box-shadow: 0 0 0 3px rgba(46, 165, 138, 0.18);
+  }
+  #signup .form-field input:invalid:not(:placeholder-shown),
+  #signup .form-field textarea:invalid:not(:placeholder-shown) {
+    border-color: var(--rust-500, #b5564e);
+  }
+  #signup .form-field textarea { resize: vertical; min-height: 80px; }
+
+  /* Honeypot — visually hidden but technically a real form field */
+  #signup .hp {
+    position: absolute;
+    left: -9999px;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+  }
+
+  #signup .form-actions {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+    margin-top: 0.5rem;
+  }
+  #signup .submit-btn {
+    align-self: flex-start;
+    min-width: 220px;
+    transition: opacity 0.2s, transform 0.18s ease;
+  }
+  #signup .submit-btn[disabled] {
+    opacity: 0.6;
+    cursor: wait;
+    transform: none !important;
+    box-shadow: none !important;
+  }
+  #signup .form-fine {
+    font-size: 0.78rem;
+    color: var(--on-paper-muted);
+    margin: 0;
+  }
+  #signup .form-fine a {
+    text-decoration: underline;
+    text-underline-offset: 2px;
+  }
+
+  /* Success / error states */
+  #signup .form-success,
+  #signup .form-error {
+    text-align: center;
+    padding: 2.5rem 0 1.5rem;
+    margin: 1.75rem 0 0;
+  }
+  #signup .form-success h3,
+  #signup .form-error h3 {
+    font-size: 1.65rem;
+    font-weight: 700;
+    margin: 0 0 0.85rem;
+    color: var(--on-paper-strong);
+    letter-spacing: -0.025em;
+  }
+  #signup .form-success p,
+  #signup .form-error p {
+    color: var(--on-paper-body);
+    line-height: 1.55;
+    max-width: 420px;
+    margin: 0 auto 0.5rem;
+  }
+  #signup .success-icon {
+    width: 56px;
+    height: 56px;
+    color: var(--field-500);
+    margin: 0 auto 1.25rem;
+    display: block;
+    background: rgba(46, 165, 138, 0.1);
+    border-radius: 50%;
+    padding: 12px;
+    box-sizing: border-box;
+  }
+  #signup .form-error h3 { color: var(--rust-500, #b5564e); }
+  #signup .form-error-fallback { font-size: 0.88rem; color: var(--on-paper-muted) !important; }
+  #signup .form-error-fallback a { text-decoration: underline; }
+  #signup .retry-btn { margin-top: 1rem; }
+</style>
+
+<script type="module">
+  import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.39.0/+esm';
+
+  // ─── Configuration ──────────────────────────────
+  // Get from Supabase Dashboard → Settings → API → "anon public" key
+  const SUPABASE_URL = 'https://your-project-ref.supabase.co';
+  const SUPABASE_ANON_KEY = 'PASTE_ANON_KEY_HERE';
+
+  if (SUPABASE_ANON_KEY === 'PASTE_ANON_KEY_HERE') {
+    console.warn('[Field] Supabase anon key not configured. Form submissions will fail.');
+  }
+
+  const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+  // ─── Form elements ──────────────────────────────
+  const form = document.getElementById('request-access-form');
+  const submitBtn = form.querySelector('.submit-btn');
+  const submitLabel = form.querySelector('.submit-label');
+  const successPanel = document.querySelector('#signup .form-success');
+  const errorPanel = document.querySelector('#signup .form-error');
+  const errorDetail = errorPanel.querySelector('.form-error-detail');
+  const retryBtn = errorPanel.querySelector('.retry-btn');
+
+  // ─── UTM capture from URL ───────────────────────
+  const urlParams = new URLSearchParams(window.location.search);
+  const getUtm = (key) => urlParams.get(`utm_${key}`) || null;
+
+  // ─── Submit handler ─────────────────────────────
+  async function handleSubmit(e) {
+    e.preventDefault();
+    errorPanel.hidden = true;
+
+    // Honeypot check — bots fill the hidden "website" field
+    const honeypot = form.elements['website']?.value?.trim();
+    if (honeypot) {
+      // Silent success for bots — no error, just hide the form
+      form.hidden = true;
+      successPanel.hidden = false;
+      return;
+    }
+
+    // Disable submit
+    submitBtn.disabled = true;
+    submitLabel.textContent = 'Sending…';
+
+    const formData = new FormData(form);
+
+    const payload = {
+      business_name: formData.get('business_name')?.trim(),
+      contact_name: formData.get('contact_name')?.trim(),
+      contact_email: formData.get('contact_email')?.trim().toLowerCase(),
+      contact_phone: formData.get('contact_phone')?.trim(),
+      industry: formData.get('industry') || null,
+      employee_count_estimate: formData.get('employee_count_estimate')
+        ? parseInt(formData.get('employee_count_estimate'), 10)
+        : null,
+      notes: formData.get('notes')?.trim() || null,
+      source: 'getfield_signup',
+      source_url: window.location.href.split('?')[0], // strip query string for privacy
+      referrer: document.referrer || null,
+      utm_source: getUtm('source'),
+      utm_medium: getUtm('medium'),
+      utm_campaign: getUtm('campaign'),
+      utm_term: getUtm('term'),
+      utm_content: getUtm('content'),
+      status: 'new',
+    };
+
+    try {
+      const { error } = await supabase
+        .from('lead_intake')
+        .insert(payload);
+
+      if (error) throw error;
+
+      // Success — hide form, show success panel
+      form.hidden = true;
+      successPanel.hidden = false;
+
+      // Optional: GA/Plausible event tracking
+      if (typeof gtag === 'function') {
+        gtag('event', 'request_access_submitted', { method: 'form' });
+      }
+      if (typeof plausible === 'function') {
+        plausible('Request Access');
+      }
+
+      // Scroll into view (mobile)
+      successPanel.scrollIntoView({ behavior: 'smooth', block: 'center' });
+
+    } catch (err) {
+      console.error('[Field] Submission failed:', err);
+      submitBtn.disabled = false;
+      submitLabel.textContent = 'Request access →';
+
+      // Show user-friendly error
+      let msg = 'Network error. Please try again.';
+      if (err.message?.includes('email_basic_format')) {
+        msg = 'That email address looks invalid. Please check and try again.';
+      } else if (err.message?.includes('not_empty')) {
+        msg = 'Please fill in all required fields.';
+      } else if (err.message) {
+        msg = err.message;
+      }
+      errorDetail.textContent = msg;
+      errorPanel.hidden = false;
+      errorPanel.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+  }
+
+  form.addEventListener('submit', handleSubmit);
+  retryBtn.addEventListener('click', () => {
+    errorPanel.hidden = true;
+    form.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  });
+</script>
