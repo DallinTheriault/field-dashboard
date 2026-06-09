@@ -1,8 +1,8 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import { Loader2, ToggleRight } from "lucide-react";
-import { createClient } from "@/lib/supabase/client";
 
 type Flags = {
   feature_sms_enabled: boolean;
@@ -26,6 +26,7 @@ export function AdminFeatureFlagsForm({
   clientId: number;
   initial: Flags;
 }) {
+  const router = useRouter();
   const [flags, setFlags] = useState<Flags>(initial);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -35,18 +36,28 @@ export function AdminFeatureFlagsForm({
     setSaving(true);
     setErr(null);
     setSaved(false);
-    const supabase = createClient();
-    const { error } = await supabase
-      .from("Clients")
-      .update(flags)
-      .eq("id", clientId);
-    setSaving(false);
-    if (error) {
-      setErr(error.message);
-      return;
+    // Route through the admin service-role PATCH endpoint (same as the main
+    // config form). A direct browser-client update is RLS-bound to the admin's
+    // OWN tenant, so editing another tenant's flags silently updates 0 rows.
+    try {
+      const res = await fetch(`/api/admin/clients/${clientId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(flags),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        setErr(data.error || `Save failed (${res.status})`);
+        return;
+      }
+      setSaved(true);
+      setTimeout(() => setSaved(false), 2000);
+      router.refresh();
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "Network error");
+    } finally {
+      setSaving(false);
     }
-    setSaved(true);
-    setTimeout(() => setSaved(false), 2000);
   }
 
   function toggle(key: keyof Flags) {
@@ -71,7 +82,7 @@ export function AdminFeatureFlagsForm({
     {
       key: "feature_calendar_enabled",
       label: "Calendar integration",
-      desc: "Google Calendar sync. Pre-release — leave off for now.",
+      desc: "Google Calendar sync for bookings (per-tenant calendar_id).",
     },
     {
       key: "feature_billing_enabled",
