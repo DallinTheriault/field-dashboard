@@ -3,4 +3,12 @@ node_modules
 .env.local
 .env*.local
 *.log
+*.tsbuildinfo
 .DS_Store
+
+# Internal AI-process notes — kept locally, never committed to the public repo
+CLAUDE.md
+docs/agent-memory/
+docs/AUDIT-HANDOFF.md
+docs/SESSION-HANDOFF.md
+docs/task-brief-template.md

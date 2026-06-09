@@ -1,111 +1,84 @@
-# Field Dashboard v0.6.3
+# Field: a multi-tenant dashboard and AI voice receptionist for service businesses
 
-Polish + lessons-learned release on top of v0.6.2.
+**Built by Dallin Theriault.** A multi-tenant SaaS for service businesses (HVAC, painting, and the like): an AI voice receptionist that answers calls, books jobs, and captures leads, with a per-tenant dashboard for jobs, contacts, calls, messages, and a calendar. Built under Field AI.
 
-## What's new in v0.6.3
+> **How this was built, read this first.** I am not a software engineer and I did not hand-write the code in this project. I architected and directed it. I made the technical decisions, designed the multi-tenant data model, scoped the work, communicated requirements to AI coding tools, debugged against real system logs, and ran a live cloud-to-local migration. The code itself was written by AI (Claude). I’m putting this up front because it’s the honest account of how the project was made, and because directing AI tools to a working, multi-tenant system is the actual skill this project demonstrates.
 
-### Bug fixes
+-----
 
-- **Notification badge actually visible** — `coral-500` was an undefined Tailwind class, so the badge had been rendering with no background color since v0.6.1. Replaced with `status-danger` (theme-aware, defined in globals.css), bumped size to 18px, added a glow shadow, and brighter pulse ring. Bell icon now also shows in red when unread. Same fix applied to activity timeline failed-message indicator.
-- **SMS thread page layout** — was a single growing scroll. Now a flex column that fills viewport height: thread header pinned at top, messages scroll between, reply box pinned at bottom. Especially noticeable on mobile.
+## Why I built it, and why I stopped
 
-### Database hardening (Supabase migrations applied)
+I set out to build a real product: an AI receptionist plus an intake and operations dashboard that small service businesses could actually run on. The voice agent answers the phone, figures out what the caller wants, books or schedules them, and drops the lead into a dashboard the owner can work from.
 
-- **`normalize_e164(text)` SQL helper** + **trigger on Clients** — auto-normalizes `twilio_number`, `business_phone`, `owner_phone`, `escalation_phone` to E.164 on insert/update. Handles paste from any source: `(801) 555-0142`, `8015550142`, `+18015550142` all become `+18015550142`. Trims whitespace and newlines. Prevents the silent webhook-routing bugs from v0.6.x.
-- **`render_system_prompt()` fails loudly** — now refuses to render if any of `business_name`, `business_short_name`, `service_type`, `primary_service`, `business_phone`, `business_hours`, `scope_values`, `escalation_phone` are null/empty, AND scans the rendered output for unreplaced `{{tokens}}` (catches typos in the master template). Error message lists ALL missing fields at once instead of fix-one-find-next.
+Then I spent enough time in the market to make a call I think was the right one: it’s saturated, and a lot of what’s out there is bad. I decided not to chase a crowded space with another me-too product. So I stopped at v0.6.3.
 
-### n8n WF1 hardening
+I’m keeping it here, finished to a working demo, for two reasons. It’s the clearest thing I’ve built to show how I think about backend architecture and real systems. And knowing when to stop building something is, honestly, part of the point. Shipping isn’t always the move. Sometimes the call is “this works, the market doesn’t, move on,” and making that call deliberately is worth more than grinding out a launch nobody needed.
 
-- **Normalize Payload code** — hardened phone handling. Now checks 4 paths in the VAPI artifact for the real caller phone, validates against E.164 format, rejects model-passed placeholder strings like `caller_phone_number` or `unknown`, trims whitespace from ALL string fields, adds `_phoneSource` debug field. Authoritative tenant `client_id` injection from upstream Supabase lookup remains unchanged.
+## What it is
 
-### Documentation
+Field is **multi-tenant**. One system serves many client businesses, each with its own isolated data, its own branding, its own AI assistant, and its own settings. A platform admin can manage every tenant from one console; each tenant only ever sees its own data.
 
-- New: `docs/tenant-onboarding-checklist.md` — manual onboarding playbook with all v0.6.x lessons baked in. Explicit warnings about per-tool webhook_secret replacement (the #1 onboarding bug).
-- New: `docs/save-message-tool-spec.md` — VAPI tool spec for the missing 6th tool. Apply to both Sharpline and Cascade.
+The backend that does the real work is a set of automation workflows (n8n) that handle the whole call lifecycle and write to a Postgres database (Supabase) with row-level security enforcing the tenant boundaries. The dashboard is the front end the business owner actually uses.
 
-### v0.7 trajectory (not in this release)
+## What it actually does
 
-- Refactor VAPI tools from per-tenant to shared/referenced (single set of 6 tools, all assistants reference them — eliminates the webhook-secret-per-tool pattern)
-- Move from per-tenant `webhook_secret` to single env-var auth + `client_id` in body (proper auth/identity separation)
-- `create_test_tenant(json)` SQL function for one-shot tenant provisioning
-- `/admin/clients/new` form for self-serve onboarding
-- Marketing landing page at `getfield.co` apex (separate deploy)
+These are the working features in the demo (v0.6.3):
 
----
+- **AI voice receptionist.** A caller phones the business. The assistant answers, recognizes returning callers by their number, works out the intent (estimate, booking, question), and handles the call. It has escalation logic for when it needs to hand off, and it calls tools mid-call to look things up and save what it learns.
+- **Calls to jobs, automatically.** When a call ends, the system writes a call summary, creates or updates the contact, and turns the lead into a job, no manual entry.
+- **Jobs and pipeline.** Jobs across the full status range (lead, scheduled, completed), with service types, tags, addresses, and dates. Add, edit, filter, export.
+- **Contacts.** Searchable customer list with tags, phone, email, and history.
+- **Two-way messaging.** SMS conversations with customers, threaded per contact.
+- **Calendar.** Real calendar integration: a booking creates an actual calendar event, and a cancellation removes it.
+- **Post-call notifications.** The moment a call ends, the caller gets a confirmation and the business owner gets a real-time “new lead” ping.
+- **Per-tenant configuration.** Each client’s assistant is driven by their own settings: business name, services, hours, pricing, escalation rules, callback promise, and feature toggles, all editable from the admin console and threaded into that tenant’s AI prompt.
+- **Admin console.** A platform-wide view to manage every tenant’s backend from one place.
 
-# Field Dashboard v0.6.2
+## How it’s built
 
-Polish + perf release on top of v0.6.1.
+- **AI voice agent** (VAPI) for the phone layer. It calls into the backend by webhook during and after each call.
+- **Automation backend** (n8n, self-hosted): a hub workflow authenticates the call, resolves which tenant it belongs to, and routes to the right sub-workflow (estimate, booking, calendar, SMS, call-end). This is where the call lifecycle actually lives.
+- **Postgres database** (Supabase) with **row-level security** enforcing tenant isolation: roughly 28 tables covering clients, users, jobs, contacts, calls, messages, calendar connections, notifications, billing scaffolding, audit logs, and per-tenant secrets.
+- **Dashboard** (Next.js): the per-tenant front end and the platform admin console.
+- **SMS** via Twilio, **email** via Resend, **calendar** via Google Calendar, **push notifications** via a self-hosted ntfy server.
 
-## What's new in v0.6.2
+## Two things from this project worth telling you about
 
-### Bug fixes
+I include these because the work that made me proud wasn’t the feature list, it was understanding the system well enough to find real problems and fix them properly.
 
-- **Settings save error** — fixed via a Postgres `NOTIFY pgrst, 'reload schema'` to refresh PostgREST's schema cache. The `Clients.updated_at` column was missing from the cache, not the table. No code change needed; already live.
-- **30+ second page loads** — diagnosed and addressed. Two causes:
-  1. Activity timeline had a wasted SMS query (filtered `thread_id = contactId` which is never true) followed by a re-fetch. Fixed: now does at most 2 query waves with no waste.
-  2. Supabase free-tier auto-pause (project sleeps after 7 days of idle, first request takes 30-60s to wake up). Fixed: new `/api/cron/keepwarm` endpoint plus n8n schedule to ping every 5 minutes. Real fix is upgrading to Supabase Pro ($25/mo).
-- **Layout queries parallelized** — was 3 sequential round-trips on every page load, now 2 (auth + parallel data fetch). Saves ~80-150ms.
+### A cross-tenant security boundary, caught the right way
 
-### Tag UX rebuild
+While making a demo tenant fully functional, I hit a bug that looked trivial and wasn’t. Toggling a feature flag for one tenant in the admin console wouldn’t save: flip it on, hit save, refresh, and it was off again. No error, just silently reset.
 
-- Tags moved next to phone number in detail page headers (was under assignment chip, looked like the assignee's tags)
-- Tags are now **outline-only** (border + text colored, transparent fill) instead of solid pills — cleaner in dense layouts
-- **Manual color picker** when creating a new tag — pick from the 16-color palette via swatch grid, default rotates as before
-- **`+ Tag` quick-add button** on detail page headers — small inline search bar, attach without going to edit form
+The cause was the security model working exactly as designed, against me. The save was going through the normal browser client, which is bound by row-level security to the admin’s *own* tenant. So when the admin tried to change a *different* tenant’s settings through that client, the database correctly refused, it updated zero rows, because row-level security wouldn’t let one tenant write another tenant’s data. The silent reset was RLS doing its job.
 
-### Other UX
+The fix was to route admin-level, cross-tenant writes through a separate privileged path with an explicit admin check, instead of the tenant-bound browser client. The lesson worth keeping: in a multi-tenant system, “it didn’t save and didn’t error” is often not a bug in your code, it’s your isolation model catching you doing something it was built to prevent. You have to respect the boundary, not work around it.
 
-- **Assignment chip larger and pillowed** — pill background, colored dot, more visible at a glance
-- **"Messages" tab in contact card → "Voicemails"** — was confusingly the same name as the SMS page
-- **SMS thread auto-update via Supabase realtime** — new messages appear without page refresh
-- **Notification badge improvements** — count number with "9+" overflow, coral-colored bell when unread, bigger and more visible
-- **Translucent backdrop-blur header** — applied to desktop topbar (already on mobile)
+### Moving a live backend off the cloud without losing it
 
-### Infrastructure
+The entire call-handling backend, 17 workflows, originally ran on a hosted cloud automation service. I needed to move it to a self-hosted instance, and the hosted account was days from renewing, with a catch: cancelling would delete the whole workspace.
 
-- **`/api/cron/keepwarm` endpoint** — POST with `x-cron-secret` header, n8n WF13 should ping every 5 min
-- All migrations from v0.6.1 still apply (no new schema changes in v0.6.2)
+So the order mattered. First I backed up all 17 workflows to local files, which meant the system could survive cancellation no matter what. Then I rebuilt the core on the self-hosted instance and re-entered every credential by hand (credentials don’t export with the workflows). The real snag was that the hub workflow called its sub-workflows by ID, and a couple of platform quirks meant imported workflows needed their published version set before they’d activate at all. Once that was sorted, I verified the whole path end to end, including a real phone call that routed through the new local backend, recognized the caller, and wrote to the database, before cancelling anything on the old service.
 
-## Setup additions
+The takeaway: when you’re moving something live, back up first so nothing’s at risk, then migrate, then verify against reality, and only then tear down the old thing. Never the other way around.
 
-### n8n keep-warm cron (one-time setup)
+## How tenant isolation actually works
 
-1. n8n → New workflow "WF13 — Keep Warm"
-2. Schedule trigger: every 5 minutes
-3. HTTP Request node:
-   - Method: POST
-   - URL: `https://app.getfield.co/api/cron/keepwarm`
-   - Headers: `x-cron-secret: <CRON_SECRET from Netlify env>`
-4. Activate workflow
+Worth calling out as a design decision, because it’s the spine of the whole thing. Every piece of data carries a tenant ID. Row-level security on the database enforces that a given tenant’s queries can only ever touch that tenant’s rows. The AI assistant for each client is configured entirely from that client’s own settings row, which gets threaded into the assistant’s prompt, so one shared system serves many businesses without their data or behavior bleeding into each other. The design is “one platform, many isolated tenants,” not “a separate copy per client.” That’s the part that would actually scale, and it’s the part I’m most deliberate about.
 
-This is a workaround. The real fix is upgrading Supabase to Pro before onboarding mock-business #1.
+## Honest limitations
 
-## Deploy
+I’d rather be straight about what this is than oversell it.
 
-```bash
-cd ~/Documents/projects/field-dashboard
-unzip -o ~/Downloads/field-dashboard-v062.zip -d /tmp/fd-new
-rsync -av --delete --exclude='.git' --exclude='.gitignore' /tmp/fd-new/field-dashboard-v062/ ./
-git add -A
-git commit -m "v0.6.2: tag UX rebuild, perf fixes, realtime SMS, keep-warm cron"
-git push origin main
-```
+- **It’s a demo, frozen at v0.6.3.** It’s a working showcase of the architecture and the core flow, not a launched, hardened product.
+- **Billing is scaffolded, not finished.** The subscription and payment tables exist in the schema but the billing flow was deliberately left for later. It’s out of scope.
+- **The demo tenant is seeded with realistic sample data.** The numbers and customers in the showcase are plausible demo data, not a real customer base.
+- **Some pieces are wired for the demo, not for production scale.** For example, per-tenant phone numbers and the in-dashboard notification surface were intentionally deferred, the demo uses a notification stand-in to show the flow. I built the parts that prove the system works and stopped at the line where more work meant chasing a market I’d decided against.
 
-## Smoke tests
+## A note on how I work
 
-1. Open a contact with tags — tags should be next to phone, not under assignment
-2. Tags should be outline-only (border + text, no fill)
-3. Click `+ Tag` next to existing tags — small search bar appears
-4. Type new tag name — color picker grid appears below
-5. Click a color swatch — picked color highlights, ready for create
-6. Click create — tag attaches with chosen color
-7. Open a job, click status chip — inline dropdown still works (from v0.6.1)
-8. Open SMS thread, send a text from another device — appears without refresh
-9. Bell icon shows count with red coral when unread
+I run AI coding tools the way a technical lead runs a team. I hold the roadmap, I keep each task small and specific, I tell it exactly what I need, I stop it from wandering into work that doesn’t serve the goal, and I check what comes back against what’s actually happening in the logs and the live system. The code was written by AI. Designing the multi-tenant architecture, deciding what to build and what to leave alone, running the migration, and verifying it all actually worked, that part was mine.
 
-## Version history
+-----
 
-- **v0.6.2** (this) — perf, tag UX rebuild, realtime SMS, keep-warm cron
-- **v0.6.1** — tag system, inline status, feature flags, Sentry, CSV export
-- **v0.6.0** — lead assignment, activity timeline, Resend
+*Personal project, built under Field AI. Not affiliated with any employer. Built by Dallin Theriault.*
