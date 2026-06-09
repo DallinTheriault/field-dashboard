@@ -26,6 +26,7 @@ type ClientConfig = {
   twilio_number: string;
   vapi_assistant_id: string;
   calendar_id: string;
+  callback_window: string;
   notify_email: boolean;
   notify_dashboard_ping: boolean;
   notify_sms: boolean;
@@ -227,6 +228,13 @@ export function ClientConfigForm({ client }: { client: ClientConfig }) {
             value={form.escalation_phone}
             onChange={(e) => update("escalation_phone", e.target.value)}
             className="font-mono"
+          />
+        </Field>
+        <Field label="Callback window" hint='Templated into call/SMS confirmations, e.g. "...will reach out [within the hour]". Defaults to "within the hour".'>
+          <input
+            value={form.callback_window}
+            onChange={(e) => update("callback_window", e.target.value)}
+            placeholder="within the hour"
           />
         </Field>
         <div className="flex items-center gap-4 flex-wrap pt-2">

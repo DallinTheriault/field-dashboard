@@ -97,6 +97,7 @@ export default async function AdminClientDetailPage({
           twilio_number: client.twilio_number ?? "",
           vapi_assistant_id: client.vapi_assistant_id ?? "",
           calendar_id: client.calendar_id ?? "",
+          callback_window: client.callback_window ?? "within the hour",
           notify_email: client.notify_email ?? true,
           notify_dashboard_ping: client.notify_dashboard_ping ?? true,
           notify_sms: client.notify_sms ?? false,
