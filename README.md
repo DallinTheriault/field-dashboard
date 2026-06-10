@@ -6,6 +6,21 @@
 
 -----
 
+## Screenshots
+
+<table>
+  <tr>
+    <td width="50%"><img src="docs/screenshots/overview.png" alt="Overview"><br><sub><b>Overview</b> — calls this week, new leads, conversion, and a recent-calls feed.</sub></td>
+    <td width="50%"><img src="docs/screenshots/jobs.png" alt="Jobs"><br><sub><b>Jobs</b> — the pipeline with lead / scheduled / completed status.</sub></td>
+  </tr>
+  <tr>
+    <td width="50%"><img src="docs/screenshots/call-detail.png" alt="Call detail"><br><sub><b>Call detail</b> — the AI summary, the detected intent and outcome, and the linked job.</sub></td>
+    <td width="50%"><img src="docs/screenshots/calendar.png" alt="Calendar"><br><sub><b>Calendar</b> — scheduled jobs across the month.</sub></td>
+  </tr>
+</table>
+
+-----
+
 ## Why I built it, and why I stopped
 
 I set out to build a real product: an AI receptionist plus an intake and operations dashboard that small service businesses could actually run on. The voice agent answers the phone, figures out what the caller wants, books or schedules them, and drops the lead into a dashboard the owner can work from.
