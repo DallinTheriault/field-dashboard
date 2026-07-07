@@ -12,3 +12,9 @@ docs/agent-memory/
 docs/AUDIT-HANDOFF.md
 docs/SESSION-HANDOFF.md
 docs/task-brief-template.md
+.claude/
+
+# Estimator internals — the kickoff doc and golden test carry real business
+# numbers and a customer address; they stay local (tests still run locally).
+docs/ESTIMATOR_INTEGRATION_KICKOFF.md
+lib/estimator/golden-riverton.test.ts
