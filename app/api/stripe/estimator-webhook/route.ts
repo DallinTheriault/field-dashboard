@@ -7,8 +7,9 @@ import { createAdminClient } from "@/lib/supabase/admin";
  * PAID + bell notification). Deliberately a SEPARATE endpoint from the n8n
  * WF-Billing subscription webhook — that flow is untouched. Configure a
  * dedicated webhook endpoint in the tenant's Stripe dashboard pointing at
- * /api/stripe/estimator-webhook with the `invoice.paid` event, and put its
- * signing secret in ESTIMATOR_STRIPE_WEBHOOK_SECRET.
+ * this route on the DASHBOARD domain (sharpline.getfield.co) with the
+ * `invoice.paid` event, and put its signing secret in
+ * ESTIMATOR_STRIPE_WEBHOOK_SECRET.
  */
 export async function POST(request: Request) {
   const secret = process.env.ESTIMATOR_STRIPE_WEBHOOK_SECRET;
