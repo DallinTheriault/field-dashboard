@@ -70,6 +70,7 @@ export default async function AdminClientDetailPage({
             feature_voice_enabled: client.feature_voice_enabled ?? true,
             feature_calendar_enabled: client.feature_calendar_enabled ?? false,
             feature_billing_enabled: client.feature_billing_enabled ?? true,
+            feature_estimator_enabled: client.feature_estimator_enabled ?? false,
           }}
         />
       </div>

@@ -24,7 +24,7 @@ export default async function AppLayout({
     supabase
       .from("Clients")
       .select(
-        "id, business_name, business_short_name, is_active, brand_logo_url, brand_primary_color, feature_sms_enabled, feature_voice_enabled, feature_calendar_enabled, feature_billing_enabled",
+        "id, business_name, business_short_name, is_active, brand_logo_url, brand_primary_color, feature_sms_enabled, feature_voice_enabled, feature_calendar_enabled, feature_billing_enabled, feature_estimator_enabled",
       )
       .order("id")
       .limit(1),
@@ -100,6 +100,7 @@ export default async function AppLayout({
     sms: client.feature_sms_enabled ?? true,
     calendar: client.feature_calendar_enabled ?? false,
     billing: client.feature_billing_enabled ?? true,
+    estimator: client.feature_estimator_enabled ?? false,
   };
 
   return (

@@ -5,6 +5,7 @@ export type TenantFeatureFlags = {
   sms: boolean;
   calendar: boolean;
   billing: boolean;
+  estimator: boolean;
 };
 
 /**
@@ -19,7 +20,7 @@ export async function getTenantFeatureFlags(): Promise<TenantFeatureFlags> {
   const { data: clients } = await supabase
     .from("Clients")
     .select(
-      "feature_sms_enabled, feature_voice_enabled, feature_calendar_enabled, feature_billing_enabled",
+      "feature_sms_enabled, feature_voice_enabled, feature_calendar_enabled, feature_billing_enabled, feature_estimator_enabled",
     )
     .limit(1);
   const c = clients?.[0];
@@ -28,5 +29,6 @@ export async function getTenantFeatureFlags(): Promise<TenantFeatureFlags> {
     sms: c?.feature_sms_enabled ?? true,
     calendar: c?.feature_calendar_enabled ?? false,
     billing: c?.feature_billing_enabled ?? true,
+    estimator: c?.feature_estimator_enabled ?? false,
   };
 }

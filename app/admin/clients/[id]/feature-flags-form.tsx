@@ -9,6 +9,7 @@ type Flags = {
   feature_voice_enabled: boolean;
   feature_calendar_enabled: boolean;
   feature_billing_enabled: boolean;
+  feature_estimator_enabled: boolean;
 };
 
 /**
@@ -88,6 +89,11 @@ export function AdminFeatureFlagsForm({
       key: "feature_billing_enabled",
       label: "Billing page",
       desc: "Show Stripe billing UI. Hide for tenants on custom contracts.",
+    },
+    {
+      key: "feature_estimator_enabled",
+      label: "Estimator",
+      desc: "Estimating + invoicing module: pricing settings, estimate builder, insights.",
     },
   ];
 

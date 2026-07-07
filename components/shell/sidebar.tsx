@@ -12,6 +12,7 @@ import {
   Settings,
   CreditCard,
   ShieldCheck,
+  Calculator,
 } from "lucide-react";
 import { cn } from "@/lib/cn";
 import { Logo } from "@/components/ui/logo";
@@ -24,6 +25,7 @@ export type FeatureFlags = {
   sms: boolean;
   calendar: boolean;
   billing: boolean;
+  estimator: boolean;
 };
 
 const ALL_NAV = [
@@ -33,6 +35,7 @@ const ALL_NAV = [
   { href: "/app/contacts", label: "Contacts", icon: Users, flag: null, soon: false },
   { href: "/app/messages", label: "Messages", icon: MessageSquare, flag: "sms" as const, soon: false },
   { href: "/app/calendar", label: "Calendar", icon: CalendarDays, flag: "calendar" as const, soon: false },
+  { href: "/app/estimator", label: "Estimator", icon: Calculator, flag: "estimator" as const, soon: false },
   { href: "/app/billing", label: "Billing", icon: CreditCard, flag: "billing" as const, soon: false },
   { href: "/app/settings", label: "Settings", icon: Settings, flag: null, soon: false },
 ] as const;

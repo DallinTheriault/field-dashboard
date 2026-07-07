@@ -15,6 +15,7 @@ import {
   Settings,
   ShieldCheck,
   LogOut,
+  Calculator,
 } from "lucide-react";
 import { cn } from "@/lib/cn";
 import { Logo } from "@/components/ui/logo";
@@ -32,6 +33,7 @@ const ALL_NAV = [
   { href: "/app/contacts", label: "Contacts", icon: Users, flag: null },
   { href: "/app/messages", label: "Messages", icon: MessageSquare, flag: "sms" as const },
   { href: "/app/calendar", label: "Calendar", icon: CalendarDays, flag: "calendar" as const },
+  { href: "/app/estimator", label: "Estimator", icon: Calculator, flag: "estimator" as const },
   { href: "/app/billing", label: "Billing", icon: CreditCard, flag: "billing" as const },
   { href: "/app/settings", label: "Settings", icon: Settings, flag: null },
 ] as const;
