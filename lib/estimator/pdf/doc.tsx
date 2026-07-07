@@ -38,7 +38,9 @@ export interface PdfClient {
 
 export type PdfRow = ClientDocRow;
 
-const DEFAULT_ACCENT = "#e8503a";
+// Sampled from the Sharpline logo's actual pixels — keep in sync with
+// sharplinepainting.co's --red.
+const DEFAULT_ACCENT = "#ff5040";
 const INK = "#111111";
 const MUTED = "#666666";
 const RULE = "#dddddd";
