@@ -8,11 +8,13 @@ import {
   MapPin,
   Pencil,
   Calendar,
+  Calculator,
   DollarSign,
   FileText,
   User,
   Activity,
 } from "lucide-react";
+import { EstimateStatusChip } from "../../estimator/estimate-status";
 import { TextAndCopyButtons } from "@/components/ui/text-copy-buttons";
 import { TagChipList } from "@/components/tags/tag-chip";
 import { InlineAddTagButton } from "@/components/tags/inline-add-tag";
@@ -79,6 +81,22 @@ export default async function JobDetailPage({
   const assignedMember = job.assigned_user_id
     ? teamMembers.find((m) => m.user_id === job.assigned_user_id) ?? null
     : null;
+
+  // Estimator integration — only when the tenant's flag is on.
+  const { data: flagRow } = await supabase
+    .from("Clients")
+    .select("feature_estimator_enabled")
+    .limit(1);
+  const estimatorOn = flagRow?.[0]?.feature_estimator_enabled ?? false;
+  const { data: jobEstimates } = estimatorOn
+    ? await supabase
+        .from("estimates")
+        .select(
+          "id, version, status, computed_price, manual_override_price, estimated_at",
+        )
+        .eq("job_id", job.id)
+        .order("version", { ascending: false })
+    : { data: null };
 
   return (
     <div>
@@ -175,7 +193,43 @@ export default async function JobDetailPage({
             Map
           </a>
         )}
+        {estimatorOn && (
+          <Link
+            href={`/app/estimator/new?job=${job.id}`}
+            className="btn-secondary text-xs h-8"
+          >
+            <Calculator size={12} />
+            New estimate
+          </Link>
+        )}
       </div>
+
+      {estimatorOn && (jobEstimates ?? []).length > 0 && (
+        <div className="panel px-4 py-3 mb-5">
+          <div className="label-eyebrow mb-2">Estimates</div>
+          <ul className="space-y-1.5">
+            {(jobEstimates ?? []).map((e) => {
+              const charge = Number(e.manual_override_price ?? e.computed_price ?? 0);
+              return (
+                <li key={e.id}>
+                  <Link
+                    href={`/app/estimator/${e.id}`}
+                    className="flex items-center gap-2.5 text-sm hover:bg-ink-2 rounded-sm px-2 py-1.5 -mx-2 transition-colors"
+                  >
+                    <span className="font-mono text-2xs text-bone-400">
+                      v{e.version}
+                    </span>
+                    <EstimateStatusChip status={e.status} />
+                    <span className="num ml-auto text-bone-100">
+                      ${charge.toFixed(0)}
+                    </span>
+                  </Link>
+                </li>
+              );
+            })}
+          </ul>
+        </div>
+      )}
 
       <div className="grid grid-cols-1 lg:grid-cols-5 gap-5">
         <section className="lg:col-span-3 space-y-3">
