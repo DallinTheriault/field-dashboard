@@ -15,6 +15,9 @@ import {
   Activity,
 } from "lucide-react";
 import { EstimateStatusChip } from "../../estimator/estimate-status";
+import { JobActuals } from "../../estimator/job-actuals";
+import { getCurrentUserRole } from "@/lib/permissions/current-role";
+import { canViewSettings } from "@/lib/permissions/roles";
 import { TextAndCopyButtons } from "@/components/ui/text-copy-buttons";
 import { TagChipList } from "@/components/tags/tag-chip";
 import { InlineAddTagButton } from "@/components/tags/inline-add-tag";
@@ -82,12 +85,15 @@ export default async function JobDetailPage({
     ? teamMembers.find((m) => m.user_id === job.assigned_user_id) ?? null
     : null;
 
-  // Estimator integration — only when the tenant's flag is on.
+  // Estimator integration — only when the tenant's flag is on. The actuals
+  // card exposes hours (pricing internals), so it's owner/manager-only.
   const { data: flagRow } = await supabase
     .from("Clients")
     .select("feature_estimator_enabled")
     .limit(1);
   const estimatorOn = flagRow?.[0]?.feature_estimator_enabled ?? false;
+  const session = await getCurrentUserRole();
+  const canSeeInternals = session ? canViewSettings(session.role) : false;
   const { data: jobEstimates } = estimatorOn
     ? await supabase
         .from("estimates")
@@ -203,6 +209,10 @@ export default async function JobDetailPage({
           </Link>
         )}
       </div>
+
+      {estimatorOn && canSeeInternals && (
+        <JobActuals clientId={job.client_id} jobId={Number(job.id)} />
+      )}
 
       {estimatorOn && (jobEstimates ?? []).length > 0 && (
         <div className="panel px-4 py-3 mb-5">

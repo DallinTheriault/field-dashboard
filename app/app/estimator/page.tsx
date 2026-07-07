@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { Plus, Receipt, Settings2 } from "lucide-react";
+import { LineChart, Plus, Receipt, Settings2 } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentUserRole } from "@/lib/permissions/current-role";
 import { canViewSettings } from "@/lib/permissions/roles";
@@ -67,6 +67,13 @@ export default async function EstimatorHome() {
           </p>
         </div>
         <div className="flex items-center gap-2">
+          <Link
+            href="/app/estimator/insights"
+            className="btn-ghost text-sm"
+            title="Insights — estimated vs actual"
+          >
+            <LineChart size={14} />
+          </Link>
           <Link
             href="/app/estimator/invoices"
             className="btn-ghost text-sm"
