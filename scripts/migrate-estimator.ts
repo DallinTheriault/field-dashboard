@@ -526,13 +526,17 @@ async function main() {
   const jobMap = new Map<number, number>();
   const estimateMap = new Map<number, number>();
   const lineMap = new Map<number, number>();
+  // Actuals/invoices migrate only WITH their job — a job skipped as
+  // already-migrated must not have its time entries re-inserted on re-run.
+  const newJobIds = new Set<number>();
 
   for (const job of sq.jobs as any[]) {
     if (migratedJobs.has(job.id)) {
       jobMap.set(job.id, migratedJobs.get(job.id)!);
-      note("jobs", "skip", `#${job.id} "${job.title}" already migrated`);
+      note("jobs", "skip", `#${job.id} "${job.title}" already migrated (incl. its actuals)`);
       continue;
     }
+    newJobIds.add(job.id);
     const client = (sq.clients as any[]).find((c) => c.id === job.client_id);
     const charge = job.manual_override_price ?? job.computed_price;
     note(
@@ -664,7 +668,7 @@ async function main() {
   // -------------------------------------------------------------------------
   for (const t of sq.time as any[]) {
     const pgJobId = jobMap.get(t.job_id);
-    if (!pgJobId) continue;
+    if (!pgJobId || !newJobIds.has(t.job_id)) continue;
     note("time_entries", "insert", `${t.date} ${t.hours}h on job ${t.job_id}`);
     if (APPLY) {
       const { error } = await supabase.from("time_entries").insert({
@@ -679,7 +683,7 @@ async function main() {
   }
   for (const m of sq.actualMats as any[]) {
     const pgJobId = jobMap.get(m.job_id);
-    if (!pgJobId) continue;
+    if (!pgJobId || !newJobIds.has(m.job_id)) continue;
     note("actual_materials", "insert", `${m.description} $${m.actual_cost} on job ${m.job_id}`);
     if (APPLY) {
       const { error } = await supabase.from("actual_materials").insert({
