@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { getAuthUser } from "@/lib/supabase/request-cache";
 import { Sidebar } from "@/components/shell/sidebar";
 import { Topbar } from "@/components/shell/topbar";
 import { MobileNav } from "@/components/shell/mobile-nav";
@@ -13,9 +14,9 @@ export default async function AppLayout({
 }) {
   const supabase = await createClient();
 
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  // Shared per-request auth lookup — pages and permission helpers reuse
+  // this same round-trip instead of repeating it.
+  const user = await getAuthUser();
   if (!user) redirect("/login");
 
   // Parallel fetch — Clients + subscriptions independently. Saves ~80-150ms

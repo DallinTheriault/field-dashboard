@@ -277,7 +277,7 @@ export function EstimateBuilder({
       (custName.trim() && custPhone.trim() && custAddress.trim()));
 
   return (
-    <main className="max-w-2xl mx-auto px-4 py-6 pb-32 space-y-5">
+    <div className="max-w-2xl mx-auto px-4 py-6 pb-32 space-y-5">
       <header>
         <h1 className="text-xl font-semibold text-bone-50">
           {existing ? "Edit estimate" : "New estimate"}
@@ -690,6 +690,6 @@ export function EstimateBuilder({
           </div>
         </div>
       </div>
-    </main>
+    </div>
   );
 }

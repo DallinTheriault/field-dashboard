@@ -1,25 +1,24 @@
+import { cache } from "react";
 import { createClient } from "@/lib/supabase/server";
+import { getAuthUser } from "@/lib/supabase/request-cache";
 import { isValidRole, type Role } from "./roles";
 
 /**
- * Get the authenticated user's role for their tenant. Cached per request
- * via React's request memoization (createClient already does this) but
- * we don't add explicit cache here — server components calling this
- * multiple times in one render is rare.
+ * Get the authenticated user's role for their tenant. cache()d per request:
+ * layout, page, and nested components all share ONE auth round-trip and ONE
+ * membership query per navigation.
  *
  * Returns null if not signed in OR if the user is signed in but has no
  * client_users row (which shouldn't happen — auth without membership is
  * a broken state, treat as unauthorized).
  */
-export async function getCurrentUserRole(): Promise<{
+export const getCurrentUserRole = cache(async (): Promise<{
   role: Role;
   clientId: number;
   userId: string;
-} | null> {
+} | null> => {
   const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const user = await getAuthUser();
   if (!user) return null;
 
   // First membership wins. Field is currently single-tenant-per-user;
@@ -39,4 +38,4 @@ export async function getCurrentUserRole(): Promise<{
     clientId: membership.client_id,
     userId: user.id,
   };
-}
+});

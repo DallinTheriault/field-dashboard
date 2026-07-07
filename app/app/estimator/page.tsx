@@ -24,12 +24,13 @@ function fmtDate(d: string | null): string {
 
 /** Estimates list — pipeline view grouped by status. */
 export default async function EstimatorHome() {
-  const session = await getCurrentUserRole();
+  const [session, flags] = await Promise.all([
+    getCurrentUserRole(),
+    getTenantFeatureFlags(),
+  ]);
   if (!session) redirect("/login");
   // Pricing internals are owner/manager-only.
   if (!canViewSettings(session.role)) redirect("/app");
-
-  const flags = await getTenantFeatureFlags();
   if (!flags.estimator) {
     return (
       <FeatureDisabledPanel
@@ -58,7 +59,7 @@ export default async function EstimatorHome() {
   const rows = estimates ?? [];
 
   return (
-    <main className="max-w-3xl mx-auto px-4 py-6 space-y-5">
+    <div className="max-w-3xl mx-auto px-4 py-6 space-y-5">
       <header className="flex items-center justify-between gap-3">
         <div>
           <h1 className="text-xl font-semibold text-bone-50">Estimator</h1>
@@ -158,6 +159,6 @@ export default async function EstimatorHome() {
           );
         })
       )}
-    </main>
+    </div>
   );
 }

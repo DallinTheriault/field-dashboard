@@ -20,11 +20,12 @@ function fmtDate(d: string | null): string {
 
 /** Customer invoices (estimator module) — subscription rows are excluded. */
 export default async function InvoicesPage() {
-  const session = await getCurrentUserRole();
+  const [session, flags] = await Promise.all([
+    getCurrentUserRole(),
+    getTenantFeatureFlags(),
+  ]);
   if (!session) redirect("/login");
   if (!canViewSettings(session.role)) redirect("/app");
-
-  const flags = await getTenantFeatureFlags();
   if (!flags.estimator) return <FeatureDisabledPanel featureName="Estimator" />;
 
   const supabase = await createClient();
@@ -40,7 +41,7 @@ export default async function InvoicesPage() {
   const rows = invoices ?? [];
 
   return (
-    <main className="max-w-3xl mx-auto px-4 py-6 space-y-5">
+    <div className="max-w-3xl mx-auto px-4 py-6 space-y-5">
       <Link
         href="/app/estimator"
         className="inline-flex items-center gap-1.5 text-2xs text-bone-400 hover:text-bone-100"
@@ -92,6 +93,6 @@ export default async function InvoicesPage() {
           ))}
         </ul>
       )}
-    </main>
+    </div>
   );
 }

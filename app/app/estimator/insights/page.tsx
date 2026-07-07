@@ -32,18 +32,19 @@ function pctTone(p: number | null): string {
  * catalog. Everything here is pricing internals: owner/manager only.
  */
 export default async function InsightsPage() {
-  const session = await getCurrentUserRole();
+  const [session, flags] = await Promise.all([
+    getCurrentUserRole(),
+    getTenantFeatureFlags(),
+  ]);
   if (!session) redirect("/login");
   if (!canViewSettings(session.role)) redirect("/app");
-
-  const flags = await getTenantFeatureFlags();
   if (!flags.estimator) return <FeatureDisabledPanel featureName="Estimator" />;
 
   const supabase = await createClient();
   const { jobRows, catalogRows } = await getInsightsData(supabase);
 
   return (
-    <main className="max-w-3xl mx-auto px-4 py-6 space-y-6">
+    <div className="max-w-3xl mx-auto px-4 py-6 space-y-6">
       <Link
         href="/app/estimator"
         className="inline-flex items-center gap-1.5 text-2xs text-bone-400 hover:text-bone-100"
@@ -190,6 +191,6 @@ export default async function InsightsPage() {
           )}
         </div>
       </section>
-    </main>
+    </div>
   );
 }

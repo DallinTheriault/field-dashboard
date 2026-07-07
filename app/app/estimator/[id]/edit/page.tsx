@@ -14,11 +14,12 @@ export default async function EditEstimatePage({
 }: {
   params: Promise<{ id: string }>;
 }) {
-  const session = await getCurrentUserRole();
+  const [session, flags] = await Promise.all([
+    getCurrentUserRole(),
+    getTenantFeatureFlags(),
+  ]);
   if (!session) redirect("/login");
   if (!canViewSettings(session.role)) redirect("/app");
-
-  const flags = await getTenantFeatureFlags();
   if (!flags.estimator) return <FeatureDisabledPanel featureName="Estimator" />;
 
   const { id } = await params;

@@ -107,7 +107,7 @@ export default async function EstimateDetailPage({
   );
 
   return (
-    <main className="max-w-2xl mx-auto px-4 py-6 space-y-5">
+    <div className="max-w-2xl mx-auto px-4 py-6 space-y-5">
       <Link
         href="/app/estimator"
         className="inline-flex items-center gap-1.5 text-2xs text-bone-400 hover:text-bone-100"
@@ -314,6 +314,6 @@ export default async function EstimateDetailPage({
         status={est.status}
         invoiceId={invoice?.id ?? null}
       />
-    </main>
+    </div>
   );
 }

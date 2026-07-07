@@ -1,0 +1,20 @@
+name: keep-warm
+
+# Netlify functions cold-start after a few idle minutes, adding ~2.5s to the
+# first click. A tiny ping every 5 minutes keeps the function warm. Free on
+# public repos; each run lasts a few seconds.
+on:
+  schedule:
+    - cron: "*/5 * * * *"
+  workflow_dispatch:
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Ping dashboard
+        run: |
+          code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 30 https://app.getfield.co/login)
+          echo "app.getfield.co/login -> $code"
+          test "$code" = "200"

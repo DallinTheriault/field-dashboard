@@ -7,6 +7,7 @@ import {
   MessageSquare,
   Briefcase,
   CalendarDays,
+  Calculator,
   Phone,
   Users,
 } from "lucide-react";
@@ -21,6 +22,8 @@ const ALL_TABS = [
   { href: "/app", label: "Home", icon: LayoutDashboard, flag: null as keyof FeatureFlags | null },
   { href: "/app/messages", label: "Messages", icon: MessageSquare, flag: "sms" as const },
   { href: "/app/jobs", label: "Jobs", icon: Briefcase, flag: null },
+  // Estimating happens on-site — when the module is on it earns a thumb slot.
+  { href: "/app/estimator", label: "Estimator", icon: Calculator, flag: "estimator" as const },
   { href: "/app/calendar", label: "Calendar", icon: CalendarDays, flag: "calendar" as const },
 ] as const;
 
@@ -38,6 +41,7 @@ export function MobileNav({ featureFlags }: { featureFlags: FeatureFlags }) {
     (t) => t.flag === null || featureFlags[t.flag],
   );
   for (const t of ALL_TABS) {
+    if (enabled.length >= 4) break; // always exactly 4 tabs
     if (t.flag === null || featureFlags[t.flag]) {
       enabled.push({ href: t.href, label: t.label, icon: t.icon });
     } else if (fallbackQueue.length > 0) {

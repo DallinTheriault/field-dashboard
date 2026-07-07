@@ -1,3 +1,4 @@
+import { cache } from "react";
 import { createClient } from "@/lib/supabase/server";
 
 export type TenantFeatureFlags = {
@@ -15,7 +16,7 @@ export type TenantFeatureFlags = {
  * Returns sensible defaults if no client found (shouldn't happen for signed-in
  * users in practice, but the layout already handles that case).
  */
-export async function getTenantFeatureFlags(): Promise<TenantFeatureFlags> {
+export const getTenantFeatureFlags = cache(async (): Promise<TenantFeatureFlags> => {
   const supabase = await createClient();
   const { data: clients } = await supabase
     .from("Clients")
@@ -31,4 +32,4 @@ export async function getTenantFeatureFlags(): Promise<TenantFeatureFlags> {
     billing: c?.feature_billing_enabled ?? true,
     estimator: c?.feature_estimator_enabled ?? false,
   };
-}
+});

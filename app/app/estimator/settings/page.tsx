@@ -27,11 +27,12 @@ import { ZonesManager } from "./zones-manager";
  * user_can_write_client RLS gate on the underlying tables.
  */
 export default async function EstimatorSettingsPage() {
-  const session = await getCurrentUserRole();
+  const [session, flags] = await Promise.all([
+    getCurrentUserRole(),
+    getTenantFeatureFlags(),
+  ]);
   if (!session) redirect("/login");
   if (!canViewSettings(session.role)) redirect("/app");
-
-  const flags = await getTenantFeatureFlags();
   if (!flags.estimator) {
     return (
       <FeatureDisabledPanel
@@ -95,7 +96,7 @@ export default async function EstimatorSettingsPage() {
   ];
 
   return (
-    <main className="max-w-3xl mx-auto px-4 py-6 space-y-6">
+    <div className="max-w-3xl mx-auto px-4 py-6 space-y-6">
       <header>
         <h1 className="text-xl font-semibold text-bone-50">
           Estimator settings
@@ -118,6 +119,6 @@ export default async function EstimatorSettingsPage() {
           {body}
         </section>
       ))}
-    </main>
+    </div>
   );
 }
