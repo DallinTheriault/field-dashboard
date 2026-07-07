@@ -62,46 +62,36 @@ export default async function EstimatorHome() {
 
   return (
     <div className="max-w-3xl mx-auto px-4 py-6 space-y-5">
-      <header className="flex items-center justify-between gap-3">
-        <div>
-          <h1 className="text-xl font-semibold text-bone-50">Estimator</h1>
-          <p className="text-sm text-bone-400 mt-0.5">
-            Same inputs, same price — every time.
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
+      <header className="space-y-3">
+        <div className="flex items-center justify-between gap-3">
+          <div className="min-w-0">
+            <h1 className="text-xl font-semibold text-bone-50">Estimator</h1>
+            <p className="text-sm text-bone-400 mt-0.5 truncate">
+              Same inputs, same price — every time.
+            </p>
+          </div>
           <Link
-            href="/app/estimator/expenses"
-            className="btn-ghost text-sm"
-            title="Money — expenses, profit, tax CSV"
+            href="/app/estimator/new"
+            className="btn-primary text-sm shrink-0 min-h-[42px]"
           >
-            <Wallet size={14} />
-          </Link>
-          <Link
-            href="/app/estimator/insights"
-            className="btn-ghost text-sm"
-            title="Insights — estimated vs actual"
-          >
-            <LineChart size={14} />
-          </Link>
-          <Link
-            href="/app/estimator/invoices"
-            className="btn-ghost text-sm"
-            title="Invoices"
-          >
-            <Receipt size={14} />
-          </Link>
-          <Link
-            href="/app/estimator/settings"
-            className="btn-ghost text-sm"
-            title="Estimator settings"
-          >
-            <Settings2 size={14} />
-          </Link>
-          <Link href="/app/estimator/new" className="btn-primary text-sm">
             <Plus size={14} />
             New estimate
           </Link>
+        </div>
+        {/* Labeled sub-nav — icon-only buttons were cryptic and overflowed
+            the header on phones. */}
+        <div className="flex items-center gap-1.5 flex-wrap">
+          {[
+            { href: "/app/estimator/expenses", icon: Wallet, label: "Money" },
+            { href: "/app/estimator/insights", icon: LineChart, label: "Insights" },
+            { href: "/app/estimator/invoices", icon: Receipt, label: "Invoices" },
+            { href: "/app/estimator/settings", icon: Settings2, label: "Settings" },
+          ].map(({ href, icon: Icon, label }) => (
+            <Link key={href} href={href} className="btn-secondary text-xs h-8">
+              <Icon size={12} />
+              {label}
+            </Link>
+          ))}
         </div>
       </header>
 

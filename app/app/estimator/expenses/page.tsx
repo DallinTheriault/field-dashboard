@@ -47,7 +47,7 @@ export default async function ExpensesPage({
     await Promise.all([
       supabase
         .from("expenses")
-        .select("id, expense_date, category, description, amount")
+        .select("id, expense_date, category, description, amount, receipt_path")
         .gte("expense_date", `${year}-01-01`)
         .lte("expense_date", `${year}-12-31`)
         .order("expense_date", { ascending: false })

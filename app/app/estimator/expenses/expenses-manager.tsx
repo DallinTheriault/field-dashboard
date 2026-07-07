@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { Plus, Trash2 } from "lucide-react";
+import { Paperclip, Plus, Trash2 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { EXPENSE_CATEGORIES } from "@/lib/estimator/expenses";
 
@@ -12,6 +12,7 @@ type Expense = {
   category: string;
   description: string;
   amount: number;
+  receipt_path: string | null;
 };
 
 const usd = new Intl.NumberFormat("en-US", {
@@ -66,6 +67,22 @@ export function ExpensesManager({
     const { error } = await supabase.from("expenses").delete().eq("id", e.id);
     if (error) setErr(error.message);
     else router.refresh();
+  }
+
+  async function attachReceipt(e: Expense, file: File) {
+    setErr(null);
+    const fd = new FormData();
+    fd.append("receipt", file);
+    const res = await fetch(`/api/estimator/expenses/${e.id}/receipt`, {
+      method: "POST",
+      body: fd,
+    });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      setErr(data.error ?? "Receipt upload failed.");
+      return;
+    }
+    router.refresh();
   }
 
   return (
@@ -135,6 +152,34 @@ export function ExpensesManager({
                 {e.description}
               </span>
               <span className="num text-bone-100">{usd.format(e.amount)}</span>
+              {e.receipt_path ? (
+                <a
+                  href={`/api/estimator/expenses/${e.id}/receipt`}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="text-field-500 hover:text-field-400 p-1"
+                  title="View receipt"
+                >
+                  <Paperclip size={12} />
+                </a>
+              ) : (
+                <label
+                  className="text-bone-500 hover:text-bone-300 p-1 cursor-pointer"
+                  title="Attach receipt (photo or PDF)"
+                >
+                  <Paperclip size={12} />
+                  <input
+                    type="file"
+                    accept="image/*,application/pdf"
+                    className="hidden"
+                    onChange={(ev) => {
+                      const f = ev.target.files?.[0];
+                      if (f) attachReceipt(e, f);
+                      ev.target.value = "";
+                    }}
+                  />
+                </label>
+              )}
               <button
                 type="button"
                 onClick={() => remove(e)}
