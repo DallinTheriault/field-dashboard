@@ -148,6 +148,14 @@ export async function sendInvoiceWithStripe(
     amount: number;
   }>;
   if (rows.length === 0) return { ok: false, error: "Invoice has no lines." };
+  // Stripe hard-requires a customer email for send_invoice collection.
+  if (!inv.customer_email) {
+    return {
+      ok: false,
+      error:
+        "Stripe needs the customer's email to issue a hosted invoice. Add an email on the job, recreate the invoice, or collect by PDF + payment instructions instead.",
+    };
+  }
 
   try {
     const customer = await stripe.customers.create({
