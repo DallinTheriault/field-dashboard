@@ -3,6 +3,7 @@ import { ChevronLeft, ChevronRight } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { cn } from "@/lib/cn";
 import { getTenantFeatureFlags } from "@/lib/features/flags";
+import { dayKeyInTz, fmtTime, getTenantTimezone } from "@/lib/dates";
 import { FeatureDisabledPanel } from "@/components/ui/feature-disabled-panel";
 
 type Job = {
@@ -15,35 +16,24 @@ type Job = {
   end_datetime: string | null;
 };
 
-function startOfMonth(d: Date) {
-  return new Date(d.getFullYear(), d.getMonth(), 1);
+/**
+ * All calendar-grid math runs on UTC-anchored dates (pure Y/M/D arithmetic,
+ * immune to the server's timezone), while JOB timestamps are bucketed and
+ * rendered in the TENANT's timezone via lib/dates. The old version grouped
+ * by the server's local date — on Netlify (UTC) a 7:00 PM Mountain job
+ * rendered on the next day at 1:00 AM.
+ */
+function utcDate(y: number, m0: number, d: number) {
+  return new Date(Date.UTC(y, m0, d));
 }
-function endOfMonth(d: Date) {
-  return new Date(d.getFullYear(), d.getMonth() + 1, 0, 23, 59, 59);
+function cellKey(d: Date): string {
+  return d.toISOString().slice(0, 10);
 }
-function startOfGrid(d: Date) {
-  // First day of week containing the first of the month (Sun start)
-  const s = startOfMonth(d);
-  const dow = s.getDay();
-  return new Date(s.getFullYear(), s.getMonth(), s.getDate() - dow);
-}
-function addDays(d: Date, n: number) {
-  return new Date(d.getFullYear(), d.getMonth(), d.getDate() + n);
-}
-function sameDay(a: Date, b: Date) {
-  return (
-    a.getFullYear() === b.getFullYear() &&
-    a.getMonth() === b.getMonth() &&
-    a.getDate() === b.getDate()
-  );
-}
-function fmtMonthYear(d: Date) {
-  return d.toLocaleDateString("en-US", { month: "long", year: "numeric" });
-}
-function fmtTime(d: Date) {
-  return d.toLocaleTimeString("en-US", {
-    hour: "numeric",
-    minute: "2-digit",
+function fmtMonthYear(y: number, m0: number) {
+  return utcDate(y, m0, 1).toLocaleDateString("en-US", {
+    month: "long",
+    year: "numeric",
+    timeZone: "UTC",
   });
 }
 
@@ -72,36 +62,44 @@ export default async function CalendarPage({
   }
 
   const supabase = await createClient();
-  const { m } = await searchParams;
+  const [{ m }, tz] = await Promise.all([searchParams, getTenantTimezone()]);
 
-  // Determine the month to render
-  const today = new Date();
-  let cursor: Date;
+  // "Today" and the default month are the tenant's, not the server's.
+  const todayKey = dayKeyInTz(new Date(), tz);
+  const [todayY, todayM] = todayKey.split("-").map(Number);
+  let y: number;
+  let mo: number; // 1-based month
   if (m && /^\d{4}-\d{2}$/.test(m)) {
-    const [y, mo] = m.split("-").map(Number);
-    cursor = new Date(y, mo - 1, 1);
+    [y, mo] = m.split("-").map(Number);
   } else {
-    cursor = startOfMonth(today);
+    y = todayY;
+    mo = todayM;
   }
 
-  const gridStart = startOfGrid(cursor);
-  const gridEnd = addDays(gridStart, 41); // 6 weeks
+  // 6-week grid starting on the Sunday before the 1st (pure UTC calendar math)
+  const first = utcDate(y, mo - 1, 1);
+  const gridStart = utcDate(y, mo - 1, 1 - first.getUTCDay());
+  const cells: Date[] = Array.from({ length: 42 }, (_, i) =>
+    utcDate(gridStart.getUTCFullYear(), gridStart.getUTCMonth(), gridStart.getUTCDate() + i),
+  );
 
-  // Fetch jobs in this window
+  // Fetch jobs in this window, padded a day each side so timezone offsets
+  // can't drop edge events, then bucket by tenant-timezone date.
+  const DAY = 24 * 60 * 60 * 1000;
   const { data: rawJobs } = await supabase
     .from("jobs")
     .select("id, name, address, service, status, start_datetime, end_datetime")
     .is("archived_at", null)
-    .gte("start_datetime", gridStart.toISOString())
-    .lte("start_datetime", gridEnd.toISOString())
+    .gte("start_datetime", new Date(gridStart.getTime() - DAY).toISOString())
+    .lte("start_datetime", new Date(cells[41].getTime() + 2 * DAY).toISOString())
     .order("start_datetime", { ascending: true });
 
   const jobs: Job[] = (rawJobs ?? []).filter((j) => j.start_datetime != null);
 
-  // Group jobs by date
+  // Group jobs by tenant-timezone date
   const byDay = new Map<string, Job[]>();
   for (const j of jobs) {
-    const key = new Date(j.start_datetime!).toDateString();
+    const key = dayKeyInTz(j.start_datetime!, tz);
     if (!byDay.has(key)) byDay.set(key, []);
     byDay.get(key)!.push(j);
   }
@@ -128,18 +126,18 @@ export default async function CalendarPage({
   }
 
   // Build day cells
-  const days: { date: Date; jobs: Job[] }[] = [];
-  for (let i = 0; i < 42; i++) {
-    const d = addDays(gridStart, i);
-    days.push({ date: d, jobs: byDay.get(d.toDateString()) ?? [] });
-  }
+  const days: { date: Date; key: string; jobs: Job[] }[] = cells.map((d) => ({
+    date: d,
+    key: cellKey(d),
+    jobs: byDay.get(cellKey(d)) ?? [],
+  }));
 
-  // Prev/next month nav
-  const prev = new Date(cursor.getFullYear(), cursor.getMonth() - 1, 1);
-  const next = new Date(cursor.getFullYear(), cursor.getMonth() + 1, 1);
-  const prevHref = `/app/calendar?m=${prev.getFullYear()}-${String(prev.getMonth() + 1).padStart(2, "0")}`;
-  const nextHref = `/app/calendar?m=${next.getFullYear()}-${String(next.getMonth() + 1).padStart(2, "0")}`;
-  const isCurrentMonth = sameDay(cursor, startOfMonth(today));
+  // Prev/next month nav (pure Y/M arithmetic)
+  const prev = utcDate(y, mo - 2, 1);
+  const next = utcDate(y, mo, 1);
+  const prevHref = `/app/calendar?m=${prev.getUTCFullYear()}-${String(prev.getUTCMonth() + 1).padStart(2, "0")}`;
+  const nextHref = `/app/calendar?m=${next.getUTCFullYear()}-${String(next.getUTCMonth() + 1).padStart(2, "0")}`;
+  const isCurrentMonth = y === todayY && mo === todayM;
 
   return (
     <div>
@@ -147,7 +145,7 @@ export default async function CalendarPage({
         <div>
           <div className="label-eyebrow mb-1">Calendar</div>
           <h1 className="text-2xl font-semibold text-bone-50 tracking-tight">
-            {fmtMonthYear(cursor)}
+            {fmtMonthYear(y, mo - 1)}
           </h1>
           <p className="text-sm text-bone-300 mt-1">
             {jobs.length} job{jobs.length === 1 ? "" : "s"} this view
@@ -188,10 +186,10 @@ export default async function CalendarPage({
 
       {/* Day grid */}
       <div className="grid grid-cols-7 border-l border-line bg-ink-0">
-        {days.map(({ date, jobs }, i) => {
-          const isCurMonth = date.getMonth() === cursor.getMonth();
-          const isToday = sameDay(date, today);
-          const hasConflict = conflictDays.has(date.toDateString());
+        {days.map(({ date, key, jobs }, i) => {
+          const isCurMonth = date.getUTCMonth() === mo - 1;
+          const isToday = key === todayKey;
+          const hasConflict = conflictDays.has(key);
           return (
             <div
               key={i}
@@ -210,7 +208,7 @@ export default async function CalendarPage({
                     isToday && "text-field-500 font-semibold",
                   )}
                 >
-                  {date.getDate()}
+                  {date.getUTCDate()}
                 </span>
                 {hasConflict && (
                   <span
@@ -233,7 +231,7 @@ export default async function CalendarPage({
                         title={`${j.name ?? "—"} · ${j.address ?? ""}`}
                       >
                         <span className="num font-medium mr-1">
-                          {fmtTime(new Date(j.start_datetime!))}
+                          {fmtTime(j.start_datetime!, tz)}
                         </span>
                         {j.name || j.service || "—"}
                       </Link>

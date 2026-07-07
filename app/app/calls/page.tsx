@@ -7,10 +7,11 @@ import { FilterDropdown } from "@/components/ui/filter-dropdown";
 import { MobileCallCard } from "@/components/list-cards/mobile-call-card";
 import { getTenantFeatureFlags } from "@/lib/features/flags";
 import { FeatureDisabledPanel } from "@/components/ui/feature-disabled-panel";
+import { getTenantTimezone } from "@/lib/dates";
 
-function fmtDate(d: string | null): string {
+function fmtDate(d: string | null, tz: string): string {
   if (!d) return "—";
-  return new Date(d).toLocaleString("en-US", {
+  return new Date(d).toLocaleString("en-US", { timeZone: tz,
     month: "short",
     day: "numeric",
     hour: "numeric",
@@ -39,13 +40,13 @@ function fmtPhone(p: string | null): string {
   return p;
 }
 
-function timeAgo(iso: string): string {
+function timeAgo(iso: string, tz: string): string {
   const seconds = Math.floor((Date.now() - new Date(iso).getTime()) / 1000);
   if (seconds < 60) return "just now";
   if (seconds < 3600) return `${Math.floor(seconds / 60)}m ago`;
   if (seconds < 86400) return `${Math.floor(seconds / 3600)}h ago`;
   if (seconds < 604800) return `${Math.floor(seconds / 86400)}d ago`;
-  return new Date(iso).toLocaleDateString();
+  return new Date(iso).toLocaleDateString("en-US", { timeZone: tz });
 }
 
 const OUTCOME_LABELS: Record<string, { label: string; color: string }> = {
@@ -67,6 +68,7 @@ export default async function CallsPage({
 }: {
   searchParams: Promise<{ q?: string; outcomes?: string; tab?: string }>;
 }) {
+  const tz = await getTenantTimezone();
   const flags = await getTenantFeatureFlags();
   if (!flags.voice) {
     return (
@@ -300,7 +302,7 @@ export default async function CallsPage({
                               {fmtDuration(c.duration_seconds)}
                             </td>
                             <td className="num text-xs text-bone-400 text-right">
-                              {fmtDate(c.started_at)}
+                              {fmtDate(c.started_at, tz)}
                             </td>
                           </ClickableTableRow>
                         );
@@ -348,7 +350,7 @@ export default async function CallsPage({
                           </div>
                           <div className="flex items-center gap-1 text-2xs text-bone-400 shrink-0">
                             <Clock size={10} />
-                            {timeAgo(m.created_at)}
+                            {timeAgo(m.created_at, tz)}
                           </div>
                         </div>
                         {(m.caller_phone || m.callback_phone) && (
@@ -362,7 +364,7 @@ export default async function CallsPage({
                         </div>
                         {m.responded_at && (
                           <div className="text-2xs text-status-completed mt-1">
-                            ● Responded {timeAgo(m.responded_at)}
+                            ● Responded {timeAgo(m.responded_at, tz)}
                           </div>
                         )}
                       </div>

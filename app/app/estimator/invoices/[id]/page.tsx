@@ -6,15 +6,16 @@ import { getCurrentUserRole } from "@/lib/permissions/current-role";
 import { canViewSettings } from "@/lib/permissions/roles";
 import { InvoiceStatusChip } from "../invoice-status";
 import { InvoiceActionsBar } from "./invoice-actions-bar";
+import { getTenantTimezone } from "@/lib/dates";
 
 const usd = new Intl.NumberFormat("en-US", {
   style: "currency",
   currency: "USD",
 });
 
-function fmtDate(d: string | null): string {
+function fmtDate(d: string | null, tz: string): string {
   if (!d) return "—";
-  return new Date(d).toLocaleString("en-US", {
+  return new Date(d).toLocaleString("en-US", { timeZone: tz,
     month: "short",
     day: "numeric",
     year: "numeric",
@@ -28,6 +29,7 @@ export default async function InvoiceDetailPage({
 }: {
   params: Promise<{ id: string }>;
 }) {
+  const tz = await getTenantTimezone();
   const session = await getCurrentUserRole();
   if (!session) redirect("/login");
   if (!canViewSettings(session.role)) redirect("/app");
@@ -75,8 +77,8 @@ export default async function InvoiceDetailPage({
           </h1>
           <div className="text-2xs text-bone-400 mt-1">
             {inv.customer_name}
-            {entity && <> · {entity.name}</>} · Issued {fmtDate(inv.created_at)}
-            {inv.paid_at && <> · Paid {fmtDate(inv.paid_at)}</>}
+            {entity && <> · {entity.name}</>} · Issued {fmtDate(inv.created_at, tz)}
+            {inv.paid_at && <> · Paid {fmtDate(inv.paid_at, tz)}</>}
           </div>
         </div>
         <InvoiceStatusChip status={inv.status} />

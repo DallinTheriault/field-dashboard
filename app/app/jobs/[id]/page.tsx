@@ -28,10 +28,11 @@ import { createClient } from "@/lib/supabase/server";
 import { getTeamMembers } from "@/lib/team/members";
 import { getActivityTimeline } from "@/lib/timeline/fetch";
 import { getJobTags, listTagsForClient } from "@/lib/tags/server";
+import { getTenantTimezone } from "@/lib/dates";
 
-function fmtDate(d: string | null): string {
+function fmtDate(d: string | null, tz: string): string {
   if (!d) return "—";
-  return new Date(d).toLocaleString("en-US", {
+  return new Date(d).toLocaleString("en-US", { timeZone: tz,
     weekday: "short",
     month: "short",
     day: "numeric",
@@ -63,6 +64,7 @@ export default async function JobDetailPage({
 }: {
   params: Promise<{ id: string }>;
 }) {
+  const tz = await getTenantTimezone();
   const supabase = await createClient();
   const { id } = await params;
 
@@ -284,9 +286,9 @@ export default async function JobDetailPage({
               <Field
                 icon={Calendar}
                 label="Start"
-                value={fmtDate(job.start_datetime)}
+                value={fmtDate(job.start_datetime, tz)}
               />
-              <Field label="End" value={fmtDate(job.end_datetime)} />
+              <Field label="End" value={fmtDate(job.end_datetime, tz)} />
             </dl>
           </div>
 
@@ -320,8 +322,8 @@ export default async function JobDetailPage({
           <div className="panel p-4">
             <div className="label-eyebrow mb-3">Timestamps</div>
             <dl className="space-y-2 text-xs">
-              <Mini label="Created" value={fmtDate(job.created_at)} />
-              <Mini label="Updated" value={fmtDate(job.updated_at)} />
+              <Mini label="Created" value={fmtDate(job.created_at, tz)} />
+              <Mini label="Updated" value={fmtDate(job.updated_at, tz)} />
               {job.source && <Mini label="Source" value={job.source} />}
             </dl>
           </div>

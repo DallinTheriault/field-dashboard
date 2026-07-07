@@ -8,15 +8,16 @@ import {
 } from "lucide-react";
 import { getTenantFeatureFlags } from "@/lib/features/flags";
 import { FeatureDisabledPanel } from "@/components/ui/feature-disabled-panel";
+import { getTenantTimezone } from "@/lib/dates";
 
 function fmtDollar(c: number | null): string {
   if (c == null) return "—";
   return `$${(c / 100).toFixed(2)}`;
 }
 
-function fmtDate(d: string | null): string {
+function fmtDate(d: string | null, tz: string): string {
   if (!d) return "—";
-  return new Date(d).toLocaleDateString("en-US", {
+  return new Date(d).toLocaleDateString("en-US", { timeZone: tz,
     month: "long",
     day: "numeric",
     year: "numeric",
@@ -24,6 +25,7 @@ function fmtDate(d: string | null): string {
 }
 
 export default async function BillingPage() {
+  const tz = await getTenantTimezone();
   const flags = await getTenantFeatureFlags();
   if (!flags.billing) {
     return (
@@ -91,7 +93,7 @@ export default async function BillingPage() {
                 <p className="text-xs text-bone-300 mt-0.5">
                   Your plan will end on{" "}
                   <span className="num text-bone-100">
-                    {fmtDate(sub.current_period_end)}
+                    {fmtDate(sub.current_period_end, tz)}
                   </span>
                   . You&apos;ll keep full access to Field until then. Open the
                   portal to undo cancellation.
@@ -121,7 +123,7 @@ export default async function BillingPage() {
               </div>
               {sub.setup_fee_paid_at && (
                 <div className="text-2xs text-bone-400 mt-1">
-                  Setup paid {fmtDate(sub.setup_fee_paid_at)}
+                  Setup paid {fmtDate(sub.setup_fee_paid_at, tz)}
                 </div>
               )}
             </div>
@@ -139,7 +141,7 @@ export default async function BillingPage() {
                 {cancellingAtPeriodEnd ? "Access until" : "Next charge"}
               </div>
               <div className="num text-xl font-semibold text-bone-50">
-                {fmtDate(sub.current_period_end)}
+                {fmtDate(sub.current_period_end, tz)}
               </div>
               <div className="text-2xs text-bone-400 mt-1">
                 {cancellingAtPeriodEnd ? "Then ends" : "Auto-renews"}

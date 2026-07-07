@@ -3,10 +3,11 @@ import { notFound } from "next/navigation";
 import { ArrowLeft, Phone, ExternalLink, Briefcase } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { StatusChip } from "@/components/ui/status-chip";
+import { getTenantTimezone } from "@/lib/dates";
 
-function fmtDate(d: string | null): string {
+function fmtDate(d: string | null, tz: string): string {
   if (!d) return "—";
-  return new Date(d).toLocaleString("en-US", {
+  return new Date(d).toLocaleString("en-US", { timeZone: tz,
     weekday: "short",
     month: "short",
     day: "numeric",
@@ -46,6 +47,7 @@ export default async function CallDetailPage({
 }: {
   params: Promise<{ id: string }>;
 }) {
+  const tz = await getTenantTimezone();
   const supabase = await createClient();
   const { id } = await params;
 
@@ -112,7 +114,7 @@ export default async function CallDetailPage({
             )}
           </h1>
           <p className="num text-sm text-bone-300 mt-1">
-            {fmtPhone(call.caller_phone)} · {fmtDate(call.started_at)}
+            {fmtPhone(call.caller_phone)} · {fmtDate(call.started_at, tz)}
           </p>
         </div>
         <div className="text-right shrink-0">
@@ -221,8 +223,8 @@ export default async function CallDetailPage({
                 value={call.vapi_call_id ?? "—"}
                 mono
               />
-              <DetailRow label="Started" value={fmtDate(call.started_at)} />
-              <DetailRow label="Ended" value={fmtDate(call.ended_at)} />
+              <DetailRow label="Started" value={fmtDate(call.started_at, tz)} />
+              <DetailRow label="Ended" value={fmtDate(call.ended_at, tz)} />
             </dl>
           </div>
 

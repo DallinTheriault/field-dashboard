@@ -7,19 +7,21 @@ import { canViewSettings } from "@/lib/permissions/roles";
 import { getTenantFeatureFlags } from "@/lib/features/flags";
 import { FeatureDisabledPanel } from "@/components/ui/feature-disabled-panel";
 import { InvoiceStatusChip } from "./invoice-status";
+import { getTenantTimezone } from "@/lib/dates";
 
 const usd = new Intl.NumberFormat("en-US", {
   style: "currency",
   currency: "USD",
 });
 
-function fmtDate(d: string | null): string {
+function fmtDate(d: string | null, tz: string): string {
   if (!d) return "—";
-  return new Date(d).toLocaleDateString("en-US", { month: "short", day: "numeric" });
+  return new Date(d).toLocaleDateString("en-US", { timeZone: tz, month: "short", day: "numeric" });
 }
 
 /** Customer invoices (estimator module) — subscription rows are excluded. */
 export default async function InvoicesPage() {
+  const tz = await getTenantTimezone();
   const [session, flags] = await Promise.all([
     getCurrentUserRole(),
     getTenantFeatureFlags(),
@@ -79,8 +81,8 @@ export default async function InvoicesPage() {
                   </div>
                   <div className="text-2xs text-bone-400">
                     {inv.status === "paid"
-                      ? `Paid ${fmtDate(inv.paid_at)}`
-                      : `Issued ${fmtDate(inv.created_at)}`}
+                      ? `Paid ${fmtDate(inv.paid_at, tz)}`
+                      : `Issued ${fmtDate(inv.created_at, tz)}`}
                     {inv.stripe_invoice_id ? " · Stripe" : ""}
                   </div>
                 </div>

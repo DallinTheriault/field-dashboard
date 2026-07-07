@@ -6,15 +6,16 @@ import { getCurrentUserRole } from "@/lib/permissions/current-role";
 import { canViewSettings } from "@/lib/permissions/roles";
 import { EstimateStatusChip } from "../estimate-status";
 import { EstimateActionsBar } from "./estimate-actions-bar";
+import { getTenantTimezone } from "@/lib/dates";
 
 const usd = new Intl.NumberFormat("en-US", {
   style: "currency",
   currency: "USD",
 });
 
-function fmtDate(d: string | null): string {
+function fmtDate(d: string | null, tz: string): string {
   if (!d) return "—";
-  return new Date(d).toLocaleString("en-US", {
+  return new Date(d).toLocaleString("en-US", { timeZone: tz,
     month: "short",
     day: "numeric",
     year: "numeric",
@@ -33,6 +34,7 @@ export default async function EstimateDetailPage({
 }: {
   params: Promise<{ id: string }>;
 }) {
+  const tz = await getTenantTimezone();
   const session = await getCurrentUserRole();
   if (!session) redirect("/login");
   if (!canViewSettings(session.role)) redirect("/app");
@@ -129,7 +131,7 @@ export default async function EstimateDetailPage({
           <div className="text-2xs text-bone-400 mt-1">
             {job?.address && <span>{job.address} · </span>}
             {entity && <span>{entity.name} · </span>}
-            Frozen {fmtDate(est.estimated_at)}
+            Frozen {fmtDate(est.estimated_at, tz)}
           </div>
         </div>
         <EstimateStatusChip status={est.status} />

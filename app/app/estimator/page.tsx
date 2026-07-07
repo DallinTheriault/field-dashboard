@@ -7,6 +7,7 @@ import { canViewSettings } from "@/lib/permissions/roles";
 import { getTenantFeatureFlags } from "@/lib/features/flags";
 import { FeatureDisabledPanel } from "@/components/ui/feature-disabled-panel";
 import { EstimateStatusChip } from "./estimate-status";
+import { getTenantTimezone } from "@/lib/dates";
 
 const usd = new Intl.NumberFormat("en-US", {
   style: "currency",
@@ -14,9 +15,9 @@ const usd = new Intl.NumberFormat("en-US", {
   maximumFractionDigits: 0,
 });
 
-function fmtDate(d: string | null): string {
+function fmtDate(d: string | null, tz: string): string {
   if (!d) return "—";
-  return new Date(d).toLocaleDateString("en-US", {
+  return new Date(d).toLocaleDateString("en-US", { timeZone: tz,
     month: "short",
     day: "numeric",
   });
@@ -24,6 +25,7 @@ function fmtDate(d: string | null): string {
 
 /** Estimates list — pipeline view grouped by status. */
 export default async function EstimatorHome() {
+  const tz = await getTenantTimezone();
   const [session, flags] = await Promise.all([
     getCurrentUserRole(),
     getTenantFeatureFlags(),
@@ -138,7 +140,7 @@ export default async function EstimatorHome() {
                             )}
                           </div>
                           <div className="text-2xs text-bone-400 truncate">
-                            {job?.address || "—"} · {fmtDate(e.estimated_at ?? e.created_at)}
+                            {job?.address || "—"} · {fmtDate(e.estimated_at ?? e.created_at, tz)}
                           </div>
                         </div>
                         {e.manual_override_price !== null && (

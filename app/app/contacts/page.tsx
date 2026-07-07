@@ -5,6 +5,7 @@ import { ClickableTableRow } from "@/components/ui/clickable-table-row";
 import { MobileContactCard } from "@/components/list-cards/mobile-contact-card";
 import { TagChipList } from "@/components/tags/tag-chip";
 import { getTagsByContactIds } from "@/lib/tags/server";
+import { getTenantTimezone } from "@/lib/dates";
 
 function fmtPhone(p: string | null): string {
   if (!p) return "—";
@@ -18,9 +19,9 @@ function fmtPhone(p: string | null): string {
   return p;
 }
 
-function fmtDate(d: string | null): string {
+function fmtDate(d: string | null, tz: string): string {
   if (!d) return "—";
-  return new Date(d).toLocaleDateString("en-US", {
+  return new Date(d).toLocaleDateString("en-US", { timeZone: tz,
     month: "short",
     day: "numeric",
     year: "numeric",
@@ -32,6 +33,7 @@ export default async function ContactsPage({
 }: {
   searchParams: Promise<{ q?: string }>;
 }) {
+  const tz = await getTenantTimezone();
   const supabase = await createClient();
   const { q } = await searchParams;
 
@@ -184,7 +186,7 @@ export default async function ContactsPage({
                           {c.address || "—"}
                         </td>
                         <td className="num text-xs text-bone-400 text-right">
-                          {fmtDate(c.updated_at ?? c.created_at)}
+                          {fmtDate(c.updated_at ?? c.created_at, tz)}
                         </td>
                       </ClickableTableRow>
                     );

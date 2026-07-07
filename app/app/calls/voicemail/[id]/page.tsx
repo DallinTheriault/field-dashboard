@@ -13,11 +13,12 @@ import {
 import { fmtPhoneDisplay } from "@/lib/sms/phone";
 import { TextAndCopyButtons } from "@/components/ui/text-copy-buttons";
 import { MarkRespondedButton } from "./mark-responded-button";
+import { getTenantTimezone } from "@/lib/dates";
 
 export const dynamic = "force-dynamic";
 
-function fmtClock(iso: string): string {
-  return new Date(iso).toLocaleString(undefined, {
+function fmtClock(iso: string, tz: string): string {
+  return new Date(iso).toLocaleString("en-US", { timeZone: tz,
     weekday: "short",
     month: "short",
     day: "numeric",
@@ -32,6 +33,7 @@ export default async function VoicemailDetailPage({
 }: {
   params: Promise<{ id: string }>;
 }) {
+  const tz = await getTenantTimezone();
   const { id } = await params;
   const voicemailId = Number(id);
   if (!Number.isFinite(voicemailId)) notFound();
@@ -115,11 +117,11 @@ export default async function VoicemailDetailPage({
             )}
             <span className="inline-flex items-center gap-1">
               <Clock size={10} />
-              {fmtClock(voicemail.created_at)}
+              {fmtClock(voicemail.created_at, tz)}
             </span>
             {voicemail.responded_at && (
               <span className="text-status-completed">
-                Responded {fmtClock(voicemail.responded_at)}
+                Responded {fmtClock(voicemail.responded_at, tz)}
               </span>
             )}
           </div>
@@ -214,7 +216,7 @@ export default async function VoicemailDetailPage({
                 <>
                   <dt>Started</dt>
                   <dd className="text-bone-100">
-                    {fmtClock(summary.started_at)}
+                    {fmtClock(summary.started_at, tz)}
                   </dd>
                 </>
               )}

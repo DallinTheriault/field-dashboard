@@ -7,10 +7,11 @@ import { TagChipList } from "@/components/tags/tag-chip";
 import { AddJobButton } from "./_components/add-job-button";
 import { getTagsByJobIds, listTagsForClient } from "@/lib/tags/server";
 import { Download } from "lucide-react";
+import { getTenantTimezone } from "@/lib/dates";
 
-function fmtDate(d: string | null): string {
+function fmtDate(d: string | null, tz: string): string {
   if (!d) return "—";
-  return new Date(d).toLocaleDateString("en-US", {
+  return new Date(d).toLocaleDateString("en-US", { timeZone: tz,
     month: "short",
     day: "numeric",
     year: "numeric",
@@ -34,6 +35,7 @@ export default async function JobsPage({
 }: {
   searchParams: Promise<{ status?: string; tag?: string }>;
 }) {
+  const tz = await getTenantTimezone();
   const supabase = await createClient();
   const { status, tag: tagIdParam } = await searchParams;
 
@@ -217,13 +219,13 @@ export default async function JobsPage({
                           )}
                         </td>
                         <td className="num text-xs text-bone-300">
-                          {fmtDate(j.start_datetime)}
+                          {fmtDate(j.start_datetime, tz)}
                         </td>
                         <td>
                           <StatusChip status={j.status} />
                         </td>
                         <td className="num text-xs text-bone-400 text-right">
-                          {fmtDate(j.created_at)}
+                          {fmtDate(j.created_at, tz)}
                         </td>
                       </ClickableTableRow>
                     );

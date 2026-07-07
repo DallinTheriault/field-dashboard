@@ -4,6 +4,7 @@ import { MessageSquare, Search } from "lucide-react";
 import { fmtPhoneDisplay } from "@/lib/sms/phone";
 import { getTenantFeatureFlags } from "@/lib/features/flags";
 import { FeatureDisabledPanel } from "@/components/ui/feature-disabled-panel";
+import { getTenantTimezone } from "@/lib/dates";
 
 function EmptyState({
   icon: Icon,
@@ -38,7 +39,7 @@ type ThreadRow = {
   contact_id: number | null;
 };
 
-function timeAgo(iso: string | null): string {
+function timeAgo(iso: string | null, tz: string): string {
   if (!iso) return "";
   const then = new Date(iso).getTime();
   const now = Date.now();
@@ -50,7 +51,7 @@ function timeAgo(iso: string | null): string {
   if (h < 24) return `${h}h`;
   const d = Math.floor(h / 24);
   if (d < 7) return `${d}d`;
-  return new Date(iso).toLocaleDateString(undefined, {
+  return new Date(iso).toLocaleDateString("en-US", { timeZone: tz,
     month: "short",
     day: "numeric",
   });
@@ -74,6 +75,7 @@ export default async function MessagesPage({
 }: {
   searchParams: Promise<{ q?: string }>;
 }) {
+  const tz = await getTenantTimezone();
   const flags = await getTenantFeatureFlags();
   if (!flags.sms) {
     return (
@@ -206,7 +208,7 @@ export default async function MessagesPage({
                     </p>
                   </div>
                   <span className="text-2xs text-bone-400 shrink-0 mt-0.5">
-                    {timeAgo(t.last_message_at)}
+                    {timeAgo(t.last_message_at, tz)}
                   </span>
                 </div>
               </Link>

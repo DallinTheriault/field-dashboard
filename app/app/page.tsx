@@ -3,10 +3,11 @@ import { ArrowRight, Phone, Calendar, TrendingUp, Clock } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { MetricCard } from "@/components/ui/metric-card";
 import { StatusChip } from "@/components/ui/status-chip";
+import { getTenantTimezone } from "@/lib/dates";
 
-function fmtDate(d: string | null): string {
+function fmtDate(d: string | null, tz: string): string {
   if (!d) return "—";
-  return new Date(d).toLocaleDateString("en-US", {
+  return new Date(d).toLocaleDateString("en-US", { timeZone: tz,
     month: "short",
     day: "numeric",
     hour: "numeric",
@@ -36,6 +37,7 @@ function fmtPhone(p: string | null): string {
 }
 
 export default async function OverviewPage() {
+  const tz = await getTenantTimezone();
   const supabase = await createClient();
 
   const [jobsRes, callsRes, upcomingRes, leadsRes] = await Promise.all([
@@ -202,7 +204,7 @@ export default async function OverviewPage() {
                         {fmtDuration(c.duration_seconds)}
                       </div>
                       <div className="text-2xs text-bone-400 mt-0.5">
-                        {fmtDate(c.started_at)}
+                        {fmtDate(c.started_at, tz)}
                       </div>
                     </div>
                   </Link>
@@ -251,7 +253,7 @@ export default async function OverviewPage() {
                         {u.service || "—"} · {u.address || "—"}
                       </div>
                       <div className="num text-2xs text-field-500 mt-1">
-                        {fmtDate(u.start_datetime)}
+                        {fmtDate(u.start_datetime, tz)}
                       </div>
                     </Link>
                   </li>

@@ -9,6 +9,7 @@ import { ScheduledBubble } from "./scheduled-bubble";
 import { SmsThreadRealtime } from "./realtime";
 import { getCurrentUserRole } from "@/lib/permissions/current-role";
 import { canSendSms } from "@/lib/permissions/roles";
+import { getTenantTimezone } from "@/lib/dates";
 
 export const dynamic = "force-dynamic";
 
@@ -21,9 +22,9 @@ type Message = {
   error_code: string | null;
 };
 
-function fmtClock(iso: string): string {
+function fmtClock(iso: string, tz: string): string {
   const d = new Date(iso);
-  return d.toLocaleString(undefined, {
+  return d.toLocaleString("en-US", { timeZone: tz,
     weekday: "short",
     month: "short",
     day: "numeric",
@@ -42,7 +43,7 @@ function sameDay(a: string, b: string): boolean {
   );
 }
 
-function fmtDayHeader(iso: string): string {
+function fmtDayHeader(iso: string, tz: string): string {
   const d = new Date(iso);
   const now = new Date();
   if (
@@ -61,7 +62,7 @@ function fmtDayHeader(iso: string): string {
   ) {
     return "Yesterday";
   }
-  return d.toLocaleDateString(undefined, {
+  return d.toLocaleDateString("en-US", { timeZone: tz,
     weekday: "long",
     month: "short",
     day: "numeric",
@@ -94,6 +95,7 @@ export default async function MessageThreadPage({
 }: {
   params: Promise<{ id: string }>;
 }) {
+  const tz = await getTenantTimezone();
   const { id } = await params;
   const threadId = Number(id);
   if (!Number.isFinite(threadId)) notFound();
@@ -229,7 +231,7 @@ export default async function MessageThreadPage({
                   <div key={m.id}>
                     {showDayHeader && (
                       <div className="text-2xs text-bone-400 text-center py-3 font-medium">
-                        {fmtDayHeader(m.created_at)}
+                        {fmtDayHeader(m.created_at, tz)}
                       </div>
                     )}
                     <div
@@ -250,7 +252,7 @@ export default async function MessageThreadPage({
                         <div
                           className={`text-2xs text-bone-400 ${inbound ? "text-left" : "text-right"} px-1`}
                         >
-                          {fmtClock(m.created_at)}
+                          {fmtClock(m.created_at, tz)}
                           {!inbound && !failed && m.twilio_status && (
                             <span className="ml-1.5 text-bone-400">
                               · {fmtOutboundStatus(m.twilio_status)}

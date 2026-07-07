@@ -23,6 +23,7 @@ import { getTeamMembers } from "@/lib/team/members";
 import { getActivityTimeline } from "@/lib/timeline/fetch";
 import { DeleteContactButton } from "./delete-contact-button";
 import { cn } from "@/lib/cn";
+import { getTenantTimezone } from "@/lib/dates";
 
 function fmtPhone(p: string | null): string {
   if (!p) return "—";
@@ -36,9 +37,9 @@ function fmtPhone(p: string | null): string {
   return p;
 }
 
-function fmtDate(d: string | null): string {
+function fmtDate(d: string | null, tz: string): string {
   if (!d) return "—";
-  return new Date(d).toLocaleString("en-US", {
+  return new Date(d).toLocaleString("en-US", { timeZone: tz,
     month: "short",
     day: "numeric",
     year: "numeric",
@@ -47,9 +48,9 @@ function fmtDate(d: string | null): string {
   });
 }
 
-function fmtDateShort(d: string | null): string {
+function fmtDateShort(d: string | null, tz: string): string {
   if (!d) return "—";
-  return new Date(d).toLocaleDateString("en-US", {
+  return new Date(d).toLocaleDateString("en-US", { timeZone: tz,
     month: "short",
     day: "numeric",
     year: "numeric",
@@ -72,6 +73,7 @@ export default async function ContactDetailPage({
   params: Promise<{ id: string }>;
   searchParams: Promise<{ tab?: string }>;
 }) {
+  const tz = await getTenantTimezone();
   const { id } = await params;
   const { tab } = await searchParams;
   const activeTab: TabKey = (TABS.some((t) => t.key === tab) ? tab : "activity") as TabKey;
@@ -212,8 +214,8 @@ export default async function ContactDetailPage({
               <Row label="Phone" value={fmtPhone(contact.phone)} mono icon={Phone} />
               <Row label="Email" value={contact.email ?? "—"} icon={Mail} />
               <Row label="Address" value={contact.address ?? "—"} icon={MapPin} />
-              <Row label="Created" value={fmtDate(contact.created_at)} />
-              <Row label="Updated" value={fmtDate(contact.updated_at ?? contact.created_at)} />
+              <Row label="Created" value={fmtDate(contact.created_at, tz)} />
+              <Row label="Updated" value={fmtDate(contact.updated_at ?? contact.created_at, tz)} />
             </dl>
           </div>
         </div>
@@ -259,13 +261,13 @@ export default async function ContactDetailPage({
               </div>
             )}
             {activeTab === "jobs" && (
-              <JobsTab jobs={jobs ?? []} />
+              <JobsTab jobs={jobs ?? []} tz={tz} />
             )}
             {activeTab === "calls" && (
-              <CallsTab calls={calls ?? []} />
+              <CallsTab calls={calls ?? []} tz={tz} />
             )}
             {activeTab === "messages" && (
-              <MessagesTab messages={messages ?? []} />
+              <MessagesTab messages={messages ?? []} tz={tz} />
             )}
           </div>
         </div>
@@ -310,6 +312,7 @@ function fmtDollar(c: number | null | undefined): string {
 
 function JobsTab({
   jobs,
+  tz,
 }: {
   jobs: Array<{
     id: number | string;
@@ -321,6 +324,7 @@ function JobsTab({
     start_datetime: string | null;
     created_at: string;
   }>;
+  tz: string;
 }) {
   if (jobs.length === 0) {
     return (
@@ -353,7 +357,7 @@ function JobsTab({
               <StatusChip status={j.status ?? "lead"} />
             </div>
             <div className="flex items-center gap-3 text-2xs text-bone-400 mt-1 num">
-              <span>{fmtDateShort(j.start_datetime)}</span>
+              <span>{fmtDateShort(j.start_datetime, tz)}</span>
               <span>{fmtDollar(j.quoted_price)}</span>
             </div>
           </Link>
@@ -365,6 +369,7 @@ function JobsTab({
 
 function CallsTab({
   calls,
+  tz,
 }: {
   calls: Array<{
     id: string;
@@ -374,6 +379,7 @@ function CallsTab({
     duration_seconds: number | null;
     started_at: string;
   }>;
+  tz: string;
 }) {
   function fmtDuration(s: number | null): string {
     if (!s || s < 1) return "—";
@@ -423,7 +429,7 @@ function CallsTab({
               </span>
             </div>
             <div className="text-2xs text-bone-400 mt-0.5 num">
-              {fmtDateShort(c.started_at)}
+              {fmtDateShort(c.started_at, tz)}
             </div>
           </Link>
         </li>
@@ -434,6 +440,7 @@ function CallsTab({
 
 function MessagesTab({
   messages,
+  tz,
 }: {
   messages: Array<{
     id: number;
@@ -442,6 +449,7 @@ function MessagesTab({
     responded_at: string | null;
     created_at: string;
   }>;
+  tz: string;
 }) {
   if (messages.length === 0) {
     return (
@@ -477,7 +485,7 @@ function MessagesTab({
                 </p>
               </div>
               <span className="num text-2xs text-bone-400 shrink-0">
-                {fmtDateShort(m.created_at)}
+                {fmtDateShort(m.created_at, tz)}
               </span>
             </div>
             {m.responded_at && (
