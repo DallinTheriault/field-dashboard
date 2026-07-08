@@ -87,11 +87,24 @@ export default async function OverviewPage() {
     completed: jobs.filter((j) => j.status === "completed").length,
   };
 
+  // A lead "converted" once it reaches scheduled or anything past it —
+  // in_progress/completed/callbacks all come AFTER a booking. Cancelled
+  // and still-open leads/estimates don't count as won.
+  const WON_STATUSES = new Set([
+    "scheduled",
+    "in_progress",
+    "completed",
+    "callback",
+    "callback_complete",
+    "invoiced",
+    "paid",
+  ]);
+  const wonJobs = jobs.filter((j) => WON_STATUSES.has(j.status ?? "")).length;
+  // Denominator excludes cancelled jobs — a dead lead shouldn't drag the rate.
+  const convertibleJobs = jobs.filter((j) => j.status !== "cancelled").length;
   const conversionRate =
-    jobs.length > 0
-      ? Math.round(
-          ((byStatus.scheduled + byStatus.completed) / jobs.length) * 100,
-        )
+    convertibleJobs > 0
+      ? Math.round((wonJobs / convertibleJobs) * 100)
       : 0;
 
   return (
@@ -145,7 +158,7 @@ export default async function OverviewPage() {
           <MetricCard
             label="Conversion"
             value={`${conversionRate}%`}
-            sub="lead → scheduled"
+            sub="leads booked or won"
             accent="completed"
             className="cursor-pointer"
           />

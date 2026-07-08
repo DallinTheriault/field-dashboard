@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
+  ArrowLeft,
   BookmarkPlus,
   Eye,
   EyeOff,
@@ -277,7 +278,14 @@ export function EstimateBuilder({
       (custName.trim() && custPhone.trim() && custAddress.trim()));
 
   return (
-    <div className="max-w-2xl mx-auto px-4 py-6 pb-32 space-y-5">
+    <div className="max-w-2xl mx-auto px-4 py-6 pb-56 md:pb-32 space-y-5">
+      <Link
+        href="/app/estimator"
+        className="inline-flex items-center gap-1.5 text-2xs text-bone-400 hover:text-bone-100"
+      >
+        <ArrowLeft size={12} />
+        Estimates
+      </Link>
       <header>
         <h1 className="text-xl font-semibold text-bone-50">
           {existing ? "Edit estimate" : "New estimate"}
@@ -594,8 +602,10 @@ export function EstimateBuilder({
 
       {err && <div className="form-error">{err}</div>}
 
-      {/* Sticky totals + save */}
-      <div className="fixed bottom-0 left-0 right-0 md:left-56 bg-ink-1/95 backdrop-blur border-t border-line px-4 py-3">
+      {/* Sticky totals + save. On mobile it sits ABOVE the bottom tab nav
+          (which is h-16 + safe area, z-30) so the Save button is never
+          hidden behind it. */}
+      <div className="fixed bottom-[calc(4rem_+_env(safe-area-inset-bottom))] md:bottom-0 left-0 right-0 md:left-56 z-20 bg-ink-1/95 backdrop-blur border-t border-line px-4 py-3">
         <div className="max-w-2xl mx-auto space-y-2">
           {clientView ? (
             <div className="text-2xs text-bone-300 space-y-0.5">
