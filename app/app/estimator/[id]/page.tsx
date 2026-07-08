@@ -173,6 +173,9 @@ export default async function EstimateDetailPage({
                 <tr key={l.id} className="border-b border-line-subtle last:border-0">
                   <td className="py-2 text-bone-100">
                     {l.description}
+                    {l.sku && (
+                      <span className="text-2xs text-bone-400"> · {l.sku}</span>
+                    )}
                     {Number(l.qty) !== 1 && (
                       <span className="text-2xs text-bone-400">
                         {" "}
@@ -258,6 +261,13 @@ export default async function EstimateDetailPage({
                 <tr key={l.id} className="border-t border-line-subtle">
                   <td className="py-1.5 pr-2 text-bone-100">
                     {l.description}
+                    {l.is_hardware && (
+                      <span className="text-bone-400">
+                        {" "}
+                        · hardware {l.hardware_markup ? "(marked up)" : "(at cost)"}
+                        {l.sku ? ` · ${l.sku}` : ""}
+                      </span>
+                    )}
                     {Number(l.resolved_prep_multiplier) !== 1 && (
                       <span className="text-bone-400">
                         {" "}
@@ -266,13 +276,15 @@ export default async function EstimateDetailPage({
                     )}
                   </td>
                   <td className="py-1.5 text-right num">
-                    {Number(l.resolved_labor_hours).toFixed(2)}
+                    {l.is_hardware ? "—" : Number(l.resolved_labor_hours).toFixed(2)}
                   </td>
                   <td className="py-1.5 text-right num">
                     {usd.format(Number(l.resolved_labor_cost))}
                   </td>
                   <td className="py-1.5 text-right num">
-                    {usd.format(Number(l.resolved_material_cost))}
+                    {l.is_hardware
+                      ? usd.format(Number(l.resolved_line_cost))
+                      : usd.format(Number(l.resolved_material_cost))}
                   </td>
                   <td className="py-1.5 text-right num">
                     {usd.format(Number(l.resolved_line_cost))}

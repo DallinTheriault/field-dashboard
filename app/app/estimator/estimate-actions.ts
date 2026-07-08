@@ -41,6 +41,29 @@ function sanitizeLines(rawLines: RawLine[]): RawLine[] | string {
     if (!Number.isFinite(qty) || qty <= 0) {
       return `"${description}": quantity must be > 0.`;
     }
+
+    if (l.isHardware) {
+      const price = Number(l.unitPrice);
+      if (!Number.isFinite(price) || price < 0) {
+        return `"${description}": unit price must be 0 or more.`;
+      }
+      clean.push({
+        key: String(l.key ?? clean.length),
+        serviceId: null,
+        description,
+        type: "TASK",
+        qty,
+        unit: null,
+        hoursPerUnit: null,
+        prepModifierId: null,
+        isHardware: true,
+        sku: l.sku ? String(l.sku).trim() : null,
+        unitPrice: price,
+        hardwareMarkup: !!l.hardwareMarkup,
+      });
+      continue;
+    }
+
     if (!l.serviceId) {
       const hrs = Number(l.hoursPerUnit);
       if (!Number.isFinite(hrs) || hrs <= 0) {
@@ -56,6 +79,7 @@ function sanitizeLines(rawLines: RawLine[]): RawLine[] | string {
       unit: l.unit ? String(l.unit) : null,
       hoursPerUnit: l.hoursPerUnit === null ? null : Number(l.hoursPerUnit),
       prepModifierId: l.prepModifierId ? Number(l.prepModifierId) : null,
+      isHardware: false,
     });
   }
   return clean;
@@ -284,28 +308,47 @@ export async function repriceEstimate(estimateId: number): Promise<Result> {
     supabase
       .from("estimate_line_items")
       .select(
-        "service_id, description, type, qty, unit, prep_modifier_id, resolved_hours_per_unit, sort_order",
+        "service_id, description, type, qty, unit, prep_modifier_id, resolved_hours_per_unit, sort_order, is_hardware, sku, resolved_unit_price, hardware_markup",
       )
       .eq("estimate_id", estimateId)
       .order("sort_order"),
   ]);
   if (!est) return { ok: false, error: "Estimate not found." };
 
-  const rawLines: RawLine[] = (lineRows ?? []).map((r, i) => ({
-    key: String(i),
-    serviceId: r.service_id,
-    description: r.description,
-    type: r.type as RawLine["type"],
-    qty: Number(r.qty),
-    unit: r.unit,
-    hoursPerUnit:
-      r.service_id === null
-        ? r.resolved_hours_per_unit === null
-          ? null
-          : Number(r.resolved_hours_per_unit)
-        : null,
-    prepModifierId: r.prep_modifier_id,
-  }));
+  const rawLines: RawLine[] = (lineRows ?? []).map((r, i) =>
+    r.is_hardware
+      ? {
+          key: String(i),
+          serviceId: null,
+          description: r.description,
+          type: "TASK",
+          qty: Number(r.qty),
+          unit: null,
+          hoursPerUnit: null,
+          prepModifierId: null,
+          isHardware: true,
+          sku: r.sku,
+          unitPrice:
+            r.resolved_unit_price === null ? 0 : Number(r.resolved_unit_price),
+          hardwareMarkup: !!r.hardware_markup,
+        }
+      : {
+          key: String(i),
+          serviceId: r.service_id,
+          description: r.description,
+          type: r.type as RawLine["type"],
+          qty: Number(r.qty),
+          unit: r.unit,
+          hoursPerUnit:
+            r.service_id === null
+              ? r.resolved_hours_per_unit === null
+                ? null
+                : Number(r.resolved_hours_per_unit)
+              : null,
+          prepModifierId: r.prep_modifier_id,
+          isHardware: false,
+        },
+  );
 
   const bundle = await getEstimatorBundle(supabase);
   if (!bundle.settings) {

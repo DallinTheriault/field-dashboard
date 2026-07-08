@@ -39,7 +39,7 @@ export default async function EditEstimatePage({
     supabase
       .from("estimate_line_items")
       .select(
-        "service_id, description, type, qty, unit, prep_modifier_id, resolved_hours_per_unit, sort_order",
+        "service_id, description, type, qty, unit, prep_modifier_id, resolved_hours_per_unit, sort_order, is_hardware, sku, resolved_unit_price, hardware_markup",
       )
       .eq("estimate_id", estimateId)
       .order("sort_order"),
@@ -56,21 +56,40 @@ export default async function EditEstimatePage({
     address: string | null;
   } | null;
 
-  const rawLines: RawLine[] = (lineRows ?? []).map((r, i) => ({
-    key: String(i),
-    serviceId: r.service_id,
-    description: r.description,
-    type: r.type as RawLine["type"],
-    qty: Number(r.qty),
-    unit: r.unit,
-    hoursPerUnit:
-      r.service_id === null
-        ? r.resolved_hours_per_unit === null
-          ? null
-          : Number(r.resolved_hours_per_unit)
-        : null,
-    prepModifierId: r.prep_modifier_id,
-  }));
+  const rawLines: RawLine[] = (lineRows ?? []).map((r, i) =>
+    r.is_hardware
+      ? {
+          key: String(i),
+          serviceId: null,
+          description: r.description,
+          type: "TASK",
+          qty: Number(r.qty),
+          unit: null,
+          hoursPerUnit: null,
+          prepModifierId: null,
+          isHardware: true,
+          sku: r.sku,
+          unitPrice:
+            r.resolved_unit_price === null ? 0 : Number(r.resolved_unit_price),
+          hardwareMarkup: !!r.hardware_markup,
+        }
+      : {
+          key: String(i),
+          serviceId: r.service_id,
+          description: r.description,
+          type: r.type as RawLine["type"],
+          qty: Number(r.qty),
+          unit: r.unit,
+          hoursPerUnit:
+            r.service_id === null
+              ? r.resolved_hours_per_unit === null
+                ? null
+                : Number(r.resolved_hours_per_unit)
+              : null,
+          prepModifierId: r.prep_modifier_id,
+          isHardware: false,
+        },
+  );
 
   return (
     <EstimateBuilder

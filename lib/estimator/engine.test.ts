@@ -241,3 +241,79 @@ describe("client-facing rows", () => {
     expect(rows[0].amount).toBe(150);
   });
 });
+
+describe("hardware lines", () => {
+  it("at-cost hardware is added at exactly its cost, margin only on labor", () => {
+    // 6 hr labor = $600 cost → $1000 at 40% margin. + $159 lock passed through.
+    const r = priceJob(
+      {
+        lines: [
+          { key: "install", type: "TASK", qty: 1, flatLaborHours: 6, materials: [] },
+          { key: "lock", type: "TASK", kind: "hardware", qty: 1, hardwareUnitCost: 159, passThrough: true, materials: [] },
+        ],
+        travelFee: 0,
+      },
+      S,
+    );
+    expect(r.hardwarePassThroughCost).toBe(159);
+    expect(r.jobCost).toBe(759); // 600 labor + 159 part
+    expect(r.rawPrice).toBe(1159); // 600/0.6 + 159
+    expect(r.price).toBe(1160); // rounded up to $5
+    const { rows } = allocateClientRows(r);
+    const lock = rows.find((x) => x.key === "lock")!;
+    expect(lock.amount).toBe(159); // exact, no markup
+  });
+
+  it("marked-up hardware gets the job margin, like a material", () => {
+    // $159 lock, no labor → 159/0.6 = 265.
+    const r = priceJob(
+      {
+        lines: [
+          { key: "lock", type: "TASK", kind: "hardware", qty: 1, hardwareUnitCost: 159, passThrough: false, materials: [] },
+        ],
+        travelFee: 0,
+      },
+      S,
+    );
+    expect(r.hardwareMarkupCost).toBe(159);
+    expect(r.hardwarePassThroughCost).toBe(0);
+    expect(r.jobCost).toBe(159);
+    expect(r.rawPrice).toBe(265); // 159 / 0.6
+    const { rows } = allocateClientRows(r);
+    expect(rows[0].amount).toBe(265);
+  });
+
+  it("count multiplies hardware cost", () => {
+    const r = priceJob(
+      {
+        lines: [
+          { key: "h", type: "TASK", kind: "hardware", qty: 3, hardwareUnitCost: 20, passThrough: true, materials: [] },
+        ],
+        travelFee: 0,
+      },
+      S,
+    );
+    expect(r.hardwarePassThroughCost).toBe(60);
+  });
+
+  it("mixed job: at-cost + marked-up + labor all compose and rows sum to price", () => {
+    const r = priceJob(
+      {
+        lines: [
+          { key: "labor", type: "TASK", qty: 1, flatLaborHours: 2, materials: [] },      // $200 → 333.33
+          { key: "markup", type: "TASK", kind: "hardware", qty: 1, hardwareUnitCost: 90, passThrough: false, materials: [] }, // 90 → 150
+          { key: "atcost", type: "TASK", kind: "hardware", qty: 1, hardwareUnitCost: 159, passThrough: true, materials: [] }, // 159 exact
+        ],
+        travelFee: 0,
+      },
+      S,
+    );
+    // margined base = 200 + 90 = 290 → 290/0.6 = 483.33; + 159 = 642.33 → $645
+    expect(r.jobCost).toBe(449); // 200 + 90 + 159
+    expect(r.price).toBe(645);
+    const { rows } = allocateClientRows(r);
+    expect(rows.find((x) => x.key === "atcost")!.amount).toBe(159);
+    const sum = rows.reduce((s, x) => s + x.amount, 0);
+    expect(sum).toBeCloseTo(r.price, 2);
+  });
+});

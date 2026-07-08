@@ -41,15 +41,29 @@ export interface EngineLineInput {
   key?: string | number;
   type: "MEASURED" | "TASK";
   /**
+   * "labor" (default): priced from hours. "hardware": priced from a unit
+   * cost — a physical part (door lock, fixture) rather than time.
+   */
+  kind?: "labor" | "hardware";
+  /**
    * MEASURED: measured quantity (sqft/lnft/each).
    * TASK: count of the task (2 × toilet swap). Spec formula is qty-less for
    * TASK; qty=1 reproduces it exactly, qty>1 = repeat the task.
+   * HARDWARE: count of the part.
    */
   qty: number;
   /** MEASURED only. */
   laborHoursPerUnit?: number | null;
   /** TASK only. */
   flatLaborHours?: number | null;
+  /** HARDWARE only: what the part costs the owner, per unit. */
+  hardwareUnitCost?: number | null;
+  /**
+   * HARDWARE only. true = pass through at cost (customer pays exactly what
+   * the owner paid, margin only on the rest of the job). false = mark up
+   * by the job margin like any other cost.
+   */
+  passThrough?: boolean;
   /** Prep applies to LABOR ONLY, never materials. Default 1. */
   prepMultiplier?: number | null;
   materials: EngineMaterialInput[];
@@ -68,11 +82,15 @@ export interface EngineMaterialResult {
 
 export interface EngineLineResult {
   key?: string | number;
+  kind: "labor" | "hardware";
+  /** HARDWARE at-cost: excluded from margin, added to price at cost. */
+  passThrough: boolean;
   baseHours: number;
   laborHours: number;
   laborCost: number;
   materials: EngineMaterialResult[];
   materialCost: number;
+  /** HARDWARE: unitCost × qty. LABOR: laborCost + materialCost. */
   lineCost: number;
 }
 
@@ -92,6 +110,10 @@ export interface JobPricingResult {
   /** After material markup (identical when markup = 0). */
   materialCostMarked: number;
   travelFee: number;
+  /** Marked-up hardware (before margin). */
+  hardwareMarkupCost: number;
+  /** At-cost hardware — added to price at cost, never margined. */
+  hardwarePassThroughCost: number;
   jobCost: number;
   rawPrice: number;
   /** Final: max(raw, minimum) rounded UP to increment. */
@@ -155,6 +177,23 @@ export function priceLine(
   line: EngineLineInput,
   settings: Pick<EngineSettings, "loadedLaborRate">,
 ): EngineLineResult {
+  // Hardware: a part priced from unit cost, not hours. No labor, no
+  // consumption math — just cost × count.
+  if (line.kind === "hardware") {
+    const lineCost = round2((line.hardwareUnitCost ?? 0) * (line.qty || 1));
+    return {
+      key: line.key,
+      kind: "hardware",
+      passThrough: !!line.passThrough,
+      baseHours: 0,
+      laborHours: 0,
+      laborCost: 0,
+      materials: [],
+      materialCost: 0,
+      lineCost,
+    };
+  }
+
   const baseHours =
     line.type === "MEASURED"
       ? line.qty * (line.laborHoursPerUnit ?? 0)
@@ -169,6 +208,8 @@ export function priceLine(
 
   return {
     key: line.key,
+    kind: "labor",
+    passThrough: false,
     baseHours,
     laborHours,
     laborCost,
@@ -188,6 +229,8 @@ export function priceJob(
   );
 
   const laborCost = round2(lines.reduce((s, l) => s + l.laborCost, 0));
+  // Catalog/linked materials + job-level extras get material markup + margin.
+  // Hardware is tracked separately so it never gets material_markup applied.
   const materialCost = round2(
     lines.reduce((s, l) => s + l.materialCost, 0) +
       extraMaterials.reduce((s, m) => s + m.total, 0),
@@ -195,10 +238,26 @@ export function priceJob(
   const materialCostMarked = round2(materialCost * (1 + (settings.materialMarkupPct || 0)));
   const travelFee = round2(input.travelFee || 0);
 
-  const jobCost = round2(laborCost + materialCostMarked + travelFee);
+  const hardwareMarkupCost = round2(
+    lines
+      .filter((l) => l.kind === "hardware" && !l.passThrough)
+      .reduce((s, l) => s + l.lineCost, 0),
+  );
+  const hardwarePassThroughCost = round2(
+    lines
+      .filter((l) => l.kind === "hardware" && l.passThrough)
+      .reduce((s, l) => s + l.lineCost, 0),
+  );
+
+  const jobCost = round2(
+    laborCost + materialCostMarked + hardwareMarkupCost + hardwarePassThroughCost + travelFee,
+  );
 
   const margin = Math.min(Math.max(settings.marginPct, 0), 0.95);
-  const rawPrice = round2(jobCost / (1 - margin));
+  // Everything but pass-through hardware is subject to margin; at-cost
+  // hardware is added on top at exactly what it cost.
+  const marginedBase = laborCost + materialCostMarked + hardwareMarkupCost + travelFee;
+  const rawPrice = round2(marginedBase / (1 - margin) + hardwarePassThroughCost);
 
   const afterMin = Math.max(rawPrice, settings.minimumJobCharge);
   const price = round2(roundUpTo(afterMin, settings.roundingIncrement || 1));
@@ -210,6 +269,8 @@ export function priceJob(
     materialCost,
     materialCostMarked,
     travelFee,
+    hardwareMarkupCost,
+    hardwarePassThroughCost,
     jobCost,
     rawPrice,
     price,
@@ -237,25 +298,40 @@ export function allocateClientRows(result: JobPricingResult): {
   total: number;
 } {
   const margin = result.marginPct;
-  const rows: ClientRow[] = result.lines.map((l) => ({
-    kind: "line" as const,
-    key: l.key,
-    amount: round2(l.lineCost / (1 - margin)),
-  }));
+  // Track which rows are at-cost pass-through so the rounding/min-charge
+  // delta is never folded into them (it would distort their exact price).
+  const meta: boolean[] = []; // atCost per row, aligned to `rows`
+  const rows: ClientRow[] = result.lines.map((l) => {
+    const atCost = l.kind === "hardware" && l.passThrough;
+    meta.push(atCost);
+    return {
+      kind: "line" as const,
+      key: l.key,
+      amount: atCost ? round2(l.lineCost) : round2(l.lineCost / (1 - margin)),
+    };
+  });
 
   const extrasCost = result.extraMaterials.reduce((s, m) => s + m.total, 0);
   if (extrasCost > 0) {
     rows.push({ kind: "extras", amount: round2(extrasCost / (1 - margin)) });
+    meta.push(false);
   }
   if (result.travelFee > 0) {
     rows.push({ kind: "travel", amount: round2(result.travelFee / (1 - margin)) });
+    meta.push(false);
   }
 
   const sum = round2(rows.reduce((s, r) => s + r.amount, 0));
   const delta = round2(result.price - sum);
   if (rows.length > 0 && Math.abs(delta) > 0.004) {
-    const largest = rows.reduce((a, b) => (b.amount > a.amount ? b : a));
-    largest.amount = round2(largest.amount + delta);
+    // Prefer a margined row for the fold; fall back to the largest overall
+    // (e.g. a job that is nothing but at-cost hardware plus the minimum).
+    const marginedIdx = rows
+      .map((_, i) => i)
+      .filter((i) => !meta[i]);
+    const pool = marginedIdx.length > 0 ? marginedIdx : rows.map((_, i) => i);
+    const target = pool.reduce((a, b) => (rows[b].amount > rows[a].amount ? b : a));
+    rows[target].amount = round2(rows[target].amount + delta);
   }
 
   return { rows, total: result.price };

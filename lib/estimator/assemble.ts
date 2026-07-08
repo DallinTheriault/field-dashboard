@@ -106,6 +106,14 @@ export type RawLine = {
   /** Ad-hoc lines only: hours per unit (TASK: per repeat). Catalog lines resolve from the service. */
   hoursPerUnit: number | null;
   prepModifierId: number | null;
+  /** Hardware lines: priced from a unit cost, not hours. */
+  isHardware?: boolean;
+  /** Hardware only: model / SKU (free text, optional). */
+  sku?: string | null;
+  /** Hardware only: what the part costs the owner, per unit. */
+  unitPrice?: number | null;
+  /** Hardware only: true = mark up by job margin; false = pass through at cost. */
+  hardwareMarkup?: boolean;
 };
 
 export function buildEngineSettings(bundle: EstimatorBundle): EngineSettings {
@@ -150,6 +158,20 @@ export function toEngineLine(
   index: number,
   bundle: EstimatorBundle,
 ): EngineLineInput {
+  // Hardware: a part priced from unit cost. passThrough = at-cost (no
+  // margin); markup = margined like a material.
+  if (raw.isHardware) {
+    return {
+      key: index,
+      type: "TASK",
+      kind: "hardware",
+      qty: raw.qty,
+      hardwareUnitCost: raw.unitPrice ?? 0,
+      passThrough: !raw.hardwareMarkup,
+      materials: [],
+    };
+  }
+
   const service = raw.serviceId
     ? bundle.services.find((s) => s.id === raw.serviceId)
     : undefined;
@@ -258,6 +280,29 @@ export function buildSavePayload(args: {
     const r = result.lines[i];
     const clientAmount =
       rows.find((x) => x.kind === "line" && x.key === i)?.amount ?? 0;
+    if (raw.isHardware) {
+      return {
+        service_id: null,
+        description: raw.description,
+        type: "TASK",
+        qty: raw.qty,
+        unit: null,
+        prep_modifier_id: null,
+        sort_order: i,
+        resolved_prep_multiplier: 1,
+        resolved_hours_per_unit: null,
+        resolved_labor_hours: 0,
+        resolved_loaded_rate: 0,
+        resolved_labor_cost: 0,
+        resolved_material_cost: 0,
+        resolved_line_cost: r.lineCost,
+        resolved_client_amount: clientAmount,
+        is_hardware: true,
+        sku: raw.sku ?? null,
+        resolved_unit_price: raw.unitPrice ?? 0,
+        hardware_markup: !!raw.hardwareMarkup,
+      };
+    }
     const hoursPerUnit = raw.serviceId
       ? (r.baseHours && raw.qty > 0 ? r.baseHours / raw.qty : null)
       : raw.hoursPerUnit;
@@ -278,6 +323,10 @@ export function buildSavePayload(args: {
       resolved_material_cost: r.materialCost,
       resolved_line_cost: r.lineCost,
       resolved_client_amount: clientAmount,
+      is_hardware: false,
+      sku: null,
+      resolved_unit_price: null,
+      hardware_markup: null,
     };
   });
 

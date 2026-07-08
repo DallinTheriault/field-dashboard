@@ -13,6 +13,7 @@ import {
   Search,
   Trash2,
   TriangleAlert,
+  Wrench,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import {
@@ -40,8 +41,13 @@ type UILine = {
   type: "MEASURED" | "TASK";
   unit: string | null;
   qtyStr: string;
-  hoursStr: string; // ad-hoc only
+  hoursStr: string; // ad-hoc service only
   prepModifierId: number | null;
+  // Hardware lines: a part priced from unit cost, not hours.
+  isHardware: boolean;
+  sku: string;
+  unitPriceStr: string;
+  hardwareMarkup: boolean; // true = mark up by margin; false = at cost
 };
 
 export type ExistingEstimate = {
@@ -62,6 +68,23 @@ function nextKey() {
 
 function toRaw(l: UILine): RawLine {
   const qty = parseFloat(l.qtyStr);
+  if (l.isHardware) {
+    const price = parseFloat(l.unitPriceStr);
+    return {
+      key: l.key,
+      serviceId: null,
+      description: l.description,
+      type: "TASK",
+      qty: Number.isFinite(qty) ? qty : 0,
+      unit: null,
+      hoursPerUnit: null,
+      prepModifierId: null,
+      isHardware: true,
+      sku: l.sku.trim() || null,
+      unitPrice: Number.isFinite(price) ? price : 0,
+      hardwareMarkup: l.hardwareMarkup,
+    };
+  }
   const hours = parseFloat(l.hoursStr);
   return {
     key: l.key,
@@ -72,6 +95,7 @@ function toRaw(l: UILine): RawLine {
     unit: l.unit,
     hoursPerUnit: l.serviceId ? null : Number.isFinite(hours) ? hours : null,
     prepModifierId: l.prepModifierId,
+    isHardware: false,
   };
 }
 
@@ -85,6 +109,10 @@ function fromRaw(r: RawLine): UILine {
     qtyStr: String(r.qty),
     hoursStr: r.hoursPerUnit === null ? "" : String(r.hoursPerUnit),
     prepModifierId: r.prepModifierId,
+    isHardware: !!r.isHardware,
+    sku: r.sku ?? "",
+    unitPriceStr: r.unitPrice === null || r.unitPrice === undefined ? "" : String(r.unitPrice),
+    hardwareMarkup: r.hardwareMarkup ?? true,
   };
 }
 
@@ -170,6 +198,10 @@ export function EstimateBuilder({
         qtyStr: s.type === "TASK" ? "1" : "",
         hoursStr: "",
         prepModifierId: null,
+        isHardware: false,
+        sku: "",
+        unitPriceStr: "",
+        hardwareMarkup: true,
       },
     ]);
     setCatalogQuery("");
@@ -187,6 +219,30 @@ export function EstimateBuilder({
         qtyStr: "1",
         hoursStr: "",
         prepModifierId: null,
+        isHardware: false,
+        sku: "",
+        unitPriceStr: "",
+        hardwareMarkup: true,
+      },
+    ]);
+  }
+
+  function addHardwareLine() {
+    setLines((prev) => [
+      ...prev,
+      {
+        key: nextKey(),
+        serviceId: null,
+        description: "",
+        type: "TASK",
+        unit: null,
+        qtyStr: "1",
+        hoursStr: "",
+        prepModifierId: null,
+        isHardware: true,
+        sku: "",
+        unitPriceStr: "",
+        hardwareMarkup: true,
       },
     ]);
   }
@@ -388,7 +444,11 @@ export function EstimateBuilder({
                       patchLine(l.key, { description: e.target.value })
                     }
                     placeholder={
-                      l.serviceId ? undefined : "Describe the work…"
+                      l.serviceId
+                        ? undefined
+                        : l.isHardware
+                          ? "Part name (e.g. Door lock)"
+                          : "Describe the work…"
                     }
                     className="flex-1 min-w-0"
                   />
@@ -419,48 +479,96 @@ export function EstimateBuilder({
                         patchLine(l.key, { qtyStr: e.target.value })
                       }
                       placeholder="0"
-                      className="w-20"
+                      className="w-16"
                     />
                   </label>
-                  {!l.serviceId && (
-                    <label className="flex items-center gap-1.5">
-                      <span className="text-2xs text-bone-400">hrs</span>
-                      <input
-                        inputMode="decimal"
-                        value={l.hoursStr}
-                        onChange={(e) =>
-                          patchLine(l.key, { hoursStr: e.target.value })
+
+                  {l.isHardware ? (
+                    <>
+                      <label className="flex items-center gap-1.5">
+                        <span className="text-2xs text-bone-400">$/ea</span>
+                        <input
+                          inputMode="decimal"
+                          value={l.unitPriceStr}
+                          onChange={(e) =>
+                            patchLine(l.key, { unitPriceStr: e.target.value })
+                          }
+                          placeholder="0.00"
+                          className="w-24"
+                        />
+                      </label>
+                      {/* At cost vs marked up, per the owner's choice */}
+                      <button
+                        type="button"
+                        onClick={() =>
+                          patchLine(l.key, { hardwareMarkup: !l.hardwareMarkup })
                         }
-                        placeholder="0"
-                        className="w-20"
-                      />
-                    </label>
-                  )}
-                  {prepOptions.length > 0 && (
-                    <select
-                      value={l.prepModifierId ?? ""}
-                      onChange={(e) =>
-                        patchLine(l.key, {
-                          prepModifierId: e.target.value
-                            ? Number(e.target.value)
-                            : null,
-                        })
-                      }
-                      className="text-sm"
-                    >
-                      <option value="">No prep</option>
-                      {prepOptions.map((m) => (
-                        <option key={m.id} value={m.id}>
-                          {m.name} ×{m.value}
-                        </option>
-                      ))}
-                    </select>
+                        className={`chip normal-case tracking-normal ${
+                          l.hardwareMarkup
+                            ? "border-field-500/40 text-field-500 bg-field-500/10"
+                            : "border-line-strong text-bone-300"
+                        }`}
+                        title="Tap to toggle whether your margin applies to this part"
+                      >
+                        {l.hardwareMarkup ? "marked up" : "at cost"}
+                      </button>
+                    </>
+                  ) : (
+                    <>
+                      {!l.serviceId && (
+                        <label className="flex items-center gap-1.5">
+                          <span className="text-2xs text-bone-400">hrs</span>
+                          <input
+                            inputMode="decimal"
+                            value={l.hoursStr}
+                            onChange={(e) =>
+                              patchLine(l.key, { hoursStr: e.target.value })
+                            }
+                            placeholder="0"
+                            className="w-20"
+                          />
+                        </label>
+                      )}
+                      {prepOptions.length > 0 && (
+                        <select
+                          value={l.prepModifierId ?? ""}
+                          onChange={(e) =>
+                            patchLine(l.key, {
+                              prepModifierId: e.target.value
+                                ? Number(e.target.value)
+                                : null,
+                            })
+                          }
+                          className="text-sm"
+                        >
+                          <option value="">No prep</option>
+                          {prepOptions.map((m) => (
+                            <option key={m.id} value={m.id}>
+                              {m.name} ×{m.value}
+                            </option>
+                          ))}
+                        </select>
+                      )}
+                    </>
                   )}
                   <span className="num text-sm text-bone-100 ml-auto">
                     {usd.format(clientAmount)}
                   </span>
                 </div>
-                {!l.serviceId && l.description.trim() && l.hoursStr && (
+
+                {l.isHardware && (
+                  <label className="flex items-center gap-1.5">
+                    <span className="text-2xs text-bone-400 w-10">SKU</span>
+                    <input
+                      value={l.sku}
+                      onChange={(e) => patchLine(l.key, { sku: e.target.value })}
+                      placeholder="Model / SKU (optional)"
+                      className="flex-1 min-w-0"
+                    />
+                  </label>
+                )}
+
+                {!l.serviceId && !l.isHardware && l.description.trim() && l.hoursStr && (
                   <button
                     type="button"
                     onClick={() => saveLineToCatalog(l)}
@@ -504,14 +612,24 @@ export function EstimateBuilder({
               ))}
             </div>
           )}
-          <button
-            type="button"
-            onClick={addAdHocLine}
-            className="btn-secondary text-sm w-full min-h-[46px]"
-          >
-            <Plus size={14} />
-            Ad-hoc line (describe + hours)
-          </button>
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={addAdHocLine}
+              className="btn-secondary text-sm flex-1 min-h-[46px]"
+            >
+              <Plus size={14} />
+              Service (hours)
+            </button>
+            <button
+              type="button"
+              onClick={addHardwareLine}
+              className="btn-secondary text-sm flex-1 min-h-[46px]"
+            >
+              <Wrench size={14} />
+              Hardware (part)
+            </button>
+          </div>
         </div>
       </section>
 
