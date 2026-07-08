@@ -166,6 +166,7 @@ export default async function InvoiceDetailPage({
 
       <InvoiceActionsBar
         invoiceId={inv.id}
+        invoiceNumber={inv.invoice_number}
         status={inv.status}
         hasStripe={Boolean(inv.stripe_invoice_id)}
         hostedUrl={inv.stripe_hosted_invoice_url}

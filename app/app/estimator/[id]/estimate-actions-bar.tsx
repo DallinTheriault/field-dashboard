@@ -21,6 +21,7 @@ import {
   type EstimateStatus,
 } from "../estimate-actions";
 import { createInvoiceFromEstimate } from "../invoice-actions";
+import { SharePdfButton } from "../share-pdf-button";
 
 export function EstimateActionsBar({
   estimateId,
@@ -116,8 +117,13 @@ export function EstimateActionsBar({
           className="btn-secondary text-sm min-h-[42px]"
         >
           <FileDown size={13} />
-          Estimate PDF
+          View PDF
         </a>
+        <SharePdfButton
+          url={`/api/estimator/estimates/${estimateId}/pdf`}
+          filename={`EST-${String(estimateId).padStart(3, "0")}.pdf`}
+          label="Send estimate"
+        />
         {(status === "draft" || status === "sent") && (
           <Link
             href={`/app/estimator/${estimateId}/edit`}

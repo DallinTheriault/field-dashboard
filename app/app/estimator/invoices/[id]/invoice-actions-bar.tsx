@@ -15,14 +15,17 @@ import {
   markInvoicePaid,
   sendInvoiceWithStripe,
 } from "../../invoice-actions";
+import { SharePdfButton } from "../../share-pdf-button";
 
 export function InvoiceActionsBar({
   invoiceId,
+  invoiceNumber,
   status,
   hasStripe,
   hostedUrl,
 }: {
   invoiceId: number;
+  invoiceNumber: string;
   status: string;
   hasStripe: boolean;
   hostedUrl: string | null;
@@ -58,8 +61,13 @@ export function InvoiceActionsBar({
           className="btn-secondary text-sm min-h-[42px]"
         >
           <FileDown size={13} />
-          PDF
+          View PDF
         </a>
+        <SharePdfButton
+          url={`/api/estimator/invoices/${invoiceId}/pdf`}
+          filename={`${invoiceNumber}.pdf`}
+          label="Send invoice"
+        />
         {status !== "paid" && !hasStripe && (
           <button
             type="button"
