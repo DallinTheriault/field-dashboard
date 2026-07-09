@@ -65,8 +65,8 @@ export function JobActuals({
         .order("entry_date", { ascending: false })
         .order("id", { ascending: false }),
       supabase
-        .from("actual_materials")
-        .select("id, description, qty, actual_cost")
+        .from("expenses")
+        .select("id, description, qty, amount")
         .eq("job_id", jobId)
         .order("id", { ascending: false }),
       supabase
@@ -82,9 +82,10 @@ export function JobActuals({
     );
     setMaterials(
       (mats ?? []).map((m) => ({
-        ...m,
+        id: m.id,
+        description: m.description,
         qty: m.qty === null ? null : Number(m.qty),
-        actual_cost: Number(m.actual_cost),
+        actual_cost: Number(m.amount),
       })),
     );
     const lines = (est?.estimate_line_items ?? []) as Array<{
@@ -150,12 +151,14 @@ export function JobActuals({
     }
     const q = Number.isFinite(matQtyNum) && matQtyNum > 0 ? matQtyNum : 1;
     const total = round2(price * q);
-    const { error } = await supabase.from("actual_materials").insert({
+    // Unified source of truth: a job material IS an expense line with a job.
+    const { error } = await supabase.from("expenses").insert({
       client_id: clientId,
       job_id: jobId,
+      category: "Materials & supplies",
       description,
       qty: q,
-      actual_cost: total,
+      amount: total,
     });
     if (error) {
       setErr(error.message);
@@ -173,7 +176,7 @@ export function JobActuals({
   }
 
   async function removeMaterial(id: number) {
-    await supabase.from("actual_materials").delete().eq("id", id);
+    await supabase.from("expenses").delete().eq("id", id);
     load();
   }
 

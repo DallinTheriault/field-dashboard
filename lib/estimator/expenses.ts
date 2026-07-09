@@ -1,8 +1,9 @@
 /**
  * Tax P&L assembly — pure functions. Income is PAID estimator invoices
  * (invoice every job, even cash/Venmo ones, and mark them paid — that's the
- * system of record). The cost side is logged expenses plus job materials
- * already logged through Actuals (no double entry).
+ * system of record). The cost side is EXPENSE LINES — the single source of
+ * truth for money out: job-assigned lines (logged from job Actuals or a
+ * purchase) and Stock/overhead lines alike.
  */
 
 export const EXPENSE_CATEGORIES = [
@@ -22,28 +23,28 @@ const round2 = (n: number) => Math.round((n + 1e-9) * 100) / 100;
 
 export type PnlSummary = {
   income: number;
-  loggedExpenses: number;
-  jobMaterials: number;
   totalExpenses: number;
+  /** Portion of totalExpenses assigned to a job (materials, hardware…). */
+  jobAssigned: number;
   net: number;
   byCategory: Array<{ category: string; total: number }>;
 };
 
 export function summarizePnl(input: {
   paidInvoiceCents: number[];
-  expenses: Array<{ category: string; amount: number }>;
-  jobMaterialCosts: number[];
+  expenses: Array<{ category: string; amount: number; job_id?: number | null }>;
 }): PnlSummary {
   const income = round2(
     input.paidInvoiceCents.reduce((s, c) => s + c, 0) / 100,
   );
-  const loggedExpenses = round2(
+  const totalExpenses = round2(
     input.expenses.reduce((s, e) => s + e.amount, 0),
   );
-  const jobMaterials = round2(
-    input.jobMaterialCosts.reduce((s, c) => s + c, 0),
+  const jobAssigned = round2(
+    input.expenses
+      .filter((e) => e.job_id != null)
+      .reduce((s, e) => s + e.amount, 0),
   );
-  const totalExpenses = round2(loggedExpenses + jobMaterials);
 
   const byCat = new Map<string, number>();
   for (const e of input.expenses) {
@@ -56,9 +57,8 @@ export function summarizePnl(input: {
 
   return {
     income,
-    loggedExpenses,
-    jobMaterials,
     totalExpenses,
+    jobAssigned,
     net: round2(income - totalExpenses),
     byCategory,
   };

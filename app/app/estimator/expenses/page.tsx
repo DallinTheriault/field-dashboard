@@ -9,6 +9,7 @@ import { FeatureDisabledPanel } from "@/components/ui/feature-disabled-panel";
 import { dayKeyInTz, getTenantTimezone } from "@/lib/dates";
 import { summarizePnl } from "@/lib/estimator/expenses";
 import { ExpensesManager } from "./expenses-manager";
+import { LogPurchase } from "./log-purchase";
 
 const usd = new Intl.NumberFormat("en-US", {
   style: "currency",
@@ -43,11 +44,13 @@ export default async function ExpensesPage({
   // tenant-timezone year, so New Year's Eve payments land in the right year.
   const windowStart = `${year - 1}-12-30`;
   const windowEnd = `${year + 1}-01-02`;
-  const [{ data: expenseRows }, { data: invoiceRows }, { data: materialRows }] =
+  const [{ data: expenseRows }, { data: invoiceRows }, { data: jobRows }] =
     await Promise.all([
       supabase
         .from("expenses")
-        .select("id, expense_date, category, description, amount, receipt_path")
+        .select(
+          "id, expense_date, category, description, amount, qty, receipt_path, job_id, purchase_id, jobs(name), purchases(vendor, receipt_path)",
+        )
         .gte("expense_date", `${year}-01-01`)
         .lte("expense_date", `${year}-12-31`)
         .order("expense_date", { ascending: false })
@@ -59,31 +62,48 @@ export default async function ExpensesPage({
         .not("invoice_number", "is", null)
         .gte("paid_at", windowStart)
         .lte("paid_at", windowEnd),
+      // Allocation targets for the purchase flow — recent active jobs.
       supabase
-        .from("actual_materials")
-        .select("actual_cost, created_at")
-        .gte("created_at", windowStart)
-        .lte("created_at", windowEnd),
+        .from("jobs")
+        .select("id, name")
+        .is("archived_at", null)
+        .not("status", "in", "(completed,cancelled)")
+        .order("created_at", { ascending: false })
+        .limit(50),
     ]);
 
-  const expenses = (expenseRows ?? []).map((e) => ({
-    ...e,
-    amount: Number(e.amount),
-  }));
+  const expenses = (expenseRows ?? []).map((e) => {
+    const job = e.jobs as unknown as { name: string | null } | null;
+    const purchase = e.purchases as unknown as {
+      vendor: string;
+      receipt_path: string | null;
+    } | null;
+    return {
+      id: e.id,
+      expense_date: e.expense_date,
+      category: e.category,
+      description: e.description,
+      amount: Number(e.amount),
+      qty: e.qty === null ? null : Number(e.qty),
+      job_id: e.job_id,
+      jobName: job?.name ?? null,
+      vendor: purchase?.vendor ?? null,
+      hasReceipt: Boolean(e.receipt_path),
+      purchaseId: e.purchase_id,
+      purchaseHasReceipt: Boolean(purchase?.receipt_path),
+    };
+  });
   const paidInvoiceCents = (invoiceRows ?? [])
     .filter((i) => i.paid_at && dayKeyInTz(i.paid_at, tz).startsWith(String(year)))
     .map((i) => Number(i.total_cents));
-  const jobMaterialCosts = (materialRows ?? [])
-    .filter((m) => dayKeyInTz(m.created_at, tz).startsWith(String(year)))
-    .map((m) => Number(m.actual_cost));
 
-  const pnl = summarizePnl({
-    paidInvoiceCents,
-    expenses,
-    jobMaterialCosts,
-  });
+  const pnl = summarizePnl({ paidInvoiceCents, expenses });
 
   const clientId = session.clientId;
+  const jobs = (jobRows ?? []).map((j) => ({
+    id: j.id as number,
+    name: (j.name as string | null) ?? `Job #${j.id}`,
+  }));
 
   return (
     <div className="max-w-3xl mx-auto px-4 py-6 space-y-5">
@@ -148,29 +168,22 @@ export default async function ExpensesPage({
       </div>
 
       {/* Category breakdown */}
-      {(pnl.byCategory.length > 0 || pnl.jobMaterials > 0) && (
+      {pnl.byCategory.length > 0 && (
         <section className="panel">
           <div className="px-4 py-3 border-b border-line">
             <h2 className="text-sm font-semibold text-bone-100">
               Where it went
             </h2>
+            {pnl.jobAssigned > 0 && (
+              <p className="text-2xs text-bone-400 mt-0.5">
+                {usd.format(pnl.jobAssigned)} of it assigned to jobs · the rest
+                is Stock &amp; overhead
+              </p>
+            )}
           </div>
           <div className="px-4 py-3">
             <table className="w-full text-sm">
               <tbody>
-                {pnl.jobMaterials > 0 && (
-                  <tr className="border-b border-line-subtle">
-                    <td className="py-1.5 text-bone-100">
-                      Job materials{" "}
-                      <span className="text-2xs text-bone-400">
-                        (logged on jobs via Actuals)
-                      </span>
-                    </td>
-                    <td className="py-1.5 text-right num text-bone-100">
-                      {usd.format(pnl.jobMaterials)}
-                    </td>
-                  </tr>
-                )}
                 {pnl.byCategory.map((c) => (
                   <tr key={c.category} className="border-b border-line-subtle last:border-0">
                     <td className="py-1.5 text-bone-100">{c.category}</td>
@@ -185,12 +198,18 @@ export default async function ExpensesPage({
         </section>
       )}
 
-      {/* Expense log */}
+      {/* Log a multi-item receipt with per-item job/Stock allocation */}
+      <LogPurchase clientId={clientId} jobs={jobs} />
+
+      {/* Expense log — every line: job materials, purchases, one-offs */}
       <section className="panel">
         <div className="px-4 py-3 border-b border-line">
           <h2 className="text-sm font-semibold text-bone-100">
             Expenses — {year}
           </h2>
+          <p className="text-2xs text-bone-400 mt-0.5">
+            One list, every dollar out — including materials logged on jobs.
+          </p>
         </div>
         <ExpensesManager clientId={clientId} expenses={expenses} />
       </section>

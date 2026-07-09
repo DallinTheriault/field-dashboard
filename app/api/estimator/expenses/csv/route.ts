@@ -9,8 +9,8 @@ function csvCell(v: string | number | null): string {
 
 /**
  * Year P&L export for the accountant: one row per income/expense event.
- * Same sources as the Money page — paid estimator invoices, logged
- * expenses, and job materials from Actuals.
+ * Same sources as the Money page — paid estimator invoices and the unified
+ * expenses table (job materials included, tagged with the job name).
  */
 export async function GET(request: Request) {
   const supabase = await createClient();
@@ -30,26 +30,20 @@ export async function GET(request: Request) {
 
   const windowStart = `${year - 1}-12-30`;
   const windowEnd = `${year + 1}-01-02`;
-  const [{ data: expenses }, { data: invoices }, { data: materials }] =
-    await Promise.all([
-      supabase
-        .from("expenses")
-        .select("expense_date, category, description, amount")
-        .gte("expense_date", `${year}-01-01`)
-        .lte("expense_date", `${year}-12-31`),
-      supabase
-        .from("invoices")
-        .select("invoice_number, customer_name, total_cents, paid_at")
-        .eq("status", "paid")
-        .not("invoice_number", "is", null)
-        .gte("paid_at", windowStart)
-        .lte("paid_at", windowEnd),
-      supabase
-        .from("actual_materials")
-        .select("description, actual_cost, created_at, jobs(name)")
-        .gte("created_at", windowStart)
-        .lte("created_at", windowEnd),
-    ]);
+  const [{ data: expenses }, { data: invoices }] = await Promise.all([
+    supabase
+      .from("expenses")
+      .select("expense_date, category, description, amount, qty, jobs(name), purchases(vendor)")
+      .gte("expense_date", `${year}-01-01`)
+      .lte("expense_date", `${year}-12-31`),
+    supabase
+      .from("invoices")
+      .select("invoice_number, customer_name, total_cents, paid_at")
+      .eq("status", "paid")
+      .not("invoice_number", "is", null)
+      .gte("paid_at", windowStart)
+      .lte("paid_at", windowEnd),
+  ]);
 
   type Row = [string, string, string, string, number];
   const rows: Row[] = [];
@@ -65,17 +59,19 @@ export async function GET(request: Request) {
     ]);
   }
   for (const e of expenses ?? []) {
-    rows.push([e.expense_date, "expense", e.category, e.description, -Number(e.amount)]);
-  }
-  for (const m of materials ?? []) {
-    if (!dayKeyInTz(m.created_at, tz).startsWith(String(year))) continue;
-    const job = m.jobs as unknown as { name: string | null } | null;
+    const job = e.jobs as unknown as { name: string | null } | null;
+    const purchase = e.purchases as unknown as { vendor: string } | null;
+    const qty = e.qty === null ? null : Number(e.qty);
+    const parts = [e.description];
+    if (qty !== null && qty !== 1) parts.push(`×${qty}`);
+    if (purchase?.vendor) parts.push(`@ ${purchase.vendor}`);
+    if (job?.name) parts.push(`(${job.name})`);
     rows.push([
-      dayKeyInTz(m.created_at, tz),
+      e.expense_date,
       "expense",
-      "Job materials",
-      `${m.description}${job?.name ? ` (${job.name})` : ""}`,
-      -Number(m.actual_cost),
+      e.category,
+      parts.join(" "),
+      -Number(e.amount),
     ]);
   }
 

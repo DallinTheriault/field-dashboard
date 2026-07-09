@@ -43,7 +43,8 @@ export async function getInsightsData(
         .from("estimate_line_items")
         .select("estimate_id, service_id, resolved_labor_hours, resolved_labor_cost"),
       supabase.from("time_entries").select("job_id, hours"),
-      supabase.from("actual_materials").select("job_id, actual_cost"),
+      // Job-assigned expense lines are the material/parts actuals now.
+      supabase.from("expenses").select("job_id, amount").not("job_id", "is", null),
       supabase
         .from("service_catalog")
         .select("id, name, type, unit, labor_hours_per_unit, flat_labor_hours"),
@@ -99,7 +100,7 @@ export async function getInsightsData(
   for (const m of mats.data ?? []) {
     matCostByJob.set(
       m.job_id,
-      (matCostByJob.get(m.job_id) ?? 0) + Number(m.actual_cost),
+      (matCostByJob.get(m.job_id) ?? 0) + Number(m.amount),
     );
   }
   const paidJobs = new Set((paidInvoices.data ?? []).map((i) => i.job_id));
