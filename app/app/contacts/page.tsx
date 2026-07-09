@@ -70,39 +70,42 @@ export default async function ContactsPage({
           </p>
         </div>
 
-        <div className="flex items-center gap-2">
-          <form className="flex items-center gap-2">
-            <div className="relative">
-              <Search
-                size={13}
-                className="absolute left-2.5 top-1/2 -translate-y-1/2 text-bone-400 pointer-events-none"
-              />
-              <input
-                type="text"
-                name="q"
-                defaultValue={q ?? ""}
-                placeholder="Search name, phone, email…"
-                className="!bg-ink-1 pl-7 h-8 w-64 text-xs"
-              />
-            </div>
+        <div className="flex flex-col sm:flex-row sm:items-center gap-2 w-full md:w-auto">
+          <form className="relative w-full sm:w-64 shrink-0">
+            <Search
+              size={13}
+              className="absolute left-2.5 top-1/2 -translate-y-1/2 text-bone-400 pointer-events-none"
+            />
+            <input
+              type="text"
+              name="q"
+              defaultValue={q ?? ""}
+              placeholder="Search name, phone, email…"
+              className="!bg-ink-1 pl-7 h-8 w-full text-xs"
+            />
+          </form>
+          <div className="flex items-center gap-2">
             {q && (
               <Link href="/app/contacts" className="btn-ghost text-xs h-8">
                 Clear
               </Link>
             )}
-          </form>
-          <a
-            href="/api/export/contacts"
-            className="btn-ghost text-xs h-8"
-            title="Download CSV"
-          >
-            <Download size={12} />
-            Export
-          </a>
-          <Link href="/app/contacts/new" className="btn-primary text-xs h-8">
-            <Plus size={12} />
-            Add contact
-          </Link>
+            <a
+              href="/api/export/contacts"
+              className="btn-ghost text-xs h-8"
+              title="Download CSV"
+            >
+              <Download size={12} />
+              Export
+            </a>
+            <Link
+              href="/app/contacts/new"
+              className="btn-primary text-xs h-8 ml-auto sm:ml-0"
+            >
+              <Plus size={12} />
+              Add contact
+            </Link>
+          </div>
         </div>
       </div>
 

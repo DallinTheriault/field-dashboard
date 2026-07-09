@@ -14,8 +14,11 @@ type TimeEntry = {
 type ActualMaterial = {
   id: number;
   description: string;
+  qty: number | null;
   actual_cost: number;
 };
+
+const round2 = (n: number) => Math.round((n + 1e-9) * 100) / 100;
 
 const usd = new Intl.NumberFormat("en-US", {
   style: "currency",
@@ -50,7 +53,8 @@ export function JobActuals({
   const [hours, setHours] = useState("");
   const [note, setNote] = useState("");
   const [matDesc, setMatDesc] = useState("");
-  const [matCost, setMatCost] = useState("");
+  const [matPrice, setMatPrice] = useState("");
+  const [matQty, setMatQty] = useState("1");
 
   async function load() {
     const [{ data: time }, { data: mats }, { data: est }] = await Promise.all([
@@ -62,7 +66,7 @@ export function JobActuals({
         .order("id", { ascending: false }),
       supabase
         .from("actual_materials")
-        .select("id, description, actual_cost")
+        .select("id, description, qty, actual_cost")
         .eq("job_id", jobId)
         .order("id", { ascending: false }),
       supabase
@@ -77,7 +81,11 @@ export function JobActuals({
       (time ?? []).map((t) => ({ ...t, hours: Number(t.hours) })),
     );
     setMaterials(
-      (mats ?? []).map((m) => ({ ...m, actual_cost: Number(m.actual_cost) })),
+      (mats ?? []).map((m) => ({
+        ...m,
+        qty: m.qty === null ? null : Number(m.qty),
+        actual_cost: Number(m.actual_cost),
+      })),
     );
     const lines = (est?.estimate_line_items ?? []) as Array<{
       resolved_labor_hours: number;
@@ -121,30 +129,41 @@ export function JobActuals({
     load();
   }
 
+  const matPriceNum = parseFloat(matPrice);
+  const matQtyNum = parseFloat(matQty);
+  const matTotalPreview =
+    Number.isFinite(matPriceNum) && matPriceNum >= 0
+      ? round2(matPriceNum * (Number.isFinite(matQtyNum) && matQtyNum > 0 ? matQtyNum : 1))
+      : null;
+
   async function addMaterial() {
     setErr(null);
-    const cost = parseFloat(matCost);
+    const price = parseFloat(matPrice);
     const description = matDesc.trim();
     if (!description) {
-      setErr("Describe the material.");
+      setErr("Name the material.");
       return;
     }
-    if (!Number.isFinite(cost) || cost < 0) {
-      setErr("Cost must be ≥ 0.");
+    if (!Number.isFinite(price) || price < 0) {
+      setErr("Price must be ≥ 0.");
       return;
     }
+    const q = Number.isFinite(matQtyNum) && matQtyNum > 0 ? matQtyNum : 1;
+    const total = round2(price * q);
     const { error } = await supabase.from("actual_materials").insert({
       client_id: clientId,
       job_id: jobId,
       description,
-      actual_cost: cost,
+      qty: q,
+      actual_cost: total,
     });
     if (error) {
       setErr(error.message);
       return;
     }
     setMatDesc("");
-    setMatCost("");
+    setMatPrice("");
+    setMatQty("1");
     load();
   }
 
@@ -246,52 +265,84 @@ export function JobActuals({
         )}
       </div>
 
-      {/* Materials used */}
-      <div className="space-y-1.5 pt-2 border-t border-line-subtle">
-        <div className="flex gap-2">
-          <input
-            value={matDesc}
-            onChange={(e) => setMatDesc(e.target.value)}
-            placeholder="Material (e.g. 2 gal paint)"
-            className="flex-1 min-w-0"
-          />
-          <input
-            inputMode="decimal"
-            value={matCost}
-            onChange={(e) => setMatCost(e.target.value)}
-            placeholder="$"
-            className="w-24"
-          />
+      {/* Materials used — Item, then Price × Qty = Total */}
+      <div className="space-y-2 pt-2 border-t border-line-subtle">
+        <div className="label-eyebrow flex items-center gap-1.5">
+          <Package size={11} />
+          Materials used
+        </div>
+        <input
+          value={matDesc}
+          onChange={(e) => setMatDesc(e.target.value)}
+          placeholder="Item (e.g. Goo Gone 12-oz)"
+          className="w-full"
+        />
+        <div className="flex items-center gap-2">
+          <label className="flex items-center gap-1">
+            <span className="text-2xs text-bone-400">$/ea</span>
+            <input
+              inputMode="decimal"
+              value={matPrice}
+              onChange={(e) => setMatPrice(e.target.value)}
+              placeholder="0.00"
+              className="w-24"
+            />
+          </label>
+          <span className="text-bone-500">×</span>
+          <label className="flex items-center gap-1">
+            <span className="text-2xs text-bone-400">qty</span>
+            <input
+              inputMode="decimal"
+              value={matQty}
+              onChange={(e) => setMatQty(e.target.value)}
+              placeholder="1"
+              className="w-14"
+            />
+          </label>
+          {matTotalPreview !== null && (
+            <span className="num text-sm text-bone-300">
+              = {usd.format(matTotalPreview)}
+            </span>
+          )}
           <button
             type="button"
             onClick={addMaterial}
-            className="btn-secondary shrink-0 min-h-[42px]"
+            className="btn-secondary shrink-0 min-h-[42px] ml-auto"
             aria-label="Log material"
           >
             <Plus size={13} />
-            <Package size={13} />
+            Add
           </button>
         </div>
         {materials.length > 0 && (
-          <ul className="space-y-1">
-            {materials.map((m) => (
-              <li key={m.id} className="flex items-center gap-2 text-sm">
-                <span className="flex-1 text-bone-100 truncate">
-                  {m.description}
-                </span>
-                <span className="num text-bone-300">
-                  {usd.format(m.actual_cost)}
-                </span>
-                <button
-                  type="button"
-                  onClick={() => removeMaterial(m.id)}
-                  className="text-bone-500 hover:text-status-danger p-1"
-                  aria-label="Delete material"
-                >
-                  <Trash2 size={12} />
-                </button>
-              </li>
-            ))}
+          <ul className="space-y-1 pt-1">
+            {materials.map((m) => {
+              const qty = m.qty ?? 1;
+              const unit = qty > 0 ? round2(m.actual_cost / qty) : m.actual_cost;
+              return (
+                <li key={m.id} className="flex items-center gap-2 text-sm">
+                  <span className="flex-1 text-bone-100 truncate">
+                    {m.description}
+                  </span>
+                  {qty !== 1 && (
+                    <span className="text-2xs text-bone-400 shrink-0">
+                      {qty} × {usd.format(unit)}
+                    </span>
+                  )}
+                  <span className="num text-bone-100 w-20 text-right shrink-0">
+                    {usd.format(m.actual_cost)}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => removeMaterial(m.id)}
+                    className="text-bone-500 hover:text-status-danger p-1"
+                    aria-label="Delete material"
+                  >
+                    <Trash2 size={12} />
+                  </button>
+                </li>
+              );
+            })}
           </ul>
         )}
       </div>
