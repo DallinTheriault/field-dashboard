@@ -51,7 +51,8 @@ type UILine = {
 };
 
 export type ExistingEstimate = {
-  estimateId: number;
+  /** null = "revise": prefill from a source estimate but save a NEW version. */
+  estimateId: number | null;
   billingEntityId: number | null;
   travelZoneId: number | null;
   notes: string;
@@ -344,13 +345,23 @@ export function EstimateBuilder({
       </Link>
       <header>
         <h1 className="text-xl font-semibold text-bone-50">
-          {existing ? "Edit estimate" : "New estimate"}
+          {existing
+            ? existing.estimateId
+              ? "Edit estimate"
+              : "New version"
+            : "New estimate"}
         </h1>
-        {existing && (
-          <p className="text-xs text-status-lead mt-1">
-            Saving re-freezes every rate and cost at today&apos;s settings.
-          </p>
-        )}
+        {existing &&
+          (existing.estimateId ? (
+            <p className="text-xs text-status-lead mt-1">
+              Saving re-freezes every rate and cost at today&apos;s settings.
+            </p>
+          ) : (
+            <p className="text-xs text-status-lead mt-1">
+              Saves as a new version of this job&apos;s estimate — the original
+              stays untouched for your records.
+            </p>
+          ))}
       </header>
 
       {!bundle.settings && (
@@ -810,7 +821,11 @@ export function EstimateBuilder({
                   Saving…
                 </>
               ) : existing ? (
-                "Save & re-freeze"
+                existing.estimateId ? (
+                  "Save & re-freeze"
+                ) : (
+                  "Save new version"
+                )
               ) : (
                 "Save estimate"
               )}

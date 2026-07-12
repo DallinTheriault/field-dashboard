@@ -73,6 +73,14 @@ export default async function EstimateDetailPage({
 
   if (!est) notFound();
 
+  // Sibling versions of this job's estimate — "agreed vs performed" history.
+  const { data: versionRows } = await supabase
+    .from("estimates")
+    .select("id, version, status, computed_price, manual_override_price")
+    .eq("job_id", est.job_id)
+    .order("version", { ascending: true });
+  const versions = (versionRows ?? []).filter((v) => v.id !== est.id);
+
   const job = est.jobs as unknown as {
     id: number;
     name: string | null;
@@ -145,6 +153,26 @@ export default async function EstimateDetailPage({
           <Briefcase size={12} />
           Open job
         </Link>
+      )}
+
+      {versions.length > 0 && (
+        <div className="flex items-center gap-2 flex-wrap text-2xs">
+          <span className="label-eyebrow">Other versions:</span>
+          {versions.map((v) => (
+            <Link
+              key={v.id}
+              href={`/app/estimator/${v.id}`}
+              className="chip border-line-strong text-bone-300 hover:text-bone-100 normal-case tracking-normal"
+            >
+              v{v.version} · {v.status} ·{" "}
+              {usd.format(
+                v.manual_override_price === null
+                  ? Number(v.computed_price ?? 0)
+                  : Number(v.manual_override_price),
+              )}
+            </Link>
+          ))}
+        </div>
       )}
 
       {override !== null && (

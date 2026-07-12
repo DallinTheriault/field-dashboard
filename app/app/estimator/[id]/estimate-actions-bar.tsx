@@ -4,6 +4,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
+  CopyPlus,
   FileDown,
   Loader2,
   Pencil,
@@ -131,6 +132,16 @@ export function EstimateActionsBar({
           >
             <Pencil size={13} />
             Edit
+          </Link>
+        )}
+        {(status === "accepted" || status === "lost") && (
+          <Link
+            href={`/app/estimator/${estimateId}/revise`}
+            className="btn-secondary text-sm min-h-[42px]"
+            title="Start a new version prefilled from this one — this estimate stays untouched"
+          >
+            <CopyPlus size={13} />
+            New version
           </Link>
         )}
         {status === "draft" &&
