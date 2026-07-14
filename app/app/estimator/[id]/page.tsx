@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
-import { ArrowLeft, Briefcase, TriangleAlert } from "lucide-react";
+import { ArrowLeft, TriangleAlert } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentUserRole } from "@/lib/permissions/current-role";
 import { canViewSettings } from "@/lib/permissions/roles";
@@ -119,11 +119,11 @@ export default async function EstimateDetailPage({
   return (
     <div className="max-w-2xl mx-auto px-4 py-6 space-y-5">
       <Link
-        href="/app/estimator"
+        href={`/app/jobs/${est.job_id}`}
         className="inline-flex items-center gap-1.5 text-2xs text-bone-400 hover:text-bone-100"
       >
         <ArrowLeft size={12} />
-        Estimates
+        {job?.name || `Job #${est.job_id}`}
       </Link>
 
       <header className="flex items-start justify-between gap-3">
@@ -144,16 +144,6 @@ export default async function EstimateDetailPage({
         </div>
         <EstimateStatusChip status={est.status} />
       </header>
-
-      {job && (
-        <Link
-          href={`/app/jobs/${job.id}`}
-          className="inline-flex items-center gap-1.5 text-2xs text-field-500 hover:text-field-400"
-        >
-          <Briefcase size={12} />
-          Open job
-        </Link>
-      )}
 
       {versions.length > 0 && (
         <div className="flex items-center gap-2 flex-wrap text-2xs">
@@ -353,6 +343,7 @@ export default async function EstimateDetailPage({
 
       <EstimateActionsBar
         estimateId={est.id}
+        jobId={est.job_id}
         status={est.status}
         invoiceId={invoice?.id ?? null}
       />

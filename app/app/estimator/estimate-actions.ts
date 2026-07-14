@@ -2,8 +2,6 @@
 
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
-import { createAdminClient } from "@/lib/supabase/admin";
-import { toE164US } from "@/lib/sms/phone";
 import { requireWriter } from "@/lib/estimator/auth";
 import { getEstimatorBundle } from "@/lib/estimator/queries";
 import {
@@ -18,9 +16,8 @@ type Result<T = undefined> =
 
 export type SaveEstimateInput = {
   estimateId?: number | null;
-  jobId?: number | null;
-  /** Standalone estimates create a job + contact on the fly. */
-  newJob?: { name: string; phone: string; address: string } | null;
+  /** Estimates always belong to a job — there is no standalone path. */
+  jobId: number;
   billingEntityId: number | null;
   travelZoneId: number | null;
   notes: string;
@@ -114,71 +111,18 @@ export async function saveEstimate(
     }
   }
 
-  // Resolve the job — existing, or created now (standalone flow).
-  let jobId = input.jobId ? Number(input.jobId) : null;
-  if (!jobId) {
-    const nj = input.newJob;
-    const name = (nj?.name ?? "").trim();
-    const rawPhone = (nj?.phone ?? "").trim();
-    const address = (nj?.address ?? "").trim();
-    if (!name || !rawPhone || !address) {
-      return { ok: false, error: "New estimate needs a name, phone, and address." };
-    }
-    const phone = toE164US(rawPhone);
-    if (!phone) {
-      return { ok: false, error: "Phone must be a 10-digit US number." };
-    }
-    const admin = createAdminClient();
-    // Same contact-dedupe-by-phone pattern as manual job creation.
-    const { data: existingContact } = await admin
-      .from("contacts")
-      .select("id")
-      .eq("client_id", clientId)
-      .eq("phone", phone)
-      .maybeSingle();
-    let contactId = existingContact?.id ?? null;
-    if (!contactId) {
-      const { data: newContact } = await admin
-        .from("contacts")
-        .insert({
-          client_id: clientId,
-          phone,
-          name,
-          address,
-          first_contacted_at: new Date().toISOString(),
-          last_contacted_at: new Date().toISOString(),
-        })
-        .select("id")
-        .single();
-      contactId = newContact?.id ?? null;
-    }
-    const { data: newJob, error: jobErr } = await admin
-      .from("jobs")
-      .insert({
-        client_id: clientId,
-        name,
-        phone,
-        address,
-        status: "lead",
-        contact_id: contactId,
-        source: "manual",
-      })
-      .select("id")
-      .single();
-    if (jobErr || !newJob) {
-      return { ok: false, error: jobErr?.message ?? "Failed to create the job." };
-    }
-    jobId = newJob.id;
-  } else {
-    // RLS check: the job must be visible to this user.
-    const { data: job } = await supabase
-      .from("jobs")
-      .select("id")
-      .eq("id", jobId)
-      .maybeSingle();
-    if (!job) return { ok: false, error: "Job not found." };
+  // Jobs are the root object: an estimate cannot exist without one.
+  const jobId = Number(input.jobId);
+  if (!Number.isInteger(jobId) || jobId <= 0) {
+    return { ok: false, error: "An estimate needs a job — open the job and start from there." };
   }
-  if (!jobId) return { ok: false, error: "Failed to resolve the job." };
+  // RLS check: the job must be visible to this user.
+  const { data: job } = await supabase
+    .from("jobs")
+    .select("id")
+    .eq("id", jobId)
+    .maybeSingle();
+  if (!job) return { ok: false, error: "Job not found." };
 
   // Authoritative pricing from tenant settings.
   const bundle = await getEstimatorBundle(supabase);

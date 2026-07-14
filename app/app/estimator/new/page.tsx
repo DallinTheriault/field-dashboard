@@ -8,8 +8,9 @@ import { getEstimatorBundle } from "@/lib/estimator/queries";
 import { EstimateBuilder } from "../estimate-builder";
 
 /**
- * New estimate. `?job=<id>` attaches to an existing Field job (the
- * call → estimate flow); without it, saving creates the job + contact.
+ * New estimate for an existing job — `?job=<id>` is required. Jobs are the
+ * root object: there is no standalone-estimate path. Create the job first
+ * (name/phone/address is enough), then estimate it.
  */
 export default async function NewEstimatePage({
   searchParams,
@@ -26,20 +27,20 @@ export default async function NewEstimatePage({
     return <FeatureDisabledPanel featureName="Estimator" />;
   }
 
-  const supabase = await createClient();
-  const bundle = await getEstimatorBundle(supabase);
-
   const { job: jobParam } = await searchParams;
-  let job: { id: number; name: string | null; address: string | null } | null =
-    null;
-  if (jobParam) {
-    const { data } = await supabase
+  const jobId = Number(jobParam);
+  if (!jobParam || !Number.isInteger(jobId)) redirect("/app/jobs");
+
+  const supabase = await createClient();
+  const [bundle, { data: job }] = await Promise.all([
+    getEstimatorBundle(supabase),
+    supabase
       .from("jobs")
       .select("id, name, address")
-      .eq("id", Number(jobParam))
-      .maybeSingle();
-    job = data ?? null;
-  }
+      .eq("id", jobId)
+      .maybeSingle(),
+  ]);
+  if (!job) redirect("/app/jobs");
 
   return <EstimateBuilder bundle={bundle} job={job} existing={null} />;
 }

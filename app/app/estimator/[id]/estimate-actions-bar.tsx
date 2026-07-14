@@ -26,10 +26,13 @@ import { SharePdfButton } from "../share-pdf-button";
 
 export function EstimateActionsBar({
   estimateId,
+  jobId,
   status,
   invoiceId,
 }: {
   estimateId: number;
+  /** Owning job — deleting the estimate returns there. */
+  jobId: number;
   status: string;
   /** Existing invoice created from this estimate, if any. */
   invoiceId: number | null;
@@ -72,7 +75,7 @@ export function EstimateActionsBar({
     const r = await deleteEstimate(estimateId);
     setBusy(null);
     if (!r.ok) setErr(r.error ?? "Delete failed.");
-    else router.push("/app/estimator");
+    else router.push(`/app/jobs/${jobId}`);
   }
 
   const btn = (

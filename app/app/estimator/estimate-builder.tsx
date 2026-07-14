@@ -123,7 +123,7 @@ export function EstimateBuilder({
   existing,
 }: {
   bundle: EstimatorBundle;
-  job: { id: number; name: string | null; address: string | null } | null;
+  job: { id: number; name: string | null; address: string | null };
   existing: ExistingEstimate | null;
 }) {
   const router = useRouter();
@@ -151,13 +151,6 @@ export function EstimateBuilder({
   const [overrideReason, setOverrideReason] = useState(
     existing?.overrideReason ?? "",
   );
-  // Standalone flow — creates job + contact on save
-  const [custName, setCustName] = useState("");
-  const [custPhone, setCustPhone] = useState("");
-  const [custAddress, setCustAddress] = useState("");
-  const [contactHits, setContactHits] = useState<
-    Array<{ id: number; name: string | null; phone: string | null; address: string | null }>
-  >([]);
   const [catalogQuery, setCatalogQuery] = useState("");
   const [clientView, setClientView] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -289,30 +282,12 @@ export function EstimateBuilder({
     patchLine(l.key, { serviceId: data.id, hoursStr: "" });
   }
 
-  async function searchContacts(q: string) {
-    setCustName(q);
-    if (q.trim().length < 2) {
-      setContactHits([]);
-      return;
-    }
-    const { data } = await supabase
-      .from("contacts")
-      .select("id, name, phone, address")
-      .or(`name.ilike.%${q.trim()}%,phone.ilike.%${q.trim()}%`)
-      .is("archived_at", null)
-      .limit(5);
-    setContactHits(data ?? []);
-  }
-
   async function handleSave() {
     setErr(null);
     setSaving(true);
     const result = await saveEstimate({
       estimateId: existing?.estimateId ?? null,
-      jobId: job?.id ?? null,
-      newJob: job
-        ? null
-        : { name: custName, phone: custPhone, address: custAddress },
+      jobId: job.id,
       billingEntityId: entityId,
       travelZoneId,
       notes,
@@ -328,20 +303,16 @@ export function EstimateBuilder({
     router.push(`/app/estimator/${result.data!.estimateId}`);
   }
 
-  const canSave =
-    lines.length > 0 &&
-    bundle.settings !== null &&
-    (job !== null ||
-      (custName.trim() && custPhone.trim() && custAddress.trim()));
+  const canSave = lines.length > 0 && bundle.settings !== null;
 
   return (
     <div className="max-w-2xl mx-auto px-4 py-6 pb-56 md:pb-32 space-y-5">
       <Link
-        href="/app/estimator"
+        href={`/app/jobs/${job.id}`}
         className="inline-flex items-center gap-1.5 text-2xs text-bone-400 hover:text-bone-100"
       >
         <ArrowLeft size={12} />
-        Estimates
+        {job.name || `Job #${job.id}`}
       </Link>
       <header>
         <h1 className="text-xl font-semibold text-bone-50">
@@ -378,65 +349,15 @@ export function EstimateBuilder({
       )}
 
       {/* Who is this for */}
-      {job ? (
-        <div className="panel px-4 py-3">
-          <div className="label-eyebrow mb-1">Job</div>
-          <div className="text-sm text-bone-100 font-medium">
-            {job.name || `Job #${job.id}`}
-          </div>
-          {job.address && (
-            <div className="text-2xs text-bone-400">{job.address}</div>
-          )}
+      <div className="panel px-4 py-3">
+        <div className="label-eyebrow mb-1">Job</div>
+        <div className="text-sm text-bone-100 font-medium">
+          {job.name || `Job #${job.id}`}
         </div>
-      ) : (
-        <div className="panel px-4 py-3 space-y-3">
-          <div className="label-eyebrow">Customer</div>
-          <div className="relative">
-            <input
-              value={custName}
-              onChange={(e) => searchContacts(e.target.value)}
-              placeholder="Name (searches your contacts)"
-              className="w-full"
-            />
-            {contactHits.length > 0 && (
-              <ul className="absolute z-10 left-0 right-0 mt-1 bg-ink-2 border border-line-strong rounded-sm shadow-pop overflow-hidden">
-                {contactHits.map((c) => (
-                  <li key={c.id}>
-                    <button
-                      type="button"
-                      className="w-full text-left px-3 py-2 hover:bg-ink-3 text-sm text-bone-100"
-                      onClick={() => {
-                        setCustName(c.name ?? "");
-                        setCustPhone(c.phone ?? "");
-                        setCustAddress(c.address ?? "");
-                        setContactHits([]);
-                      }}
-                    >
-                      {c.name}{" "}
-                      <span className="text-2xs text-bone-400">{c.phone}</span>
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </div>
-          <div className="grid grid-cols-2 gap-2">
-            <input
-              inputMode="tel"
-              value={custPhone}
-              onChange={(e) => setCustPhone(e.target.value)}
-              placeholder="Phone"
-              className="w-full"
-            />
-            <input
-              value={custAddress}
-              onChange={(e) => setCustAddress(e.target.value)}
-              placeholder="Address"
-              className="w-full"
-            />
-          </div>
-        </div>
-      )}
+        {job.address && (
+          <div className="text-2xs text-bone-400">{job.address}</div>
+        )}
+      </div>
 
       {/* Line items */}
       <section className="space-y-2">
