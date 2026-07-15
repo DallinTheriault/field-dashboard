@@ -10,6 +10,7 @@ type Flags = {
   feature_calendar_enabled: boolean;
   feature_billing_enabled: boolean;
   feature_estimator_enabled: boolean;
+  feature_receipt_ai_enabled: boolean;
 };
 
 /**
@@ -94,6 +95,11 @@ export function AdminFeatureFlagsForm({
       key: "feature_estimator_enabled",
       label: "Estimator",
       desc: "Estimating + invoicing module: pricing settings, estimate builder, insights.",
+    },
+    {
+      key: "feature_receipt_ai_enabled",
+      label: "AI Receipt Scanning",
+      desc: "Claude-powered receipt extraction. Platform grant — consumes the platform Anthropic key; tenants see status only.",
     },
   ];
 

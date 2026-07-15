@@ -71,6 +71,7 @@ export default async function AdminClientDetailPage({
             feature_calendar_enabled: client.feature_calendar_enabled ?? false,
             feature_billing_enabled: client.feature_billing_enabled ?? true,
             feature_estimator_enabled: client.feature_estimator_enabled ?? false,
+            feature_receipt_ai_enabled: client.feature_receipt_ai_enabled ?? false,
           }}
         />
       </div>

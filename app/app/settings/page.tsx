@@ -21,7 +21,7 @@ import { ReplyTemplatesManager } from "./reply-templates-manager";
 import { TeamManager } from "./team-manager";
 import { MyProfileForm } from "./my-profile-form";
 import { NotificationPrefsForm } from "./notification-prefs-form";
-import { ReceiptAiToggle } from "./receipt-ai-toggle";
+import { ReceiptAiStatus } from "./receipt-ai-toggle";
 import { getCurrentUserRole } from "@/lib/permissions/current-role";
 import {
   canViewSettings,
@@ -250,15 +250,14 @@ export default async function SettingsPage() {
           </div>
         </Section>
 
-        {/* AI Receipt Scanning entitlement */}
+        {/* AI Receipt Scanning — platform grant, read-only here */}
         <Section
           icon={ScanLine}
           title="AI Receipt Scanning"
           subtitle="Photograph a receipt, review the extracted items"
         >
-          <ReceiptAiToggle
+          <ReceiptAiStatus
             enabled={client?.feature_receipt_ai_enabled ?? false}
-            isOwner={session.role === "owner"}
             scansThisMonth={scansThisMonth ?? 0}
           />
         </Section>
