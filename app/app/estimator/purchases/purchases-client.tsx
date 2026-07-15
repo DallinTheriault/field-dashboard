@@ -25,6 +25,14 @@ import {
   setCustomerNotified,
   setItemAssignment,
 } from "./purchase-actions";
+import { ConfirmScan, ScanReceipt } from "./scan-receipt";
+
+export type PendingPurchase = {
+  id: number;
+  vendor: string;
+  purchase_date: string;
+  hasPhotos: boolean;
+};
 
 export type ExpenseItemRow = {
   id: number;
@@ -81,14 +89,19 @@ export function PurchasesClient({
   clientId,
   items,
   jobs,
+  pendingPurchases = [],
+  receiptAi = false,
 }: {
   clientId: number;
   items: ExpenseItemRow[];
   jobs: Array<{ id: number; name: string }>;
+  pendingPurchases?: PendingPurchase[];
+  receiptAi?: boolean;
 }) {
   const router = useRouter();
   const supabase = createClient();
   const [err, setErr] = useState<string | null>(null);
+  const [enteringId, setEnteringId] = useState<number | null>(null);
 
   const unassigned = items.filter((i) => i.assignment === "unassigned");
   const stock = items.filter((i) => i.assignment === "stock");
@@ -108,6 +121,75 @@ export function PurchasesClient({
         </div>
       )}
       {err && <div className="form-error">{err}</div>}
+
+      {/* AI scan — hidden when the entitlement is off (the route enforces
+          it server-side regardless; hiding is UX, not security). */}
+      {receiptAi && <ScanReceipt clientId={clientId} />}
+
+      {/* Receipts photographed but not yet turned into items */}
+      {pendingPurchases.length > 0 && (
+        <section className="panel">
+          <div className="px-4 py-3 border-b border-line">
+            <h2 className="text-sm font-semibold text-bone-100">
+              Receipts waiting for items
+            </h2>
+          </div>
+          <ul className="divide-y divide-line-subtle">
+            {pendingPurchases.map((p) => (
+              <li key={p.id} className="px-4 py-2">
+                <div className="flex items-center gap-2 text-sm">
+                  <span className="font-mono text-2xs text-bone-400 w-14 shrink-0">
+                    {p.purchase_date.slice(5)}
+                  </span>
+                  <span className="flex-1 min-w-0 text-bone-100 truncate">{p.vendor}</span>
+                  {p.hasPhotos && (
+                    <a
+                      href={`/api/estimator/purchases/${p.id}/receipt`}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="text-field-500 hover:text-field-400 p-1 shrink-0"
+                      title="View photo"
+                    >
+                      <Paperclip size={12} />
+                    </a>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => setEnteringId(enteringId === p.id ? null : p.id)}
+                    className="btn-secondary text-xs h-8 shrink-0"
+                  >
+                    Enter items
+                  </button>
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      if (!confirm(`Delete "${p.vendor}" and its photos?`)) return;
+                      const r = await deletePurchase(p.id);
+                      if (!r.ok) setErr(r.error);
+                      else router.refresh();
+                    }}
+                    className="text-bone-500 hover:text-status-danger p-1 shrink-0"
+                    aria-label={`Delete ${p.vendor}`}
+                  >
+                    <Trash2 size={12} />
+                  </button>
+                </div>
+                {enteringId === p.id && (
+                  <ConfirmScan
+                    purchaseId={p.id}
+                    scan={null}
+                    parseFailed={false}
+                    onDone={() => {
+                      setEnteringId(null);
+                      router.refresh();
+                    }}
+                  />
+                )}
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
 
       <LogManualPurchase clientId={clientId} jobs={jobs} onDone={() => router.refresh()} />
       <QuickExpense clientId={clientId} onDone={() => router.refresh()} />

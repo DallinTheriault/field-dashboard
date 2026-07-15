@@ -12,6 +12,7 @@
     "migrate:estimator:apply": "node scripts/migrate-estimator.ts --apply"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.111.0",
     "@react-pdf/renderer": "^4.5.1",
     "@sentry/nextjs": "^8.35.0",
     "@supabase/ssr": "^0.5.2",

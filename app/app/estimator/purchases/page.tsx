@@ -24,7 +24,7 @@ export default async function ExpenseIntakePage() {
   if (!flags.estimator) return <FeatureDisabledPanel featureName="Estimator" />;
 
   const supabase = await createClient();
-  const [{ data: itemRows }, { data: jobRows }] = await Promise.all([
+  const [{ data: itemRows }, { data: jobRows }, { data: purchaseRows }] = await Promise.all([
     supabase
       .from("expenses")
       .select(
@@ -39,6 +39,13 @@ export default async function ExpenseIntakePage() {
       .is("archived_at", null)
       .not("status", "in", "(completed,cancelled)")
       .order("created_at", { ascending: false })
+      .limit(50),
+    // Receipts photographed but not yet confirmed into items (scan flow
+    // "later" path, or parse failures) — they need entry, not oblivion.
+    supabase
+      .from("purchases")
+      .select("id, vendor, purchase_date, source, receipt_paths, expenses(count)")
+      .order("id", { ascending: false })
       .limit(50),
   ]);
 
@@ -82,6 +89,18 @@ export default async function ExpenseIntakePage() {
     name: (j.name as string | null) ?? `Job #${j.id}`,
   }));
 
+  const pendingPurchases = (purchaseRows ?? [])
+    .filter((p) => {
+      const c = p.expenses as unknown as Array<{ count: number }> | null;
+      return (c?.[0]?.count ?? 0) === 0;
+    })
+    .map((p) => ({
+      id: p.id as number,
+      vendor: p.vendor as string,
+      purchase_date: p.purchase_date as string,
+      hasPhotos: ((p.receipt_paths as string[] | null) ?? []).length > 0,
+    }));
+
   return (
     <div className="max-w-3xl mx-auto px-4 py-6 space-y-5">
       <Link
@@ -106,7 +125,13 @@ export default async function ExpenseIntakePage() {
         </Link>
       </header>
 
-      <PurchasesClient clientId={session.clientId} items={items} jobs={jobs} />
+      <PurchasesClient
+        clientId={session.clientId}
+        items={items}
+        jobs={jobs}
+        pendingPurchases={pendingPurchases}
+        receiptAi={flags.receiptAi}
+      />
     </div>
   );
 }

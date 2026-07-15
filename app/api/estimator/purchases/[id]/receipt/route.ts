@@ -36,7 +36,7 @@ async function authorizePurchase(idRaw: string) {
 
   const { data: purchase } = await supabase
     .from("purchases")
-    .select("id, client_id, receipt_path")
+    .select("id, client_id, receipt_path, receipt_paths")
     .eq("id", purchaseId)
     .maybeSingle();
   if (!purchase || purchase.client_id !== clientId) {
@@ -96,7 +96,7 @@ export async function POST(
 }
 
 export async function GET(
-  _request: Request,
+  request: Request,
   context: { params: Promise<{ id: string }> },
 ) {
   const { id } = await context.params;
@@ -104,14 +104,22 @@ export async function GET(
   if (auth.status !== 200) {
     return NextResponse.json({ error: auth.error }, { status: auth.status });
   }
-  if (!auth.purchase.receipt_path) {
+  // Scanned receipts live in receipt_paths[] (multi-photo); the legacy
+  // single receipt_path still works. ?i=N picks a photo.
+  const paths = [
+    ...(((auth.purchase.receipt_paths as string[] | null) ?? [])),
+    ...(auth.purchase.receipt_path ? [auth.purchase.receipt_path as string] : []),
+  ];
+  const idx = Number(new URL(request.url).searchParams.get("i") ?? "0");
+  const path = paths[Number.isInteger(idx) && idx >= 0 ? idx : 0];
+  if (!path) {
     return NextResponse.json({ error: "No receipt attached" }, { status: 404 });
   }
 
   const admin = createAdminClient();
   const { data, error } = await admin.storage
     .from("receipts")
-    .createSignedUrl(auth.purchase.receipt_path, 3600);
+    .createSignedUrl(path, 3600);
   if (error || !data) {
     return NextResponse.json({ error: error?.message ?? "Signing failed" }, { status: 500 });
   }
