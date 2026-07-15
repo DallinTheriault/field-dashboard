@@ -32,15 +32,28 @@ export default async function NewEstimatePage({
   if (!jobParam || !Number.isInteger(jobId)) redirect("/app/jobs");
 
   const supabase = await createClient();
-  const [bundle, { data: job }] = await Promise.all([
+  const [bundle, { data: job }, { data: tasks }] = await Promise.all([
     getEstimatorBundle(supabase),
     supabase
       .from("jobs")
       .select("id, name, address")
       .eq("id", jobId)
       .maybeSingle(),
+    supabase
+      .from("tasks")
+      .select("id, title, status")
+      .eq("job_id", jobId)
+      .order("sort_order")
+      .order("id"),
   ]);
   if (!job) redirect("/app/jobs");
 
-  return <EstimateBuilder bundle={bundle} job={job} existing={null} />;
+  return (
+    <EstimateBuilder
+      bundle={bundle}
+      job={job}
+      tasks={(tasks ?? []) as Array<{ id: number; title: string; status: "open" | "done" }>}
+      existing={null}
+    />
+  );
 }

@@ -42,6 +42,8 @@ function sanitizeLines(rawLines: RawLine[]): RawLine[] | string {
     if (!Number.isFinite(qty) || qty <= 0) {
       return `"${description}": quantity must be > 0.`;
     }
+    const taskId =
+      l.taskId && Number.isInteger(Number(l.taskId)) ? Number(l.taskId) : null;
 
     if (l.isHardware) {
       const price = Number(l.unitPrice);
@@ -61,6 +63,7 @@ function sanitizeLines(rawLines: RawLine[]): RawLine[] | string {
         sku: l.sku ? String(l.sku).trim() : null,
         unitPrice: price,
         hardwareMarkup: !!l.hardwareMarkup,
+        taskId,
       });
       continue;
     }
@@ -81,6 +84,7 @@ function sanitizeLines(rawLines: RawLine[]): RawLine[] | string {
       hoursPerUnit: l.hoursPerUnit === null ? null : Number(l.hoursPerUnit),
       prepModifierId: l.prepModifierId ? Number(l.prepModifierId) : null,
       isHardware: false,
+      taskId,
     });
   }
   return clean;
@@ -127,6 +131,21 @@ export async function saveEstimate(
     .eq("id", jobId)
     .maybeSingle();
   if (!job) return { ok: false, error: "Job not found." };
+
+  // Linked tasks must belong to THIS job (the RPC guards this too).
+  const linkedTaskIds = [...new Set(lines.map((l) => l.taskId).filter(Boolean))] as number[];
+  if (linkedTaskIds.length > 0) {
+    const { data: taskRows } = await supabase
+      .from("tasks")
+      .select("id")
+      .eq("job_id", jobId)
+      .in("id", linkedTaskIds);
+    const found = new Set((taskRows ?? []).map((t) => t.id));
+    const missing = linkedTaskIds.find((id) => !found.has(id));
+    if (missing) {
+      return { ok: false, error: "A linked task doesn't belong to this job." };
+    }
+  }
 
   // Authoritative pricing from tenant settings.
   const bundle = await getEstimatorBundle(supabase);
@@ -284,7 +303,7 @@ export async function repriceEstimate(estimateId: number): Promise<Result> {
     supabase
       .from("estimate_line_items")
       .select(
-        "service_id, description, type, qty, unit, prep_modifier_id, resolved_hours_per_unit, sort_order, is_hardware, sku, resolved_unit_price, hardware_markup",
+        "service_id, description, type, qty, unit, prep_modifier_id, resolved_hours_per_unit, sort_order, is_hardware, sku, resolved_unit_price, hardware_markup, task_id",
       )
       .eq("estimate_id", estimateId)
       .order("sort_order"),
@@ -307,6 +326,7 @@ export async function repriceEstimate(estimateId: number): Promise<Result> {
           unitPrice:
             r.resolved_unit_price === null ? 0 : Number(r.resolved_unit_price),
           hardwareMarkup: !!r.hardware_markup,
+          taskId: r.task_id ?? null,
         }
       : {
           key: String(i),
@@ -323,6 +343,7 @@ export async function repriceEstimate(estimateId: number): Promise<Result> {
               : null,
           prepModifierId: r.prep_modifier_id,
           isHardware: false,
+          taskId: r.task_id ?? null,
         },
   );
 

@@ -16,6 +16,7 @@ import {
 } from "lucide-react";
 import { EstimateStatusChip } from "../../estimator/estimate-status";
 import { JobActuals } from "../../estimator/job-actuals";
+import { JobTasks } from "./job-tasks";
 import { getCurrentUserRole } from "@/lib/permissions/current-role";
 import { canViewSettings } from "@/lib/permissions/roles";
 import { TextAndCopyButtons } from "@/components/ui/text-copy-buttons";
@@ -105,6 +106,38 @@ export default async function JobDetailPage({
         .eq("job_id", job.id)
         .order("version", { ascending: false })
     : { data: null };
+
+  // Tasks — scoping list + punch list. Visible to every member; edits are
+  // owner/manager (RLS enforces; the UI hides controls for read-only roles).
+  const { data: taskRows } = await supabase
+    .from("tasks")
+    .select("id, title, note, status, sort_order, task_photos(id, caption)")
+    .eq("job_id", job.id)
+    .order("sort_order")
+    .order("id");
+  const taskIds = (taskRows ?? []).map((t) => t.id);
+  const { data: linkRows } = taskIds.length
+    ? await supabase
+        .from("estimate_line_items")
+        .select("task_id")
+        .in("task_id", taskIds)
+    : { data: [] as Array<{ task_id: number | null }> };
+  const linkCounts = new Map<number, number>();
+  for (const r of linkRows ?? []) {
+    if (r.task_id !== null) {
+      linkCounts.set(r.task_id, (linkCounts.get(r.task_id) ?? 0) + 1);
+    }
+  }
+  const jobTasks = (taskRows ?? []).map((t) => ({
+    id: t.id as number,
+    title: t.title as string,
+    note: (t.note as string | null) ?? null,
+    status: t.status as "open" | "done",
+    sort_order: t.sort_order as number,
+    photos: ((t.task_photos as unknown as Array<{ id: number; caption: string | null }>) ?? [])
+      .sort((a, b) => a.id - b.id),
+    linkedLines: linkCounts.get(t.id) ?? 0,
+  }));
 
   return (
     <div>
@@ -211,6 +244,13 @@ export default async function JobDetailPage({
           </Link>
         )}
       </div>
+
+      <JobTasks
+        jobId={Number(job.id)}
+        clientId={job.client_id}
+        tasks={jobTasks}
+        canWrite={canSeeInternals}
+      />
 
       {estimatorOn && canSeeInternals && (
         <JobActuals clientId={job.client_id} jobId={Number(job.id)} />

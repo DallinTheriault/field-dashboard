@@ -114,6 +114,8 @@ export type RawLine = {
   unitPrice?: number | null;
   /** Hardware only: true = mark up by job margin; false = pass through at cost. */
   hardwareMarkup?: boolean;
+  /** Optional link to a job task (traceability only — never affects pricing). */
+  taskId?: number | null;
 };
 
 export function buildEngineSettings(bundle: EstimatorBundle): EngineSettings {
@@ -301,6 +303,7 @@ export function buildSavePayload(args: {
         sku: raw.sku ?? null,
         resolved_unit_price: raw.unitPrice ?? 0,
         hardware_markup: !!raw.hardwareMarkup,
+        task_id: raw.taskId ?? null,
       };
     }
     const hoursPerUnit = raw.serviceId
@@ -327,6 +330,7 @@ export function buildSavePayload(args: {
       sku: null,
       resolved_unit_price: null,
       hardware_markup: null,
+      task_id: raw.taskId ?? null,
     };
   });
 

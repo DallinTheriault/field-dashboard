@@ -55,7 +55,7 @@ export default async function EstimateDetailPage({
         .maybeSingle(),
       supabase
         .from("estimate_line_items")
-        .select("*")
+        .select("*, tasks(title, task_photos(id, caption))")
         .eq("estimate_id", estimateId)
         .order("sort_order"),
       supabase
@@ -275,7 +275,14 @@ export default async function EstimateDetailPage({
               </tr>
             </thead>
             <tbody className="text-bone-300">
-              {lineRows.map((l) => (
+              {lineRows.map((l) => {
+                // Linked task (internal traceability) — owner view ONLY;
+                // nothing task-related exists in the client rows or PDF.
+                const task = l.tasks as unknown as {
+                  title: string;
+                  task_photos: Array<{ id: number; caption: string | null }>;
+                } | null;
+                return (
                 <tr key={l.id} className="border-t border-line-subtle">
                   <td className="py-1.5 pr-2 text-bone-100">
                     {l.description}
@@ -290,6 +297,26 @@ export default async function EstimateDetailPage({
                       <span className="text-bone-400">
                         {" "}
                         · prep ×{Number(l.resolved_prep_multiplier)}
+                      </span>
+                    )}
+                    {task && (
+                      <span className="block text-field-500 mt-0.5">
+                        ↳ task: {task.title}
+                        {task.task_photos.length > 0 && (
+                          <span className="flex gap-1 mt-1 flex-wrap">
+                            {task.task_photos.map((p) => (
+                              /* eslint-disable-next-line @next/next/no-img-element */
+                              <img
+                                key={p.id}
+                                src={`/api/task-photos/${p.id}`}
+                                alt={p.caption ?? task.title}
+                                loading="lazy"
+                                title={p.caption ?? undefined}
+                                className="w-12 h-12 object-cover rounded-sm border border-line"
+                              />
+                            ))}
+                          </span>
+                        )}
                       </span>
                     )}
                   </td>
@@ -308,7 +335,8 @@ export default async function EstimateDetailPage({
                     {usd.format(Number(l.resolved_line_cost))}
                   </td>
                 </tr>
-              ))}
+                );
+              })}
               {(materials ?? []).length > 0 && (
                 <tr className="border-t border-line-subtle text-bone-400">
                   <td colSpan={5} className="py-1.5">

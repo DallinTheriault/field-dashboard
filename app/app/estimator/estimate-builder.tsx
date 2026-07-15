@@ -48,6 +48,14 @@ type UILine = {
   sku: string;
   unitPriceStr: string;
   hardwareMarkup: boolean; // true = mark up by margin; false = at cost
+  /** Optional link to a job task — traceability only, never pricing. */
+  taskId: number | null;
+};
+
+export type JobTaskOption = {
+  id: number;
+  title: string;
+  status: "open" | "done";
 };
 
 export type ExistingEstimate = {
@@ -84,6 +92,7 @@ function toRaw(l: UILine): RawLine {
       sku: l.sku.trim() || null,
       unitPrice: Number.isFinite(price) ? price : 0,
       hardwareMarkup: l.hardwareMarkup,
+      taskId: l.taskId,
     };
   }
   const hours = parseFloat(l.hoursStr);
@@ -97,6 +106,7 @@ function toRaw(l: UILine): RawLine {
     hoursPerUnit: l.serviceId ? null : Number.isFinite(hours) ? hours : null,
     prepModifierId: l.prepModifierId,
     isHardware: false,
+    taskId: l.taskId,
   };
 }
 
@@ -114,16 +124,20 @@ function fromRaw(r: RawLine): UILine {
     sku: r.sku ?? "",
     unitPriceStr: r.unitPrice === null || r.unitPrice === undefined ? "" : String(r.unitPrice),
     hardwareMarkup: r.hardwareMarkup ?? true,
+    taskId: r.taskId ?? null,
   };
 }
 
 export function EstimateBuilder({
   bundle,
   job,
+  tasks = [],
   existing,
 }: {
   bundle: EstimatorBundle;
   job: { id: number; name: string | null; address: string | null };
+  /** The job's tasks, for the optional per-line link. */
+  tasks?: JobTaskOption[];
   existing: ExistingEstimate | null;
 }) {
   const router = useRouter();
@@ -196,6 +210,7 @@ export function EstimateBuilder({
         sku: "",
         unitPriceStr: "",
         hardwareMarkup: true,
+        taskId: null,
       },
     ]);
     setCatalogQuery("");
@@ -217,6 +232,7 @@ export function EstimateBuilder({
         sku: "",
         unitPriceStr: "",
         hardwareMarkup: true,
+        taskId: null,
       },
     ]);
   }
@@ -237,6 +253,7 @@ export function EstimateBuilder({
         sku: "",
         unitPriceStr: "",
         hardwareMarkup: true,
+        taskId: null,
       },
     ]);
   }
@@ -500,6 +517,31 @@ export function EstimateBuilder({
                   </label>
                 )}
 
+                {/* Optional task link — pure traceability, always skippable */}
+                {tasks.length > 0 && (
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <select
+                      value={l.taskId ?? ""}
+                      onChange={(e) =>
+                        patchLine(l.key, {
+                          taskId: e.target.value ? Number(e.target.value) : null,
+                        })
+                      }
+                      className="text-sm max-w-56"
+                      aria-label="Link to task"
+                    >
+                      <option value="">No task link</option>
+                      {tasks.map((t) => (
+                        <option key={t.id} value={t.id}>
+                          {t.status === "done" ? "✓ " : ""}
+                          {t.title}
+                        </option>
+                      ))}
+                    </select>
+                    {l.taskId && <TaskPeek taskId={l.taskId} />}
+                  </div>
+                )}
+
                 {!l.serviceId && !l.isHardware && l.description.trim() && l.hoursStr && (
                   <button
                     type="button"
@@ -755,5 +797,71 @@ export function EstimateBuilder({
         </div>
       </div>
     </div>
+  );
+}
+
+/** Read-only peek at a linked task: note + photos, fetched on first open. */
+function TaskPeek({ taskId }: { taskId: number }) {
+  const supabase = createClient();
+  const [open, setOpen] = useState(false);
+  const [loaded, setLoaded] = useState<{
+    note: string | null;
+    photos: Array<{ id: number; caption: string | null }>;
+  } | null>(null);
+
+  async function toggle() {
+    const next = !open;
+    setOpen(next);
+    if (next && !loaded) {
+      const [{ data: task }, { data: photos }] = await Promise.all([
+        supabase.from("tasks").select("note").eq("id", taskId).maybeSingle(),
+        supabase
+          .from("task_photos")
+          .select("id, caption")
+          .eq("task_id", taskId)
+          .order("id"),
+      ]);
+      setLoaded({ note: task?.note ?? null, photos: photos ?? [] });
+    }
+  }
+
+  return (
+    <span className="min-w-0">
+      <button
+        type="button"
+        onClick={toggle}
+        className="chip normal-case tracking-normal border-field-500/40 text-field-500"
+      >
+        <Eye size={9} />
+        {open ? "hide task" : "view task"}
+      </button>
+      {open && loaded && (
+        <span className="block w-full mt-1.5 bg-ink-3 rounded-sm p-2 space-y-1.5">
+          {loaded.note && (
+            <span className="block text-2xs text-bone-300">{loaded.note}</span>
+          )}
+          {loaded.photos.length > 0 && (
+            <span className="flex gap-1.5 flex-wrap">
+              {loaded.photos.map((p) => (
+                /* eslint-disable-next-line @next/next/no-img-element */
+                <img
+                  key={p.id}
+                  src={`/api/task-photos/${p.id}`}
+                  alt={p.caption ?? "Task photo"}
+                  loading="lazy"
+                  title={p.caption ?? undefined}
+                  className="w-16 h-16 object-cover rounded-sm border border-line"
+                />
+              ))}
+            </span>
+          )}
+          {!loaded.note && loaded.photos.length === 0 && (
+            <span className="block text-2xs text-bone-400">
+              No note or photos on this task.
+            </span>
+          )}
+        </span>
+      )}
+    </span>
   );
 }

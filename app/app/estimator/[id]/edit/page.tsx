@@ -39,7 +39,7 @@ export default async function EditEstimatePage({
     supabase
       .from("estimate_line_items")
       .select(
-        "service_id, description, type, qty, unit, prep_modifier_id, resolved_hours_per_unit, sort_order, is_hardware, sku, resolved_unit_price, hardware_markup",
+        "service_id, description, type, qty, unit, prep_modifier_id, resolved_hours_per_unit, sort_order, is_hardware, sku, resolved_unit_price, hardware_markup, task_id",
       )
       .eq("estimate_id", estimateId)
       .order("sort_order"),
@@ -55,6 +55,13 @@ export default async function EditEstimatePage({
     name: string | null;
     address: string | null;
   } | null;
+
+  const { data: jobTasks } = await supabase
+    .from("tasks")
+    .select("id, title, status")
+    .eq("job_id", est.job_id)
+    .order("sort_order")
+    .order("id");
 
   const rawLines: RawLine[] = (lineRows ?? []).map((r, i) =>
     r.is_hardware
@@ -72,6 +79,7 @@ export default async function EditEstimatePage({
           unitPrice:
             r.resolved_unit_price === null ? 0 : Number(r.resolved_unit_price),
           hardwareMarkup: !!r.hardware_markup,
+          taskId: r.task_id ?? null,
         }
       : {
           key: String(i),
@@ -88,6 +96,7 @@ export default async function EditEstimatePage({
               : null,
           prepModifierId: r.prep_modifier_id,
           isHardware: false,
+          taskId: r.task_id ?? null,
         },
   );
 
@@ -95,6 +104,7 @@ export default async function EditEstimatePage({
     <EstimateBuilder
       bundle={bundle}
       job={job ?? { id: est.job_id, name: null, address: null }}
+      tasks={(jobTasks ?? []) as Array<{ id: number; title: string; status: "open" | "done" }>}
       existing={{
         estimateId: est.id,
         billingEntityId: est.billing_entity_id,

@@ -198,6 +198,33 @@ describe("buildSavePayload (Snapshot Rule)", () => {
     );
   });
 
+  it("carries the optional task link without touching pricing", () => {
+    const linked: RawLine[] = [
+      { ...rawLines[0], taskId: 7 },
+      { ...rawLines[1], taskId: null },
+    ];
+    const priced = priceEstimate(linked, 50, BUNDLE);
+    const p = buildSavePayload({
+      clientId: 1,
+      jobId: 99,
+      billingEntityId: null,
+      travelZoneId: 50,
+      notes: null,
+      overridePrice: null,
+      overrideReason: null,
+      rawLines: linked,
+      priced,
+    });
+    expect(p.lines[0].task_id).toBe(7);
+    expect(p.lines[1].task_id).toBeNull();
+    // Pricing is byte-identical with or without links.
+    const unlinked = snapshot(BUNDLE);
+    expect(p.estimate.computed_price).toBe(unlinked.estimate.computed_price);
+    expect(p.lines[0].resolved_client_amount).toBe(
+      unlinked.lines[0].resolved_client_amount,
+    );
+  });
+
   it("settings changes change NEW payloads only — a frozen payload is inert data", () => {
     const before = snapshot(BUNDLE);
     // Hostile settings edit: double the pay target, gut the margin.
