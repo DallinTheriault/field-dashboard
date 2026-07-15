@@ -429,21 +429,35 @@ export function CalendarClient({
   async function unschedule(job: CalJob) {
     setErr(null);
     setBusy(true);
-    // Drop a 'scheduled' job back to where it came from: accepted if any
-    // estimate version is accepted, estimated if one merely exists,
-    // otherwise lead. Other statuses keep their status.
+    // Drop a 'scheduled' job back to what it was BEFORE booking. The status
+    // log records every real transition, so callback stays callback and
+    // accepted stays accepted. Other statuses keep their status.
     let status = job.status;
     if (job.status === "scheduled") {
-      const { data } = await supabase
-        .from("estimates")
-        .select("id, status")
-        .eq("job_id", job.id);
-      const ests = data ?? [];
-      status = ests.some((e) => e.status === "accepted")
-        ? "accepted"
-        : ests.length > 0
-          ? "estimated"
-          : "lead";
+      const { data: logRows } = await supabase
+        .from("job_status_log")
+        .select("old_status")
+        .eq("job_id", job.id)
+        .eq("new_status", "scheduled")
+        .order("changed_at", { ascending: false })
+        .limit(1);
+      const prior = logRows?.[0]?.old_status ?? null;
+      if (prior && prior !== "scheduled") {
+        status = prior;
+      } else {
+        // No log row — the job was created directly as scheduled (calendar
+        // quick-create) or predates the log. Infer from its estimates.
+        const { data } = await supabase
+          .from("estimates")
+          .select("id, status")
+          .eq("job_id", job.id);
+        const ests = data ?? [];
+        status = ests.some((e) => e.status === "accepted")
+          ? "accepted"
+          : ests.length > 0
+            ? "estimated"
+            : "lead";
+      }
     }
     const { error } = await supabase
       .from("jobs")

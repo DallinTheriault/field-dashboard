@@ -97,8 +97,6 @@ export default async function OverviewPage() {
     "completed",
     "callback",
     "callback_complete",
-    "invoiced",
-    "paid",
   ]);
   const wonJobs = jobs.filter((j) => WON_STATUSES.has(j.status ?? "")).length;
   // Denominator excludes cancelled jobs — a dead lead shouldn't drag the rate.
