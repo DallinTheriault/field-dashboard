@@ -9,7 +9,6 @@ import { FeatureDisabledPanel } from "@/components/ui/feature-disabled-panel";
 import { dayKeyInTz, getTenantTimezone } from "@/lib/dates";
 import { summarizePnl } from "@/lib/estimator/expenses";
 import { ExpensesManager } from "./expenses-manager";
-import { LogPurchase } from "./log-purchase";
 
 const usd = new Intl.NumberFormat("en-US", {
   style: "currency",
@@ -44,33 +43,24 @@ export default async function ExpensesPage({
   // tenant-timezone year, so New Year's Eve payments land in the right year.
   const windowStart = `${year - 1}-12-30`;
   const windowEnd = `${year + 1}-01-02`;
-  const [{ data: expenseRows }, { data: invoiceRows }, { data: jobRows }] =
-    await Promise.all([
-      supabase
-        .from("expenses")
-        .select(
-          "id, expense_date, category, description, amount, qty, receipt_path, job_id, purchase_id, jobs(name), purchases(vendor, receipt_path)",
-        )
-        .gte("expense_date", `${year}-01-01`)
-        .lte("expense_date", `${year}-12-31`)
-        .order("expense_date", { ascending: false })
-        .order("id", { ascending: false }),
-      supabase
-        .from("invoices")
-        .select("total_cents, paid_at")
-        .eq("status", "paid")
-        .not("invoice_number", "is", null)
-        .gte("paid_at", windowStart)
-        .lte("paid_at", windowEnd),
-      // Allocation targets for the purchase flow — recent active jobs.
-      supabase
-        .from("jobs")
-        .select("id, name")
-        .is("archived_at", null)
-        .not("status", "in", "(completed,cancelled)")
-        .order("created_at", { ascending: false })
-        .limit(50),
-    ]);
+  const [{ data: expenseRows }, { data: invoiceRows }] = await Promise.all([
+    supabase
+      .from("expenses")
+      .select(
+        "id, expense_date, category, description, amount, qty, receipt_path, job_id, purchase_id, jobs(name), purchases(vendor, receipt_path)",
+      )
+      .gte("expense_date", `${year}-01-01`)
+      .lte("expense_date", `${year}-12-31`)
+      .order("expense_date", { ascending: false })
+      .order("id", { ascending: false }),
+    supabase
+      .from("invoices")
+      .select("total_cents, paid_at")
+      .eq("status", "paid")
+      .not("invoice_number", "is", null)
+      .gte("paid_at", windowStart)
+      .lte("paid_at", windowEnd),
+  ]);
 
   const expenses = (expenseRows ?? []).map((e) => {
     const job = e.jobs as unknown as { name: string | null } | null;
@@ -100,10 +90,6 @@ export default async function ExpensesPage({
   const pnl = summarizePnl({ paidInvoiceCents, expenses });
 
   const clientId = session.clientId;
-  const jobs = (jobRows ?? []).map((j) => ({
-    id: j.id as number,
-    name: (j.name as string | null) ?? `Job #${j.id}`,
-  }));
 
   return (
     <div className="max-w-3xl mx-auto px-4 py-6 space-y-5">
@@ -198,20 +184,25 @@ export default async function ExpensesPage({
         </section>
       )}
 
-      {/* Log a multi-item receipt with per-item job/Stock allocation */}
-      <LogPurchase clientId={clientId} jobs={jobs} />
-
-      {/* Expense log — every line: job materials, purchases, one-offs */}
+      {/* Money is the P&L/tax VIEW — entry lives on the Expenses page. */}
       <section className="panel">
-        <div className="px-4 py-3 border-b border-line">
-          <h2 className="text-sm font-semibold text-bone-100">
-            Expenses — {year}
-          </h2>
-          <p className="text-2xs text-bone-400 mt-0.5">
-            One list, every dollar out — including materials logged on jobs.
-          </p>
+        <div className="px-4 py-3 border-b border-line flex items-end justify-between gap-3">
+          <div>
+            <h2 className="text-sm font-semibold text-bone-100">
+              Expenses — {year}
+            </h2>
+            <p className="text-2xs text-bone-400 mt-0.5">
+              One list, every dollar out — including materials logged on jobs.
+            </p>
+          </div>
+          <Link
+            href="/app/estimator/purchases"
+            className="btn-secondary text-xs h-8 shrink-0"
+          >
+            Log expenses →
+          </Link>
         </div>
-        <ExpensesManager clientId={clientId} expenses={expenses} />
+        <ExpensesManager clientId={clientId} expenses={expenses} readOnly />
       </section>
     </div>
   );

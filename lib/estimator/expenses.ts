@@ -63,3 +63,73 @@ export function summarizePnl(input: {
     byCategory,
   };
 }
+
+/** Item assignment — where a purchased item's cost lands (handoff 3). */
+export const ASSIGNMENTS = [
+  "unassigned",
+  "job_in_bid",
+  "job_extra",
+  "job_internal",
+  "stock",
+] as const;
+export type Assignment = (typeof ASSIGNMENTS)[number];
+
+export const ASSIGNMENT_LABELS: Record<Assignment, string> = {
+  unassigned: "Unassigned",
+  job_in_bid: "Job — in bid",
+  job_extra: "Job — extra (invoiced at cost)",
+  job_internal: "Job — internal (eaten)",
+  stock: "Stock / company",
+};
+
+/** Job types — count toward job material cost; stock never does. */
+export const JOB_ASSIGNMENTS: Assignment[] = [
+  "job_in_bid",
+  "job_extra",
+  "job_internal",
+];
+
+export type ExtraItem = {
+  id: number;
+  description: string;
+  qty: number | null;
+  unit_price: number | null;
+  amount: number;
+};
+
+export type InvoiceRow = {
+  description: string;
+  qtyLabel: string | null;
+  amount: number;
+  /** Marks a row injected from a job_extra expense item (refresh/strip key). */
+  extra_expense_id?: number;
+};
+
+/**
+ * job_extra items -> invoice rows AT COST (locked decision: no markup —
+ * effort is billed via labor). Grouped under a clear label so the customer
+ * sees these as additional materials, separate from the bid scope.
+ */
+export function buildExtraInvoiceRows(items: ExtraItem[]): {
+  rows: InvoiceRow[];
+  addedTotal: number;
+} {
+  const rows = items.map((it) => ({
+    description: `Additional materials (at cost): ${it.description}`,
+    qtyLabel:
+      it.qty !== null && it.qty !== 1 && it.unit_price !== null
+        ? `${it.qty} × $${it.unit_price.toFixed(2)}`
+        : null,
+    amount: round2(it.amount),
+    extra_expense_id: it.id,
+  }));
+  return {
+    rows,
+    addedTotal: round2(rows.reduce((s, r) => s + r.amount, 0)),
+  };
+}
+
+/** Strip previously-injected extras (refresh support: drop then re-add). */
+export function withoutExtraRows(rows: InvoiceRow[]): InvoiceRow[] {
+  return rows.filter((r) => r.extra_expense_id === undefined);
+}

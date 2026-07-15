@@ -30,3 +30,31 @@ describe("summarizePnl (unified expenses)", () => {
     expect(s.byCategory).toEqual([]);
   });
 });
+
+import { buildExtraInvoiceRows, withoutExtraRows } from "./expenses";
+
+describe("job_extra -> invoice rows (at cost, no markup)", () => {
+  it("labels rows, carries exact amounts, computes the added total", () => {
+    const { rows, addedTotal } = buildExtraInvoiceRows([
+      { id: 11, description: "Paint — 2 gal", qty: 2, unit_price: 38, amount: 76 },
+      { id: 12, description: "Door lock", qty: 1, unit_price: 45.5, amount: 45.5 },
+    ]);
+    expect(rows).toHaveLength(2);
+    expect(rows[0].description).toBe("Additional materials (at cost): Paint — 2 gal");
+    expect(rows[0].qtyLabel).toBe("2 × $38.00");
+    expect(rows[1].qtyLabel).toBeNull(); // qty 1 needs no label
+    expect(rows[0].amount).toBe(76); // AT COST — never marked up
+    expect(addedTotal).toBe(121.5);
+    expect(rows.every((r) => typeof r.extra_expense_id === "number")).toBe(true);
+  });
+
+  it("withoutExtraRows strips only injected rows (refresh = strip + re-add)", () => {
+    const base = [
+      { description: "Painting", qtyLabel: null, amount: 500 },
+      { description: "Additional materials (at cost): Paint", qtyLabel: null, amount: 76, extra_expense_id: 11 },
+    ];
+    const stripped = withoutExtraRows(base);
+    expect(stripped).toHaveLength(1);
+    expect(stripped[0].description).toBe("Painting");
+  });
+});

@@ -107,6 +107,18 @@ export default async function JobDetailPage({
         .order("version", { ascending: false })
     : { data: null };
 
+  // Uninvoiced extras — the actual money leak (architect Q1 refinement):
+  // materials bought as "extra" that never made it onto an invoice.
+  const { data: looseExtras } = estimatorOn
+    ? await supabase
+        .from("expenses")
+        .select("id")
+        .eq("job_id", job.id)
+        .eq("assignment", "job_extra")
+        .is("invoiced_on", null)
+    : { data: null };
+  const uninvoicedExtras = (looseExtras ?? []).length;
+
   // Tasks — scoping list + punch list. Visible to every member; edits are
   // owner/manager (RLS enforces; the UI hides controls for read-only roles).
   const { data: taskRows } = await supabase
@@ -251,6 +263,18 @@ export default async function JobDetailPage({
         tasks={jobTasks}
         canWrite={canSeeInternals}
       />
+
+      {estimatorOn && canSeeInternals && uninvoicedExtras > 0 && (
+        <div className="panel px-4 py-2.5 mb-5 border-status-danger/40 flex items-center gap-2 text-sm">
+          <span className="chip border-status-danger/40 text-status-danger bg-status-danger/10 normal-case tracking-normal shrink-0">
+            {uninvoicedExtras} extra{uninvoicedExtras === 1 ? "" : "s"} not on any invoice
+          </span>
+          <span className="text-2xs text-bone-400">
+            billable materials waiting — they ride along when an invoice is
+            created, or hit &quot;Refresh extras&quot; on a draft.
+          </span>
+        </div>
+      )}
 
       {estimatorOn && canSeeInternals && (
         <JobActuals clientId={job.client_id} jobId={Number(job.id)} />

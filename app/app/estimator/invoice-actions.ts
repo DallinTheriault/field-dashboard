@@ -4,6 +4,11 @@ import { revalidatePath } from "next/cache";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { requireWriter } from "@/lib/estimator/auth";
 import { buildClientDocRows } from "@/lib/estimator/client-rows";
+import {
+  buildExtraInvoiceRows,
+  withoutExtraRows,
+  type InvoiceRow,
+} from "@/lib/estimator/expenses";
 import { getEstimatorStripe, STRIPE_NOT_CONFIGURED } from "@/lib/estimator/stripe";
 
 type Result<T = undefined> =
@@ -78,7 +83,27 @@ export async function createInvoiceFromEstimate(
         : Number(est.manual_override_price),
   });
 
-  const subtotalCents = Math.round(total * 100);
+  // Uninvoiced job_extra items ride along AT COST (ruling Q1a): clearly
+  // labeled, added to the subtotal, and stamped with this invoice below.
+  const { data: extraItems } = await supabase
+    .from("expenses")
+    .select("id, description, qty, unit_price, amount")
+    .eq("job_id", est.job_id)
+    .eq("assignment", "job_extra")
+    .is("invoiced_on", null)
+    .order("id");
+  const extras = buildExtraInvoiceRows(
+    (extraItems ?? []).map((it) => ({
+      id: it.id,
+      description: it.description,
+      qty: it.qty === null ? null : Number(it.qty),
+      unit_price: it.unit_price === null ? null : Number(it.unit_price),
+      amount: Number(it.amount),
+    })),
+  );
+
+  const allRows = [...rows, ...extras.rows];
+  const subtotalCents = Math.round((total + extras.addedTotal) * 100);
   const taxCents = Math.round((subtotalCents * taxRatePct) / 100);
 
   const { data, error } = await supabase.rpc("estimator_create_invoice", {
@@ -90,7 +115,7 @@ export async function createInvoiceFromEstimate(
       customer_name: job?.name ?? "Customer",
       customer_email: job?.email,
       customer_phone: job?.phone,
-      line_items: rows,
+      line_items: allRows,
       subtotal_cents: subtotalCents,
       tax_rate_pct: taxRatePct,
       tax_cents: taxCents,
@@ -101,16 +126,105 @@ export async function createInvoiceFromEstimate(
   if (error || !data) {
     return { ok: false, error: error?.message ?? "Invoice creation failed." };
   }
+  const invoiceId = Number((data as { invoice_id: number }).invoice_id);
+
+  // Stamp the included extras (ruling Q1 refinement): the reliable basis
+  // for "already invoiced" guards and the uninvoiced-extras job badge.
+  if ((extraItems ?? []).length > 0) {
+    await supabase
+      .from("expenses")
+      .update({ invoiced_on: invoiceId })
+      .in("id", (extraItems ?? []).map((it) => it.id));
+  }
 
   revalidatePath("/app/estimator");
   revalidatePath(`/app/estimator/${estimateId}`);
   return {
     ok: true,
     data: {
-      invoiceId: Number((data as { invoice_id: number }).invoice_id),
+      invoiceId,
       invoiceNumber: (data as { invoice_number: string }).invoice_number,
     },
   };
+}
+
+/**
+ * Re-pull the job's uninvoiced extras into a DRAFT invoice (ruling Q1b):
+ * strips previously-injected extra rows, unstamps them, re-adds the current
+ * set, recomputes totals. Sent/paid invoices are immutable — Stripe
+ * finalization is a hard wall (ruling Q1c).
+ */
+export async function refreshInvoiceExtras(invoiceId: number): Promise<Result> {
+  const auth = await requireWriter();
+  if (!auth.ok) return { ok: false, error: auth.error };
+  const { supabase } = auth;
+
+  const { data: inv } = await supabase
+    .from("invoices")
+    .select("id, job_id, status, stripe_invoice_id, line_items, tax_rate_pct")
+    .eq("id", invoiceId)
+    .maybeSingle();
+  if (!inv) return { ok: false, error: "Invoice not found." };
+  if (inv.status !== "draft" || inv.stripe_invoice_id) {
+    return {
+      ok: false,
+      error: "Only draft invoices can refresh extras — this one is final.",
+    };
+  }
+
+  // Release everything currently stamped with this invoice, then re-pull.
+  const { error: unstampErr } = await supabase
+    .from("expenses")
+    .update({ invoiced_on: null })
+    .eq("invoiced_on", invoiceId);
+  if (unstampErr) return { ok: false, error: unstampErr.message };
+
+  const { data: extraItems } = await supabase
+    .from("expenses")
+    .select("id, description, qty, unit_price, amount")
+    .eq("job_id", inv.job_id)
+    .eq("assignment", "job_extra")
+    .is("invoiced_on", null)
+    .order("id");
+  const extras = buildExtraInvoiceRows(
+    (extraItems ?? []).map((it) => ({
+      id: it.id,
+      description: it.description,
+      qty: it.qty === null ? null : Number(it.qty),
+      unit_price: it.unit_price === null ? null : Number(it.unit_price),
+      amount: Number(it.amount),
+    })),
+  );
+
+  const baseRows = withoutExtraRows((inv.line_items ?? []) as InvoiceRow[]);
+  const allRows = [...baseRows, ...extras.rows];
+  const subtotalCents = Math.round(
+    allRows.reduce((s, r) => s + r.amount, 0) * 100,
+  );
+  const taxRatePct = Number(inv.tax_rate_pct ?? 0);
+  const taxCents = Math.round((subtotalCents * taxRatePct) / 100);
+
+  const { error: updErr } = await supabase
+    .from("invoices")
+    .update({
+      line_items: allRows,
+      subtotal_cents: subtotalCents,
+      tax_cents: taxCents,
+      total_cents: subtotalCents + taxCents,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", invoiceId);
+  if (updErr) return { ok: false, error: updErr.message };
+
+  if ((extraItems ?? []).length > 0) {
+    await supabase
+      .from("expenses")
+      .update({ invoiced_on: invoiceId })
+      .in("id", (extraItems ?? []).map((it) => it.id));
+  }
+
+  revalidatePath(`/app/estimator/invoices/${invoiceId}`);
+  return { ok: true };
 }
 
 /**

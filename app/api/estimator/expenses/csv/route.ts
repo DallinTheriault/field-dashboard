@@ -33,7 +33,7 @@ export async function GET(request: Request) {
   const [{ data: expenses }, { data: invoices }] = await Promise.all([
     supabase
       .from("expenses")
-      .select("expense_date, category, description, amount, qty, jobs(name), purchases(vendor)")
+      .select("expense_date, category, description, amount, qty, assignment, jobs(name), purchases(vendor)")
       .gte("expense_date", `${year}-01-01`)
       .lte("expense_date", `${year}-12-31`),
     supabase
@@ -45,7 +45,7 @@ export async function GET(request: Request) {
       .lte("paid_at", windowEnd),
   ]);
 
-  type Row = [string, string, string, string, number];
+  type Row = [string, string, string, string, string, number];
   const rows: Row[] = [];
 
   for (const i of invoices ?? []) {
@@ -54,6 +54,7 @@ export async function GET(request: Request) {
       dayKeyInTz(i.paid_at, tz),
       "income",
       "Invoice",
+      "",
       `${i.invoice_number} — ${i.customer_name}`,
       Number(i.total_cents) / 100,
     ]);
@@ -70,18 +71,21 @@ export async function GET(request: Request) {
       e.expense_date,
       "expense",
       e.category,
+      // Assignment maps to tax treatment (billable materials vs job
+      // supplies vs tools) — exposed, no tax logic built (spec §7.4).
+      e.assignment ?? "",
       parts.join(" "),
       -Number(e.amount),
     ]);
   }
 
   rows.sort((a, b) => a[0].localeCompare(b[0]));
-  const net = rows.reduce((s, r) => s + r[4], 0);
+  const net = rows.reduce((s, r) => s + r[5], 0);
 
   const lines = [
-    ["date", "type", "category", "description", "amount"].join(","),
+    ["date", "type", "category", "assignment", "description", "amount"].join(","),
     ...rows.map((r) => r.map(csvCell).join(",")),
-    ["", "", "", "NET PROFIT", (Math.round(net * 100) / 100).toFixed(2)].join(","),
+    ["", "", "", "", "NET PROFIT", (Math.round(net * 100) / 100).toFixed(2)].join(","),
   ];
 
   return new NextResponse(lines.join("\r\n"), {

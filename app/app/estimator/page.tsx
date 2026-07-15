@@ -5,6 +5,7 @@ import {
   ChevronRight,
   LineChart,
   Receipt,
+  ScanLine,
   Settings2,
   Wallet,
 } from "lucide-react";
@@ -37,10 +38,16 @@ export default async function EstimatorHome() {
 
   const destinations = [
     {
+      href: "/app/estimator/purchases",
+      icon: ScanLine,
+      label: "Expenses",
+      blurb: "Scan receipts, assign materials.",
+    },
+    {
       href: "/app/estimator/expenses",
       icon: Wallet,
       label: "Money",
-      blurb: "Year P&L, expense log, and the tax CSV.",
+      blurb: "Year P&L and the tax CSV.",
     },
     {
       href: "/app/estimator/insights",

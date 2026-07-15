@@ -16,6 +16,15 @@ type ActualMaterial = {
   description: string;
   qty: number | null;
   actual_cost: number;
+  assignment: string;
+  invoiced: boolean;
+};
+
+const ASSIGNMENT_SHORT: Record<string, string> = {
+  job_in_bid: "in bid",
+  job_extra: "extra",
+  job_internal: "internal",
+  unassigned: "in bid", // transitional rows logged before assignments existed
 };
 
 const round2 = (n: number) => Math.round((n + 1e-9) * 100) / 100;
@@ -66,8 +75,9 @@ export function JobActuals({
         .order("id", { ascending: false }),
       supabase
         .from("expenses")
-        .select("id, description, qty, amount")
+        .select("id, description, qty, amount, assignment, invoiced_on")
         .eq("job_id", jobId)
+        .neq("assignment", "stock")
         .order("id", { ascending: false }),
       supabase
         .from("estimates")
@@ -86,6 +96,8 @@ export function JobActuals({
         description: m.description,
         qty: m.qty === null ? null : Number(m.qty),
         actual_cost: Number(m.amount),
+        assignment: m.assignment ?? "job_in_bid",
+        invoiced: m.invoiced_on !== null && m.invoiced_on !== undefined,
       })),
     );
     const lines = (est?.estimate_line_items ?? []) as Array<{
@@ -152,13 +164,16 @@ export function JobActuals({
     const q = Number.isFinite(matQtyNum) && matQtyNum > 0 ? matQtyNum : 1;
     const total = round2(price * q);
     // Unified source of truth: a job material IS an expense line with a job.
+    // Quick-adds default to in-bid (spec §7.1) — reassign on the Expenses page.
     const { error } = await supabase.from("expenses").insert({
       client_id: clientId,
       job_id: jobId,
       category: "Materials & supplies",
       description,
       qty: q,
+      unit_price: price,
       amount: total,
+      assignment: "job_in_bid",
     });
     if (error) {
       setErr(error.message);
@@ -176,6 +191,11 @@ export function JobActuals({
   }
 
   async function removeMaterial(id: number) {
+    const m = materials.find((x) => x.id === id);
+    if (m?.invoiced) {
+      setErr("This item is on an invoice — manage it from the Expenses page.");
+      return;
+    }
     await supabase.from("expenses").delete().eq("id", id);
     load();
   }
@@ -326,6 +346,17 @@ export function JobActuals({
                 <li key={m.id} className="flex items-center gap-2 text-sm">
                   <span className="flex-1 text-bone-100 truncate">
                     {m.description}
+                  </span>
+                  <span
+                    className={`chip normal-case tracking-normal shrink-0 ${
+                      m.assignment === "job_extra"
+                        ? "border-status-danger/40 text-status-danger"
+                        : "border-line-strong text-bone-400"
+                    }`}
+                    title={m.invoiced ? "On an invoice" : undefined}
+                  >
+                    {ASSIGNMENT_SHORT[m.assignment] ?? m.assignment}
+                    {m.invoiced ? " · invoiced" : ""}
                   </span>
                   {qty !== 1 && (
                     <span className="text-2xs text-bone-400 shrink-0">

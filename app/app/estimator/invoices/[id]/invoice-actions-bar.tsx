@@ -7,12 +7,14 @@ import {
   Copy,
   FileDown,
   Loader2,
+  RefreshCcw,
   Send,
   Trash2,
 } from "lucide-react";
 import {
   deleteInvoice,
   markInvoicePaid,
+  refreshInvoiceExtras,
   sendInvoiceWithStripe,
 } from "../../invoice-actions";
 import { SharePdfButton } from "../../share-pdf-button";
@@ -68,6 +70,22 @@ export function InvoiceActionsBar({
           filename={`${invoiceNumber}.pdf`}
           label="Send invoice"
         />
+        {status === "draft" && !hasStripe && (
+          <button
+            type="button"
+            disabled={busy !== null}
+            onClick={() => run("extras", () => refreshInvoiceExtras(invoiceId))}
+            className="btn-secondary text-sm min-h-[42px]"
+            title="Re-pull the job's uninvoiced extra materials onto this draft"
+          >
+            {busy === "extras" ? (
+              <Loader2 size={13} className="animate-spin" />
+            ) : (
+              <RefreshCcw size={13} />
+            )}
+            Refresh extras
+          </button>
+        )}
         {status !== "paid" && !hasStripe && (
           <button
             type="button"

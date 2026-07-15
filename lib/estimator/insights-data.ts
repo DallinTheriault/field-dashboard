@@ -44,7 +44,14 @@ export async function getInsightsData(
         .select("estimate_id, service_id, resolved_labor_hours, resolved_labor_cost"),
       supabase.from("time_entries").select("job_id, hours"),
       // Job-assigned expense lines are the material/parts actuals now.
-      supabase.from("expenses").select("job_id, amount").not("job_id", "is", null),
+      // Job material cost = the three job assignments (§7.3); stock never
+      // counts. Pre-assignment rows with a job still count (they were
+      // explicitly logged on the job).
+      supabase
+        .from("expenses")
+        .select("job_id, amount")
+        .not("job_id", "is", null)
+        .neq("assignment", "stock"),
       supabase
         .from("service_catalog")
         .select("id, name, type, unit, labor_hours_per_unit, flat_labor_hours"),

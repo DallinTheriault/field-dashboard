@@ -10,6 +10,7 @@ import {
   Volume2,
   ChevronRight,
   MessageSquareText,
+  ScanLine,
   Users,
 } from "lucide-react";
 import { LogoUploader } from "./logo-uploader";
@@ -20,6 +21,7 @@ import { ReplyTemplatesManager } from "./reply-templates-manager";
 import { TeamManager } from "./team-manager";
 import { MyProfileForm } from "./my-profile-form";
 import { NotificationPrefsForm } from "./notification-prefs-form";
+import { ReceiptAiToggle } from "./receipt-ai-toggle";
 import { getCurrentUserRole } from "@/lib/permissions/current-role";
 import {
   canViewSettings,
@@ -47,7 +49,7 @@ export default async function SettingsPage() {
   const { data: clients } = await supabase
     .from("Clients")
     .select(
-      "id, business_name, business_short_name, owner_first_name, owner_email, owner_phone, twilio_number, timezone, services, brand_logo_url, brand_primary_color, vapi_voice_id, calendar_id, business_website, business_hours, service_area, pricing_block, scope_values, service_constraints, escalation_phone, notify_email, notify_dashboard_ping, notify_sms",
+      "id, business_name, business_short_name, owner_first_name, owner_email, owner_phone, twilio_number, timezone, services, brand_logo_url, brand_primary_color, vapi_voice_id, calendar_id, business_website, business_hours, service_area, pricing_block, scope_values, service_constraints, escalation_phone, notify_email, notify_dashboard_ping, notify_sms, feature_receipt_ai_enabled",
     )
     .limit(1);
 
@@ -67,6 +69,18 @@ export default async function SettingsPage() {
         .eq("client_id", client.id)
         .maybeSingle()
     : { data: null };
+
+  // Scan meter for the AI Receipt Scanning card — this month, tenant rows
+  // only (RLS). The meter is service-role-written; members can only read.
+  const monthStart = new Date();
+  monthStart.setDate(1);
+  monthStart.setHours(0, 0, 0, 0);
+  const { count: scansThisMonth } = client
+    ? await supabase
+        .from("receipt_scans")
+        .select("id", { count: "exact", head: true })
+        .gte("created_at", monthStart.toISOString())
+    : { count: 0 };
 
   // Team members for the current tenant
   let teamMembers: Array<{
@@ -234,6 +248,19 @@ export default async function SettingsPage() {
           <div className="px-4 py-4">
             <VoicePicker initialVoiceId={client?.vapi_voice_id ?? null} />
           </div>
+        </Section>
+
+        {/* AI Receipt Scanning entitlement */}
+        <Section
+          icon={ScanLine}
+          title="AI Receipt Scanning"
+          subtitle="Photograph a receipt, review the extracted items"
+        >
+          <ReceiptAiToggle
+            enabled={client?.feature_receipt_ai_enabled ?? false}
+            isOwner={session.role === "owner"}
+            scansThisMonth={scansThisMonth ?? 0}
+          />
         </Section>
 
         {/* Calendar */}

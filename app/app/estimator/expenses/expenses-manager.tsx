@@ -33,13 +33,16 @@ function todayISO(): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 
-/** Quick expense entry + list for one year. Server recomputes the P&L. */
+/** Expense list for one year (+ optional quick entry). Server recomputes
+ * the P&L. readOnly = the Money view: entry/edit lives on /purchases. */
 export function ExpensesManager({
   clientId,
   expenses,
+  readOnly = false,
 }: {
   clientId: number;
   expenses: Expense[];
+  readOnly?: boolean;
 }) {
   const router = useRouter();
   const supabase = createClient();
@@ -96,6 +99,7 @@ export function ExpensesManager({
   return (
     <div className="px-4 py-3 space-y-3">
       {/* One-thumb quick add */}
+      {!readOnly && (
       <div className="flex flex-wrap gap-2">
         <input
           type="date"
@@ -137,6 +141,7 @@ export function ExpensesManager({
           Log
         </button>
       </div>
+      )}
       {err && <div className="form-error">{err}</div>}
 
       {/* Entries */}
@@ -188,7 +193,7 @@ export function ExpensesManager({
                 >
                   <Paperclip size={12} />
                 </a>
-              ) : (
+              ) : readOnly ? null : (
                 <label
                   className="text-bone-500 hover:text-bone-300 p-1 cursor-pointer"
                   title="Attach receipt (photo or PDF)"
@@ -206,14 +211,16 @@ export function ExpensesManager({
                   />
                 </label>
               )}
-              <button
-                type="button"
-                onClick={() => remove(e)}
-                className="text-bone-500 hover:text-status-danger p-1"
-                aria-label={`Delete ${e.description}`}
-              >
-                <Trash2 size={12} />
-              </button>
+              {!readOnly && (
+                <button
+                  type="button"
+                  onClick={() => remove(e)}
+                  className="text-bone-500 hover:text-status-danger p-1"
+                  aria-label={`Delete ${e.description}`}
+                >
+                  <Trash2 size={12} />
+                </button>
+              )}
             </li>
           ))}
         </ul>
