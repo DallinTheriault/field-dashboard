@@ -9,6 +9,7 @@ import { StatusChip } from "@/components/ui/status-chip";
 const STATUSES = [
   "lead",
   "estimated",
+  "accepted",
   "scheduled",
   "in_progress",
   "completed",

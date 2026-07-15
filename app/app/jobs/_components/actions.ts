@@ -9,6 +9,7 @@ import { toE164US } from "@/lib/sms/phone";
 const VALID_STATUSES = [
   "lead",
   "estimated",
+  "accepted",
   "scheduled",
   "in_progress",
   "completed",

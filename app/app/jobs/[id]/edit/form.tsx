@@ -13,6 +13,7 @@ import type { TeamMember } from "@/lib/team/types";
 const STATUSES = [
   "lead",
   "estimated",
+  "accepted",
   "scheduled",
   "in_progress",
   "completed",

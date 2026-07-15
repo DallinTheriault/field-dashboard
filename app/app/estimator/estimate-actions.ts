@@ -3,6 +3,10 @@
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { requireWriter } from "@/lib/estimator/auth";
+import {
+  jobStatusAfterEstimateCreated,
+  jobStatusAfterEstimateAccepted,
+} from "@/lib/estimator/job-status";
 import { getEstimatorBundle } from "@/lib/estimator/queries";
 import {
   buildSavePayload,
@@ -176,7 +180,13 @@ export async function saveEstimate(
     return { ok: false, error: error?.message ?? "Save failed." };
   }
 
-  await syncJobAfterEstimate(supabase, jobId, priced.result.price, overridePrice);
+  await syncJobAfterEstimate(
+    supabase,
+    jobId,
+    priced.result.price,
+    overridePrice,
+    input.estimateId == null, // status moves only when an estimate is CREATED
+  );
 
   revalidatePath("/app/estimator");
   revalidatePath(`/app/jobs/${jobId}`);
@@ -189,6 +199,7 @@ async function syncJobAfterEstimate(
   jobId: number,
   computedPrice: number,
   overridePrice: number | null,
+  isNewEstimate: boolean,
 ) {
   const charge = overridePrice ?? computedPrice;
   const { data: job } = await supabase
@@ -199,7 +210,10 @@ async function syncJobAfterEstimate(
   const update: Record<string, unknown> = {
     quoted_price: Math.round(charge * 100), // jobs.quoted_price is cents
   };
-  if (job?.status === "lead") update.status = "estimated";
+  if (isNewEstimate && job) {
+    const next = jobStatusAfterEstimateCreated(job.status);
+    if (next) update.status = next;
+  }
   await supabase.from("jobs").update(update).eq("id", jobId);
 }
 
@@ -226,6 +240,24 @@ export async function setEstimateStatus(
     .update({ status, ...stamp })
     .eq("id", estimateId);
   if (error) return { ok: false, error: error.message };
+
+  // Acceptance rolls the job forward (lead/estimated → accepted, only).
+  // Best-effort like syncJobAfterEstimate: the estimate update is the
+  // primary action and never fails on the job sync.
+  if (status === "accepted") {
+    const { data: est } = await supabase
+      .from("estimates")
+      .select("job_id, jobs(status)")
+      .eq("id", estimateId)
+      .maybeSingle();
+    const job = est?.jobs as unknown as { status: string } | null;
+    const next = job ? jobStatusAfterEstimateAccepted(job.status) : null;
+    if (next && est) {
+      await supabase.from("jobs").update({ status: next }).eq("id", est.job_id);
+    }
+    if (est) revalidatePath(`/app/jobs/${est.job_id}`);
+  }
+
   revalidatePath("/app/estimator");
   revalidatePath(`/app/estimator/${estimateId}`);
   return { ok: true };
@@ -328,7 +360,8 @@ export async function repriceEstimate(estimateId: number): Promise<Result> {
   const { error } = await supabase.rpc("estimator_save_estimate", { p: payload });
   if (error) return { ok: false, error: error.message };
 
-  await syncJobAfterEstimate(supabase, est.job_id, priced.result.price, overridePrice);
+  // Reprice touches an existing estimate — quoted_price refreshes, status doesn't.
+  await syncJobAfterEstimate(supabase, est.job_id, priced.result.price, overridePrice, false);
   revalidatePath("/app/estimator");
   revalidatePath(`/app/estimator/${estimateId}`);
   return { ok: true };

@@ -8,6 +8,7 @@ import { createJobManual } from "./actions";
 const STATUSES = [
   { value: "lead", label: "Lead" },
   { value: "estimated", label: "Estimated" },
+  { value: "accepted", label: "Accepted" },
   { value: "scheduled", label: "Scheduled" },
   { value: "in_progress", label: "In progress" },
   { value: "completed", label: "Completed" },

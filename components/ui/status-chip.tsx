@@ -3,6 +3,8 @@ import { cn } from "@/lib/cn";
 const STATUS_MAP = {
   lead: { label: "Lead", color: "text-status-lead", border: "border-status-lead/30", bg: "bg-status-lead/10", pulse: false },
   estimated: { label: "Estimated", color: "text-status-estimated", border: "border-status-estimated/30", bg: "bg-status-estimated/10", pulse: false },
+  // Accepted = the customer said yes; wears win-green like callback_complete.
+  accepted: { label: "Accepted", color: "text-status-completed", border: "border-status-completed/30", bg: "bg-status-completed/10", pulse: false },
   scheduled: { label: "Scheduled", color: "text-status-scheduled", border: "border-status-scheduled/30", bg: "bg-status-scheduled/10", pulse: false },
   in_progress: { label: "In progress", color: "text-status-progress", border: "border-status-progress/30", bg: "bg-status-progress/10", pulse: false },
   completed: { label: "Completed", color: "text-status-completed", border: "border-status-completed/30", bg: "bg-status-completed/10", pulse: false },
