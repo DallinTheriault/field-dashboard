@@ -87,10 +87,11 @@ export default async function OverviewPage() {
     completed: jobs.filter((j) => j.status === "completed").length,
   };
 
-  // A lead "converted" once it reaches scheduled or anything past it —
-  // in_progress/completed/callbacks all come AFTER a booking. Cancelled
-  // and still-open leads/estimates don't count as won.
+  // A lead "converted" once the customer committed — accepted or anything
+  // past it (won = commitment, independent of booking). Cancelled and
+  // still-open leads/estimates don't count as won.
   const WON_STATUSES = new Set([
+    "accepted",
     "scheduled",
     "in_progress",
     "completed",

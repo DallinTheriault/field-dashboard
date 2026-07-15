@@ -428,16 +428,21 @@ export function CalendarClient({
   async function unschedule(job: CalJob) {
     setErr(null);
     setBusy(true);
-    // Drop a 'scheduled' job back to where it came from: estimated if it
-    // has an estimate, otherwise lead. Other statuses keep their status.
+    // Drop a 'scheduled' job back to where it came from: accepted if any
+    // estimate version is accepted, estimated if one merely exists,
+    // otherwise lead. Other statuses keep their status.
     let status = job.status;
     if (job.status === "scheduled") {
       const { data } = await supabase
         .from("estimates")
-        .select("id")
-        .eq("job_id", job.id)
-        .limit(1);
-      status = data && data.length > 0 ? "estimated" : "lead";
+        .select("id, status")
+        .eq("job_id", job.id);
+      const ests = data ?? [];
+      status = ests.some((e) => e.status === "accepted")
+        ? "accepted"
+        : ests.length > 0
+          ? "estimated"
+          : "lead";
     }
     const { error } = await supabase
       .from("jobs")
@@ -851,7 +856,7 @@ export function CalendarClient({
                       pickedJob.id,
                       s,
                       e,
-                      ["lead", "estimated", "callback"].includes(pickedJob.status),
+                      ["lead", "estimated", "accepted", "callback"].includes(pickedJob.status),
                     )
                   }
                 />
