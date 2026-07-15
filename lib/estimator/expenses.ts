@@ -94,7 +94,12 @@ export type ExtraItem = {
   description: string;
   qty: number | null;
   unit_price: number | null;
+  /** Stored PRE-TAX line total (expense_items amounts stay pre-tax). */
   amount: number;
+  /** The parent receipt's tax + subtotal, for proration. Null/absent
+   * when the purchase carries no tax data (manual entries). */
+  purchaseTax?: number | null;
+  purchaseSubtotal?: number | null;
 };
 
 export type InvoiceRow = {
@@ -106,23 +111,49 @@ export type InvoiceRow = {
 };
 
 /**
+ * The sales-tax proration factor for one item: the owner paid tax on the
+ * whole receipt, so each item's true cost is amount × (1 + tax/subtotal).
+ * Falls back to 1 (raw amount) when the purchase has no tax data —
+ * manual entries — or a zero/absent subtotal (guard: never divide by 0).
+ */
+export function taxFactor(
+  purchaseTax: number | null | undefined,
+  purchaseSubtotal: number | null | undefined,
+): number {
+  if (
+    purchaseTax == null ||
+    purchaseSubtotal == null ||
+    !(purchaseSubtotal > 0) ||
+    !(purchaseTax >= 0)
+  ) {
+    return 1;
+  }
+  return 1 + purchaseTax / purchaseSubtotal;
+}
+
+/**
  * job_extra items -> invoice rows AT COST (locked decision: no markup —
- * effort is billed via labor). Grouped under a clear label so the customer
- * sees these as additional materials, separate from the bid scope.
+ * effort is billed via labor), tax-inclusive: what the owner actually
+ * paid for the item including its prorated share of the receipt's sales
+ * tax. Grouped under a clear label so the customer sees these as
+ * additional materials, separate from the bid scope.
  */
 export function buildExtraInvoiceRows(items: ExtraItem[]): {
   rows: InvoiceRow[];
   addedTotal: number;
 } {
-  const rows = items.map((it) => ({
-    description: `Additional materials (at cost): ${it.description}`,
-    qtyLabel:
-      it.qty !== null && it.qty !== 1 && it.unit_price !== null
-        ? `${it.qty} × $${it.unit_price.toFixed(2)}`
-        : null,
-    amount: round2(it.amount),
-    extra_expense_id: it.id,
-  }));
+  const rows = items.map((it) => {
+    const factor = taxFactor(it.purchaseTax, it.purchaseSubtotal);
+    return {
+      description: `Additional materials (at cost, incl. sales tax): ${it.description}`,
+      qtyLabel:
+        it.qty !== null && it.qty !== 1 && it.unit_price !== null
+          ? `${it.qty} × $${round2(it.unit_price * factor).toFixed(2)}`
+          : null,
+      amount: round2(it.amount * factor),
+      extra_expense_id: it.id,
+    };
+  });
   return {
     rows,
     addedTotal: round2(rows.reduce((s, r) => s + r.amount, 0)),

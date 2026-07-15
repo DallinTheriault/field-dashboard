@@ -31,16 +31,18 @@ describe("summarizePnl (unified expenses)", () => {
   });
 });
 
-import { buildExtraInvoiceRows, withoutExtraRows } from "./expenses";
+import { buildExtraInvoiceRows, taxFactor, withoutExtraRows } from "./expenses";
 
 describe("job_extra -> invoice rows (at cost, no markup)", () => {
-  it("labels rows, carries exact amounts, computes the added total", () => {
+  it("labels rows, carries exact amounts (no tax data = raw), computes the added total", () => {
     const { rows, addedTotal } = buildExtraInvoiceRows([
       { id: 11, description: "Paint — 2 gal", qty: 2, unit_price: 38, amount: 76 },
       { id: 12, description: "Door lock", qty: 1, unit_price: 45.5, amount: 45.5 },
     ]);
     expect(rows).toHaveLength(2);
-    expect(rows[0].description).toBe("Additional materials (at cost): Paint — 2 gal");
+    expect(rows[0].description).toBe(
+      "Additional materials (at cost, incl. sales tax): Paint — 2 gal",
+    );
     expect(rows[0].qtyLabel).toBe("2 × $38.00");
     expect(rows[1].qtyLabel).toBeNull(); // qty 1 needs no label
     expect(rows[0].amount).toBe(76); // AT COST — never marked up
@@ -48,10 +50,32 @@ describe("job_extra -> invoice rows (at cost, no markup)", () => {
     expect(rows.every((r) => typeof r.extra_expense_id === "number")).toBe(true);
   });
 
+  it("prorates the receipt's sales tax onto each item (micro-fix 2)", () => {
+    // Receipt: subtotal 100, tax 7 -> factor 1.07.
+    const { rows, addedTotal } = buildExtraInvoiceRows([
+      { id: 21, description: "Paint", qty: 2, unit_price: 38, amount: 76, purchaseTax: 7, purchaseSubtotal: 100 },
+      { id: 22, description: "Lock", qty: 1, unit_price: 24, amount: 24, purchaseTax: 7, purchaseSubtotal: 100 },
+    ]);
+    expect(rows[0].amount).toBe(81.32); // 76 × 1.07
+    expect(rows[0].qtyLabel).toBe("2 × $40.66"); // unit prorated too
+    expect(rows[1].amount).toBe(25.68); // 24 × 1.07
+    expect(addedTotal).toBe(107.0);
+  });
+
+  it("taxFactor guards: zero/absent subtotal or missing tax -> raw amount", () => {
+    expect(taxFactor(7, 100)).toBeCloseTo(1.07, 10);
+    expect(taxFactor(null, 100)).toBe(1);
+    expect(taxFactor(7, null)).toBe(1);
+    expect(taxFactor(7, 0)).toBe(1); // zero-subtotal guard — never divide by 0
+    expect(taxFactor(undefined, undefined)).toBe(1);
+    expect(taxFactor(-1, 100)).toBe(1); // garbage tax never discounts
+    expect(taxFactor(0, 100)).toBe(1); // explicit zero tax = raw
+  });
+
   it("withoutExtraRows strips only injected rows (refresh = strip + re-add)", () => {
     const base = [
       { description: "Painting", qtyLabel: null, amount: 500 },
-      { description: "Additional materials (at cost): Paint", qtyLabel: null, amount: 76, extra_expense_id: 11 },
+      { description: "Additional materials (at cost, incl. sales tax): Paint", qtyLabel: null, amount: 76, extra_expense_id: 11 },
     ];
     const stripped = withoutExtraRows(base);
     expect(stripped).toHaveLength(1);

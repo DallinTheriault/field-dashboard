@@ -6,6 +6,7 @@ import { getCurrentUserRole } from "@/lib/permissions/current-role";
 import { canViewSettings } from "@/lib/permissions/roles";
 import { InvoiceStatusChip } from "../invoice-status";
 import { InvoiceActionsBar } from "./invoice-actions-bar";
+import { DraftLines } from "./draft-lines";
 import { getTenantTimezone } from "@/lib/dates";
 
 const usd = new Intl.NumberFormat("en-US", {
@@ -58,7 +59,10 @@ export default async function InvoiceDetailPage({
     description: string;
     qtyLabel: string | null;
     amount: number;
+    extra_expense_id?: number;
   }>;
+  // Drafts edit in place (micro-fix 2026-07-15); anything sent is frozen.
+  const editable = inv.status === "draft" && !inv.stripe_invoice_id;
 
   return (
     <div className="max-w-2xl mx-auto px-4 py-6 space-y-5">
@@ -116,6 +120,14 @@ export default async function InvoiceDetailPage({
       </div>
 
       <section className="panel">
+        {editable ? (
+          <DraftLines
+            invoiceId={inv.id}
+            rows={rows}
+            taxRatePct={Number(inv.tax_rate_pct ?? 0)}
+            dueTerms={inv.due_terms ?? "Due on receipt"}
+          />
+        ) : (
         <div className="px-4 py-3">
           <table className="w-full text-sm">
             <tbody>
@@ -162,6 +174,7 @@ export default async function InvoiceDetailPage({
             Terms: {inv.due_terms ?? "Due on receipt"}
           </div>
         </div>
+        )}
       </section>
 
       <InvoiceActionsBar

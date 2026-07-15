@@ -87,19 +87,27 @@ export async function createInvoiceFromEstimate(
   // labeled, added to the subtotal, and stamped with this invoice below.
   const { data: extraItems } = await supabase
     .from("expenses")
-    .select("id, description, qty, unit_price, amount")
+    .select("id, description, qty, unit_price, amount, purchases(tax, subtotal)")
     .eq("job_id", est.job_id)
     .eq("assignment", "job_extra")
     .is("invoiced_on", null)
     .order("id");
   const extras = buildExtraInvoiceRows(
-    (extraItems ?? []).map((it) => ({
-      id: it.id,
-      description: it.description,
-      qty: it.qty === null ? null : Number(it.qty),
-      unit_price: it.unit_price === null ? null : Number(it.unit_price),
-      amount: Number(it.amount),
-    })),
+    (extraItems ?? []).map((it) => {
+      const purchase = it.purchases as unknown as {
+        tax: number | string | null;
+        subtotal: number | string | null;
+      } | null;
+      return {
+        id: it.id,
+        description: it.description,
+        qty: it.qty === null ? null : Number(it.qty),
+        unit_price: it.unit_price === null ? null : Number(it.unit_price),
+        amount: Number(it.amount),
+        purchaseTax: purchase?.tax == null ? null : Number(purchase.tax),
+        purchaseSubtotal: purchase?.subtotal == null ? null : Number(purchase.subtotal),
+      };
+    }),
   );
 
   const allRows = [...rows, ...extras.rows];
@@ -181,19 +189,27 @@ export async function refreshInvoiceExtras(invoiceId: number): Promise<Result> {
 
   const { data: extraItems } = await supabase
     .from("expenses")
-    .select("id, description, qty, unit_price, amount")
+    .select("id, description, qty, unit_price, amount, purchases(tax, subtotal)")
     .eq("job_id", inv.job_id)
     .eq("assignment", "job_extra")
     .is("invoiced_on", null)
     .order("id");
   const extras = buildExtraInvoiceRows(
-    (extraItems ?? []).map((it) => ({
-      id: it.id,
-      description: it.description,
-      qty: it.qty === null ? null : Number(it.qty),
-      unit_price: it.unit_price === null ? null : Number(it.unit_price),
-      amount: Number(it.amount),
-    })),
+    (extraItems ?? []).map((it) => {
+      const purchase = it.purchases as unknown as {
+        tax: number | string | null;
+        subtotal: number | string | null;
+      } | null;
+      return {
+        id: it.id,
+        description: it.description,
+        qty: it.qty === null ? null : Number(it.qty),
+        unit_price: it.unit_price === null ? null : Number(it.unit_price),
+        amount: Number(it.amount),
+        purchaseTax: purchase?.tax == null ? null : Number(purchase.tax),
+        purchaseSubtotal: purchase?.subtotal == null ? null : Number(purchase.subtotal),
+      };
+    }),
   );
 
   const baseRows = withoutExtraRows((inv.line_items ?? []) as InvoiceRow[]);
@@ -395,5 +411,76 @@ export async function deleteInvoice(invoiceId: number): Promise<Result> {
   const { error } = await supabase.from("invoices").delete().eq("id", invoiceId);
   if (error) return { ok: false, error: error.message };
   revalidatePath("/app/estimator/invoices");
+  return { ok: true };
+}
+
+/**
+ * Edit a DRAFT invoice's line amounts in place / add explicit adjustment
+ * lines (micro-fix 2026-07-15). No auto-generated "price adjustment"
+ * rows — what the user typed is what the invoice says. Totals recompute
+ * from the lines at the invoice's tax rate. Finalized invoices stay
+ * immutable (ruling Q1c).
+ */
+export async function updateDraftInvoiceLines(
+  invoiceId: number,
+  lines: Array<{
+    description: string;
+    qtyLabel?: string | null;
+    amount: number;
+    extra_expense_id?: number;
+  }>,
+): Promise<Result> {
+  const auth = await requireWriter();
+  if (!auth.ok) return { ok: false, error: auth.error };
+  const { supabase } = auth;
+
+  const { data: inv } = await supabase
+    .from("invoices")
+    .select("id, status, stripe_invoice_id, tax_rate_pct")
+    .eq("id", invoiceId)
+    .maybeSingle();
+  if (!inv) return { ok: false, error: "Invoice not found." };
+  if (inv.status !== "draft" || inv.stripe_invoice_id) {
+    return { ok: false, error: "Only draft invoices can be edited — this one is final." };
+  }
+
+  if (!Array.isArray(lines) || lines.length === 0) {
+    return { ok: false, error: "An invoice needs at least one line." };
+  }
+  const clean: InvoiceRow[] = [];
+  for (const l of lines) {
+    const description = (l.description ?? "").trim();
+    const amount = Number(l.amount);
+    if (!description) return { ok: false, error: "Every line needs a description." };
+    if (!Number.isFinite(amount)) {
+      return { ok: false, error: `"${description}": amount must be a number.` };
+    }
+    clean.push({
+      description,
+      qtyLabel: l.qtyLabel ? String(l.qtyLabel) : null,
+      amount: Math.round(amount * 100) / 100,
+      ...(Number.isInteger(l.extra_expense_id)
+        ? { extra_expense_id: Number(l.extra_expense_id) }
+        : {}),
+    });
+  }
+
+  const subtotalCents = Math.round(clean.reduce((s, r) => s + r.amount, 0) * 100);
+  const taxRatePct = Number(inv.tax_rate_pct ?? 0);
+  const taxCents = Math.round((subtotalCents * taxRatePct) / 100);
+
+  const { error } = await supabase
+    .from("invoices")
+    .update({
+      line_items: clean,
+      subtotal_cents: subtotalCents,
+      tax_cents: taxCents,
+      total_cents: subtotalCents + taxCents,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", invoiceId);
+  if (error) return { ok: false, error: error.message };
+
+  revalidatePath(`/app/estimator/invoices/${invoiceId}`);
   return { ok: true };
 }
