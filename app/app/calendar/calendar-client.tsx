@@ -43,6 +43,7 @@ type Cell = { key: string; dayNum: number; inMonth: boolean };
 const STATUS_BG: Record<string, string> = {
   lead: "bg-status-lead/20 text-status-lead border-status-lead/30",
   estimated: "bg-status-estimated/20 text-status-estimated border-status-estimated/30",
+  accepted: "bg-status-completed/20 text-status-completed border-status-completed/30",
   scheduled: "bg-status-scheduled/20 text-status-scheduled border-status-scheduled/30",
   in_progress: "bg-status-progress/20 text-status-progress border-status-progress/30",
   completed: "bg-status-completed/20 text-status-completed border-status-completed/30",
