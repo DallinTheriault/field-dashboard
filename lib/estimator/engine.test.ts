@@ -190,6 +190,52 @@ describe("minimum charge & rounding", () => {
   });
 });
 
+describe("rounding modes (none / $1 / $5)", () => {
+  // 3.62 hr = $362 cost → raw 603.333… → cents 603.33
+  const input = {
+    lines: [{ type: "TASK" as const, qty: 1, flatLaborHours: 3.62, materials: [] }],
+    travelFee: 0,
+  };
+
+  it("mode none (0): exact to the cent, no round-up", () => {
+    const r = priceJob(input, { ...S, roundingIncrement: 0 });
+    expect(r.price).toBe(603.33);
+    const { rows, total } = allocateClientRows(r);
+    expect(total).toBe(603.33);
+    // Rows sum EXACTLY to the exact price — no redistribution drift.
+    expect(rows.reduce((s, x) => s + x.amount, 0)).toBeCloseTo(603.33, 9);
+  });
+
+  it("mode $1: rounds up to the next dollar", () => {
+    const r = priceJob(input, { ...S, roundingIncrement: 1 });
+    expect(r.price).toBe(604);
+  });
+
+  it("mode $5: unchanged legacy behavior", () => {
+    const r = priceJob(input, { ...S, roundingIncrement: 5 });
+    expect(r.price).toBe(605);
+  });
+
+  it("exact $5-boundary sum: all modes agree", () => {
+    // 9 hr = $900 cost → raw 1500.00 exactly (900 / 0.6)
+    const boundary = {
+      lines: [{ type: "TASK" as const, qty: 1, flatLaborHours: 9, materials: [] }],
+      travelFee: 0,
+    };
+    expect(priceJob(boundary, { ...S, roundingIncrement: 0 }).price).toBe(1500);
+    expect(priceJob(boundary, { ...S, roundingIncrement: 1 }).price).toBe(1500);
+    expect(priceJob(boundary, { ...S, roundingIncrement: 5 }).price).toBe(1500);
+  });
+
+  it("mode none: internals identical to mode $5 (rounding is client-total-only)", () => {
+    const none = priceJob(input, { ...S, roundingIncrement: 0 });
+    const five = priceJob(input, { ...S, roundingIncrement: 5 });
+    expect(none.jobCost).toBe(five.jobCost);
+    expect(none.laborCost).toBe(five.laborCost);
+    expect(none.rawPrice).toBe(five.rawPrice);
+  });
+});
+
 describe("determinism (the whole point)", () => {
   it("same inputs → same price, every time", () => {
     const input = {

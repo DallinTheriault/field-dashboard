@@ -260,7 +260,13 @@ export function priceJob(
   const rawPrice = round2(marginedBase / (1 - margin) + hardwarePassThroughCost);
 
   const afterMin = Math.max(rawPrice, settings.minimumJobCharge);
-  const price = round2(roundUpTo(afterMin, settings.roundingIncrement || 1));
+  // Increment 0 = "none": exact to the cent (estimates drive real invoices).
+  // Positive increments keep the long-standing round-UP behavior.
+  const price = round2(
+    settings.roundingIncrement > 0
+      ? roundUpTo(afterMin, settings.roundingIncrement)
+      : afterMin,
+  );
 
   return {
     lines,

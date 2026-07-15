@@ -253,15 +253,21 @@ export function PricingSection({ clientId }: { clientId: number }) {
           />
         </label>
         <label className="field-group">
-          <span className="field-label">Round price up to nearest</span>
-          <input
-            inputMode="decimal"
-            value={form.rounding_increment || ""}
+          <span className="field-label">Round customer total</span>
+          {/* Existing behavior rounds UP to the increment (never down), so
+              the labels say so — "nearest" would misdescribe the math.
+              0 = exact: the total invoices to the cent. */}
+          <select
+            value={form.rounding_increment}
             onChange={(e) =>
-              setForm({ ...form, rounding_increment: num(e.target.value) || 1 })
+              setForm({ ...form, rounding_increment: Number(e.target.value) })
             }
             className="w-full"
-          />
+          >
+            <option value={0}>Nothing — exact to the cent</option>
+            <option value={1}>Up to the next $1</option>
+            <option value={5}>Up to the next $5</option>
+          </select>
         </label>
       </div>
 
