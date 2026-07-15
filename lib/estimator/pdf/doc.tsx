@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import {
   Document,
   Image,
@@ -45,11 +46,14 @@ const INK = "#111111";
 const MUTED = "#666666";
 const RULE = "#dddddd";
 
+// Spacing is deliberately tight (micro-fix 2026-07-15): a ~20-line
+// invoice must fit one LETTER page. Loosen with care — verify against
+// the pagination tests in pdf.test.tsx.
 const s = StyleSheet.create({
   page: {
-    paddingTop: 42,
+    paddingTop: 36,
     paddingHorizontal: 46,
-    paddingBottom: 64,
+    paddingBottom: 54,
     fontSize: 10,
     fontFamily: "Helvetica",
     color: INK,
@@ -58,33 +62,33 @@ const s = StyleSheet.create({
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "flex-start",
-    marginBottom: 6,
+    marginBottom: 4,
   },
   logo: { maxWidth: 200, maxHeight: 44, objectFit: "contain" },
   entityName: { fontSize: 14, fontFamily: "Helvetica-Bold" },
-  entityBlock: { textAlign: "right", color: MUTED, lineHeight: 1.35 },
+  entityBlock: { textAlign: "right", color: MUTED, lineHeight: 1.3 },
   docTitleRow: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "flex-end",
-    marginBottom: 16,
+    marginBottom: 10,
   },
   docTitle: { fontSize: 22, fontFamily: "Helvetica-Bold", letterSpacing: 1 },
-  metaBlock: { textAlign: "right", color: MUTED, lineHeight: 1.4 },
+  metaBlock: { textAlign: "right", color: MUTED, lineHeight: 1.35 },
   metaStrong: { color: INK, fontFamily: "Helvetica-Bold" },
-  section: { marginBottom: 14 },
+  section: { marginBottom: 10 },
   sectionLabel: {
     fontSize: 8,
     color: MUTED,
     textTransform: "uppercase",
     letterSpacing: 1,
-    marginBottom: 3,
+    marginBottom: 2,
   },
   tableHead: {
     flexDirection: "row",
     borderBottomWidth: 1,
     borderBottomColor: INK,
-    paddingBottom: 4,
+    paddingBottom: 3,
     marginBottom: 2,
   },
   th: { fontSize: 8, fontFamily: "Helvetica-Bold", textTransform: "uppercase", letterSpacing: 0.8 },
@@ -92,7 +96,7 @@ const s = StyleSheet.create({
     flexDirection: "row",
     borderBottomWidth: 0.5,
     borderBottomColor: RULE,
-    paddingVertical: 6,
+    paddingVertical: 3.5,
   },
   colDesc: { flex: 1, paddingRight: 8 },
   colQty: { width: 70, color: MUTED },
@@ -100,15 +104,15 @@ const s = StyleSheet.create({
   totalRow: {
     flexDirection: "row",
     justifyContent: "flex-end",
-    paddingTop: 8,
+    paddingTop: 4,
     alignItems: "center",
   },
   totalLabel: { color: MUTED, marginRight: 14 },
   totalValue: { fontSize: 14, fontFamily: "Helvetica-Bold", width: 80, textAlign: "right" },
   grandTotal: { fontSize: 16, fontFamily: "Helvetica-Bold" },
   payBox: {
-    marginTop: 18,
-    padding: 10,
+    marginTop: 10,
+    padding: 8,
     borderWidth: 0.5,
     borderColor: RULE,
     borderRadius: 4,
@@ -153,7 +157,7 @@ function Letterhead({ entity }: { entity: PdfEntity }) {
           {entity.email ? <Text>{entity.email}</Text> : null}
         </View>
       </View>
-      <View style={{ height: 2.5, backgroundColor: accentOf(entity), marginTop: 10, marginBottom: 18 }} />
+      <View style={{ height: 2.5, backgroundColor: accentOf(entity), marginTop: 8, marginBottom: 12 }} />
     </>
   );
 }
@@ -170,7 +174,25 @@ function ClientBlock({ client, label }: { client: PdfClient; label: string }) {
   );
 }
 
-function RowsTable({ rows }: { rows: PdfRow[] }) {
+function Row({ r }: { r: PdfRow }) {
+  return (
+    <View style={s.tr} wrap={false}>
+      <Text style={s.colDesc}>{r.description}</Text>
+      <Text style={s.colQty}>{r.qtyLabel ?? ""}</Text>
+      <Text style={s.colAmt}>{usd(r.amount)}</Text>
+    </View>
+  );
+}
+
+/**
+ * Line-item table with the totals passed as `tail`. The LAST row and the
+ * tail render inside one wrap={false} group, so the totals section can
+ * never orphan onto its own page — on a page break, the final row travels
+ * with them and the total stays anchored beneath the last line items.
+ */
+function RowsTable({ rows, tail }: { rows: PdfRow[]; tail: ReactNode }) {
+  const head = rows.slice(0, -1);
+  const last = rows.length > 0 ? rows[rows.length - 1] : null;
   return (
     <View style={s.section}>
       <View style={s.tableHead}>
@@ -178,13 +200,17 @@ function RowsTable({ rows }: { rows: PdfRow[] }) {
         <Text style={[s.th, s.colQty]}>Qty</Text>
         <Text style={[s.th, s.colAmt]}>Amount</Text>
       </View>
-      {rows.map((r, i) => (
-        <View key={i} style={s.tr} wrap={false}>
-          <Text style={s.colDesc}>{r.description}</Text>
-          <Text style={s.colQty}>{r.qtyLabel ?? ""}</Text>
-          <Text style={s.colAmt}>{usd(r.amount)}</Text>
-        </View>
+      {head.map((r, i) => (
+        <Row key={i} r={r} />
       ))}
+      {last ? (
+        <View wrap={false}>
+          <Row r={last} />
+          {tail}
+        </View>
+      ) : (
+        tail
+      )}
     </View>
   );
 }
@@ -227,13 +253,17 @@ export function EstimatePdf(p: EstimatePdfProps) {
           <Text style={s.sectionLabel}>Project</Text>
           <Text style={{ fontFamily: "Helvetica-Bold" }}>{p.jobTitle}</Text>
         </View>
-        <RowsTable rows={p.rows} />
-        <View style={s.totalRow}>
-          <Text style={s.totalLabel}>Estimate total</Text>
-          <Text style={[s.totalValue, s.grandTotal, { color: accentOf(p.entity) }]}>
-            {usd(p.total)}
-          </Text>
-        </View>
+        <RowsTable
+          rows={p.rows}
+          tail={
+            <View style={s.totalRow}>
+              <Text style={s.totalLabel}>Estimate total</Text>
+              <Text style={[s.totalValue, s.grandTotal, { color: accentOf(p.entity) }]}>
+                {usd(p.total)}
+              </Text>
+            </View>
+          }
+        />
         <Footer entity={p.entity} />
       </Page>
     </Document>
@@ -271,27 +301,33 @@ export function InvoicePdf(p: InvoicePdfProps) {
           </View>
         </View>
         <ClientBlock client={p.client} label="Bill to" />
-        <RowsTable rows={p.rows} />
-        {p.taxAmount > 0 ? (
-          <>
-            <View style={s.totalRow}>
-              <Text style={s.totalLabel}>Subtotal</Text>
-              <Text style={s.totalValue}>{usd(p.subtotal)}</Text>
-            </View>
-            <View style={s.totalRow}>
-              <Text style={s.totalLabel}>Tax ({p.taxRatePct}%)</Text>
-              <Text style={s.totalValue}>{usd(p.taxAmount)}</Text>
-            </View>
-          </>
-        ) : null}
-        <View style={s.totalRow}>
-          <Text style={s.totalLabel}>Total due</Text>
-          <Text style={[s.totalValue, s.grandTotal, { color: accentOf(p.entity) }]}>
-            {usd(p.total)}
-          </Text>
-        </View>
+        <RowsTable
+          rows={p.rows}
+          tail={
+            <>
+              {p.taxAmount > 0 ? (
+                <>
+                  <View style={s.totalRow}>
+                    <Text style={s.totalLabel}>Subtotal</Text>
+                    <Text style={s.totalValue}>{usd(p.subtotal)}</Text>
+                  </View>
+                  <View style={s.totalRow}>
+                    <Text style={s.totalLabel}>Tax ({p.taxRatePct}%)</Text>
+                    <Text style={s.totalValue}>{usd(p.taxAmount)}</Text>
+                  </View>
+                </>
+              ) : null}
+              <View style={s.totalRow}>
+                <Text style={s.totalLabel}>Total due</Text>
+                <Text style={[s.totalValue, s.grandTotal, { color: accentOf(p.entity) }]}>
+                  {usd(p.total)}
+                </Text>
+              </View>
+            </>
+          }
+        />
         {p.entity.paymentInstructions || p.payUrl ? (
-          <View style={s.payBox}>
+          <View style={s.payBox} wrap={false}>
             <Text style={s.sectionLabel}>Payment</Text>
             {p.payUrl ? (
               <Text>
