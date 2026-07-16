@@ -1,5 +1,4 @@
-import { cache } from "react";
-import { createClient } from "@/lib/supabase/server";
+import { getTenantContext } from "@/lib/supabase/request-cache";
 
 /**
  * Tenant-timezone date rendering for SERVER components.
@@ -14,11 +13,11 @@ import { createClient } from "@/lib/supabase/server";
  * is the right one there.
  */
 
-export const getTenantTimezone = cache(async (): Promise<string> => {
-  const supabase = await createClient();
-  const { data } = await supabase.from("Clients").select("timezone").limit(1);
-  return data?.[0]?.timezone || "America/Denver";
-});
+export async function getTenantTimezone(): Promise<string> {
+  // Rides the per-request tenant-context fetch — no dedicated round-trip.
+  const ctx = await getTenantContext();
+  return ctx?.timezone || "America/Denver";
+}
 
 type DateInput = string | number | Date;
 

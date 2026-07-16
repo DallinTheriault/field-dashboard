@@ -30,6 +30,7 @@ import { getTeamMembers } from "@/lib/team/members";
 import { getActivityTimeline } from "@/lib/timeline/fetch";
 import { getJobTags, listTagsForClient } from "@/lib/tags/server";
 import { getTenantTimezone } from "@/lib/dates";
+import { getTenantFeatureFlags } from "@/lib/features/flags";
 
 function fmtDate(d: string | null, tz: string): string {
   if (!d) return "—";
@@ -65,68 +66,77 @@ export default async function JobDetailPage({
 }: {
   params: Promise<{ id: string }>;
 }) {
-  const tz = await getTenantTimezone();
   const supabase = await createClient();
   const { id } = await params;
 
-  const { data: job } = await supabase
-    .from("jobs")
-    .select("*")
-    .eq("id", id)
-    .maybeSingle();
+  // Batch 1 — everything that doesn't need the job row. tz + flags share
+  // the layout's tenant-context fetch; role shares the layout's auth.
+  // This page's queries used to run as a 9-deep serial chain (~0.4-0.9s
+  // of document render); the same reads now resolve in three waves.
+  const [tz, flags, session, { data: job }] = await Promise.all([
+    getTenantTimezone(),
+    getTenantFeatureFlags(),
+    getCurrentUserRole(),
+    supabase.from("jobs").select("*").eq("id", id).maybeSingle(),
+  ]);
 
   if (!job) notFound();
 
-  const [teamMembers, events, jobTags, allTags] = await Promise.all([
+  // Estimator integration — only when the tenant's flag is on. The actuals
+  // card exposes hours (pricing internals), so it's owner/manager-only.
+  const estimatorOn = flags.estimator;
+  const canSeeInternals = session ? canViewSettings(session.role) : false;
+
+  // Batch 2 — every read keyed off the job row, in one wave. Tasks are the
+  // scoping list + punch list: visible to every member; edits are
+  // owner/manager (RLS enforces; the UI hides controls for read-only
+  // roles). Uninvoiced extras are the actual money leak (architect Q1
+  // refinement): materials bought as "extra" that never made it onto an
+  // invoice.
+  const [
+    teamMembers,
+    events,
+    jobTags,
+    allTags,
+    { data: jobEstimates },
+    { data: looseExtras },
+    { data: taskRows },
+  ] = await Promise.all([
     getTeamMembers(job.client_id),
     getActivityTimeline("job", Number(job.id)),
     getJobTags(Number(job.id)),
     listTagsForClient(job.client_id),
+    estimatorOn
+      ? supabase
+          .from("estimates")
+          .select(
+            "id, version, status, computed_price, manual_override_price, estimated_at",
+          )
+          .eq("job_id", job.id)
+          .order("version", { ascending: false })
+      : Promise.resolve({ data: null }),
+    estimatorOn
+      ? supabase
+          .from("expenses")
+          .select("id")
+          .eq("job_id", job.id)
+          .eq("assignment", "job_extra")
+          .is("invoiced_on", null)
+      : Promise.resolve({ data: null }),
+    supabase
+      .from("tasks")
+      .select("id, title, note, status, sort_order, task_photos(id, caption)")
+      .eq("job_id", job.id)
+      .order("sort_order")
+      .order("id"),
   ]);
 
   const assignedMember = job.assigned_user_id
     ? teamMembers.find((m) => m.user_id === job.assigned_user_id) ?? null
     : null;
 
-  // Estimator integration — only when the tenant's flag is on. The actuals
-  // card exposes hours (pricing internals), so it's owner/manager-only.
-  const { data: flagRow } = await supabase
-    .from("Clients")
-    .select("feature_estimator_enabled")
-    .limit(1);
-  const estimatorOn = flagRow?.[0]?.feature_estimator_enabled ?? false;
-  const session = await getCurrentUserRole();
-  const canSeeInternals = session ? canViewSettings(session.role) : false;
-  const { data: jobEstimates } = estimatorOn
-    ? await supabase
-        .from("estimates")
-        .select(
-          "id, version, status, computed_price, manual_override_price, estimated_at",
-        )
-        .eq("job_id", job.id)
-        .order("version", { ascending: false })
-    : { data: null };
-
-  // Uninvoiced extras — the actual money leak (architect Q1 refinement):
-  // materials bought as "extra" that never made it onto an invoice.
-  const { data: looseExtras } = estimatorOn
-    ? await supabase
-        .from("expenses")
-        .select("id")
-        .eq("job_id", job.id)
-        .eq("assignment", "job_extra")
-        .is("invoiced_on", null)
-    : { data: null };
   const uninvoicedExtras = (looseExtras ?? []).length;
 
-  // Tasks — scoping list + punch list. Visible to every member; edits are
-  // owner/manager (RLS enforces; the UI hides controls for read-only roles).
-  const { data: taskRows } = await supabase
-    .from("tasks")
-    .select("id, title, note, status, sort_order, task_photos(id, caption)")
-    .eq("job_id", job.id)
-    .order("sort_order")
-    .order("id");
   const taskIds = (taskRows ?? []).map((t) => t.id);
   const { data: linkRows } = taskIds.length
     ? await supabase

@@ -8,6 +8,7 @@ import { AddJobButton } from "./_components/add-job-button";
 import { getTagsByJobIds, listTagsForClient } from "@/lib/tags/server";
 import { Download } from "lucide-react";
 import { getTenantTimezone } from "@/lib/dates";
+import { getCurrentUserRole } from "@/lib/permissions/current-role";
 
 function fmtDate(d: string | null, tz: string): string {
   if (!d) return "—";
@@ -35,19 +36,16 @@ export default async function JobsPage({
 }: {
   searchParams: Promise<{ status?: string; tag?: string }>;
 }) {
-  const tz = await getTenantTimezone();
   const supabase = await createClient();
   const { status, tag: tagIdParam } = await searchParams;
 
-  // Identify tenant for tag list
-  const { data: { user } } = await supabase.auth.getUser();
-  const { data: clientUser } = await supabase
-    .from("client_users")
-    .select("client_id")
-    .eq("auth_user_id", user?.id ?? "")
-    .limit(1)
-    .maybeSingle();
-  const clientId = (clientUser as { client_id?: number } | null)?.client_id ?? null;
+  // Identify tenant for tag list — the request-cached role lookup shares
+  // its auth + membership round-trips with the layout and other pages.
+  const [tz, session] = await Promise.all([
+    getTenantTimezone(),
+    getCurrentUserRole(),
+  ]);
+  const clientId = session?.clientId ?? null;
 
   let baseQuery = supabase
     .from("jobs")
@@ -86,9 +84,11 @@ export default async function JobsPage({
   const { data: jobs } = await baseQuery;
   const rows = jobs ?? [];
 
-  // Bulk-fetch tags for visible jobs in one round-trip
-  const tagsByJob = await getTagsByJobIds(rows.map((j) => j.id));
-  const allTags = clientId ? await listTagsForClient(clientId) : [];
+  // Bulk-fetch tags for visible jobs + the tag-filter list in one wave
+  const [tagsByJob, allTags] = await Promise.all([
+    getTagsByJobIds(rows.map((j) => j.id)),
+    clientId ? listTagsForClient(clientId) : Promise.resolve([]),
+  ]);
 
   return (
     <div>

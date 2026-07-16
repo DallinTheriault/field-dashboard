@@ -1,5 +1,4 @@
-import { cache } from "react";
-import { createClient } from "@/lib/supabase/server";
+import { getTenantContext } from "@/lib/supabase/request-cache";
 
 export type TenantFeatureFlags = {
   voice: boolean;
@@ -19,15 +18,9 @@ export type TenantFeatureFlags = {
  * Returns sensible defaults if no client found (shouldn't happen for signed-in
  * users in practice, but the layout already handles that case).
  */
-export const getTenantFeatureFlags = cache(async (): Promise<TenantFeatureFlags> => {
-  const supabase = await createClient();
-  const { data: clients } = await supabase
-    .from("Clients")
-    .select(
-      "feature_sms_enabled, feature_voice_enabled, feature_calendar_enabled, feature_billing_enabled, feature_estimator_enabled, feature_receipt_ai_enabled",
-    )
-    .limit(1);
-  const c = clients?.[0];
+export async function getTenantFeatureFlags(): Promise<TenantFeatureFlags> {
+  // Rides the per-request tenant-context fetch — no dedicated round-trip.
+  const c = await getTenantContext();
   return {
     voice: c?.feature_voice_enabled ?? true,
     sms: c?.feature_sms_enabled ?? true,
@@ -36,4 +29,4 @@ export const getTenantFeatureFlags = cache(async (): Promise<TenantFeatureFlags>
     estimator: c?.feature_estimator_enabled ?? false,
     receiptAi: c?.feature_receipt_ai_enabled ?? false,
   };
-});
+}

@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import { getAuthUser } from "@/lib/supabase/request-cache";
+import { getAuthUser, getTenantContext } from "@/lib/supabase/request-cache";
 import { Sidebar } from "@/components/shell/sidebar";
 import { Topbar } from "@/components/shell/topbar";
 import { MobileNav } from "@/components/shell/mobile-nav";
@@ -19,23 +19,17 @@ export default async function AppLayout({
   const user = await getAuthUser();
   if (!user) redirect("/login");
 
-  // Parallel fetch — Clients + subscriptions independently. Saves ~80-150ms
-  // on every page load vs. sequential.
-  const [{ data: clients }, { data: sub }] = await Promise.all([
-    supabase
-      .from("Clients")
-      .select(
-        "id, business_name, business_short_name, is_active, brand_logo_url, brand_primary_color, feature_sms_enabled, feature_voice_enabled, feature_calendar_enabled, feature_billing_enabled, feature_estimator_enabled",
-      )
-      .order("id")
-      .limit(1),
+  // Parallel fetch — tenant context + subscriptions independently. The
+  // context is the request-shared Clients row (branding, timezone, flags),
+  // so pages calling getTenantTimezone()/getTenantFeatureFlags() reuse
+  // this same round-trip instead of re-querying Clients.
+  const [client, { data: sub }] = await Promise.all([
+    getTenantContext(),
     // We don't yet know client.id, but subscriptions is RLS-scoped so this
     // returns the caller's tenant subscription regardless. Wait — RLS uses
     // client_id IN (SELECT current_user_client_ids()), so this works.
     supabase.from("subscriptions").select("status, client_id").limit(1),
   ]);
-
-  const client = clients?.[0];
 
   if (!client) {
     return (
