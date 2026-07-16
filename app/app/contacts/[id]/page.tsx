@@ -348,6 +348,7 @@ function JobsTab({
         <li key={j.id} className="relative">
           <Link
             href={`/app/jobs/${j.id}`}
+            prefetch={false}
             className="block px-4 py-3 hover:bg-ink-2 transition-colors"
           >
             <div className="flex items-baseline justify-between gap-3">

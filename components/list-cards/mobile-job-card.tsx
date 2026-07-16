@@ -41,6 +41,11 @@ export function MobileJobCard({
   return (
     <Link
       href={`/app/jobs/${job.id}`}
+      // Job detail is the most expensive render in the app; letting every
+      // visible row prefetch it saturates mobile bandwidth right when the
+      // user taps (perf re-plan step 2). The tap itself now shows an
+      // instant skeleton instead.
+      prefetch={false}
       className="block px-4 py-3 hover:bg-ink-2 active:bg-ink-2 transition-colors"
     >
       <div className="flex items-center justify-between gap-3 mb-1.5">

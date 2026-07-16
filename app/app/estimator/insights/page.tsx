@@ -158,6 +158,7 @@ export default async function InsightsPage() {
                     <td className="py-2 pr-2">
                       <Link
                         href={`/app/jobs/${v.jobId}`}
+                        prefetch={false}
                         className="text-bone-100 hover:text-field-400 truncate"
                       >
                         {v.jobName}

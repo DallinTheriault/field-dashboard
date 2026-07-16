@@ -253,6 +253,7 @@ export default async function OverviewPage() {
                   <li key={u.id}>
                     <Link
                       href={`/app/jobs/${u.id}`}
+                      prefetch={false}
                       className="block px-4 py-3 hover:bg-ink-2 transition-colors"
                     >
                       <div className="flex items-baseline justify-between gap-2">
@@ -300,6 +301,7 @@ export default async function OverviewPage() {
                   <li key={l.id}>
                     <Link
                       href={`/app/jobs/${l.id}`}
+                      prefetch={false}
                       className="block px-4 py-3 hover:bg-ink-2 transition-colors"
                     >
                       <div className="flex items-baseline justify-between gap-2">
