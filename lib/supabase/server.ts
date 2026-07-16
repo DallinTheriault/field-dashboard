@@ -1,5 +1,6 @@
 import { createServerClient, type CookieOptions } from '@supabase/ssr';
 import { cookies } from 'next/headers';
+import { tracedFetch } from './perf-trace';
 
 /**
  * Supabase client for server components, route handlers, and server actions.
@@ -13,6 +14,7 @@ export async function createClient() {
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     {
+      global: tracedFetch() ? { fetch: tracedFetch() } : undefined,
       cookies: {
         getAll() {
           return cookieStore.getAll();

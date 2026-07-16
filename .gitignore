@@ -18,3 +18,9 @@ docs/task-brief-template.md
 # numbers and a customer address; they stay local (tests still run locally).
 docs/ESTIMATOR_INTEGRATION_KICKOFF.md
 lib/estimator/golden-riverton.test.ts
+
+# Perf investigation — report carries tenant/business numbers; scripts touch
+# the smoke user via service role. Local-only; the committed PERF_TRACE tracer
+# (lib/supabase/perf-trace.ts) is the standing instrumentation they drive.
+PERF_PHASE0_REPORT.md
+scripts/perf-investigation/

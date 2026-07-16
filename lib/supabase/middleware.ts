@@ -1,5 +1,6 @@
 import { createServerClient, type CookieOptions } from '@supabase/ssr';
 import { NextResponse, type NextRequest } from 'next/server';
+import { tracedFetch } from './perf-trace';
 
 /**
  * Refreshes the user's session cookie on every request and guards protected routes.
@@ -12,6 +13,7 @@ export async function updateSession(request: NextRequest) {
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     {
+      global: tracedFetch() ? { fetch: tracedFetch() } : undefined,
       cookies: {
         getAll() {
           return request.cookies.getAll();

@@ -1,4 +1,5 @@
 import { createClient } from "@supabase/supabase-js";
+import { tracedFetch } from "./perf-trace";
 
 /**
  * Admin Supabase client using the service-role key.
@@ -22,5 +23,6 @@ export function createAdminClient() {
 
   return createClient(url, key, {
     auth: { persistSession: false, autoRefreshToken: false },
+    global: tracedFetch() ? { fetch: tracedFetch() } : undefined,
   });
 }
