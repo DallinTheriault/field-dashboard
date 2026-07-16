@@ -1,6 +1,8 @@
 -- v087: fix dormant infinite-recursion in client_users write policies.
--- STATUS: NOT YET APPLIED TO PROD — awaiting architect/Dallin sign-off
--- (agent-devised fix, outside the Phase 3 spec's named scope).
+-- STATUS: architect-approved and APPLIED to prod 2026-07-16. Verified:
+-- definer fns pin search_path, RLS probe suite 17/17 (incl. cross-tenant
+-- client_users writes), last-owner-guard edge tested (sole-owner delete
+-- blocked / one-of-two allowed), advisors unchanged at zero warnings.
 --
 -- Found by the v086 RLS probe suite (PERF_SPEC Phase 3): the INSERT/UPDATE/
 -- DELETE policies on client_users referenced client_users directly in a
