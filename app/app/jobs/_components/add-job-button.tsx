@@ -2,8 +2,14 @@
 
 import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
-import { Plus, X, Loader2, AlertCircle } from "lucide-react";
-import { createJobManual } from "./actions";
+import { Plus, X, Loader2, AlertCircle, ChevronDown, Home } from "lucide-react";
+import {
+  createJob,
+  getContactProperties,
+  type ContactHit,
+  type PropertyHit,
+} from "./actions";
+import { ContactCombobox } from "./contact-combobox";
 
 const STATUSES = [
   { value: "lead", label: "Lead" },
@@ -17,44 +23,71 @@ const STATUSES = [
 ] as const;
 
 /**
- * Format a phone number as the user types. Strips non-digits and renders
- * the canonical US display form. Caps at 10 digits (US local) — leading
- * "1" is dropped if the user pastes E.164 with country code.
- *
- *   "" → ""
- *   "8" → "(8"
- *   "801" → "(801)"
- *   "8015551" → "(801) 555-1"
- *   "8015551234" → "(801) 555-1234"
- *   "+18015551234" → "(801) 555-1234"
+ * Format a phone number as the user types. Strips non-digits, caps at 10.
  */
 function formatPhoneAsTyped(input: string): string {
   let digits = input.replace(/\D/g, "");
-  if (digits.length === 11 && digits.startsWith("1")) {
-    digits = digits.slice(1);
-  }
-  digits = digits.slice(0, 10); // hard cap
-
+  if (digits.length === 11 && digits.startsWith("1")) digits = digits.slice(1);
+  digits = digits.slice(0, 10);
   if (digits.length === 0) return "";
   if (digits.length <= 3) return `(${digits}`;
   if (digits.length <= 6) return `(${digits.slice(0, 3)}) ${digits.slice(3)}`;
   return `(${digits.slice(0, 3)}) ${digits.slice(3, 6)}-${digits.slice(6)}`;
 }
 
+function propLabel(p: PropertyHit): string {
+  const parts = [p.address];
+  if (p.unit) parts.push(`Unit ${p.unit}`);
+  const main = parts.join(", ");
+  return p.label ? `${main} · ${p.label}` : main;
+}
+
+const NEW_PROPERTY = "__new__";
+
 export function AddJobButton() {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [name, setName] = useState("");
+
+  // Contact: combobox. selectedContact === null => manual "create new" path,
+  // where contactQuery is the new contact's name (no extra field/keystrokes).
+  const [selectedContact, setSelectedContact] = useState<ContactHit | null>(null);
+  const [contactQuery, setContactQuery] = useState("");
+
+  // Manual path (no contact selected)
   const [phone, setPhone] = useState("");
   const [address, setAddress] = useState("");
+
+  // Existing-contact path
+  const [properties, setProperties] = useState<PropertyHit[]>([]);
+  const [propsLoading, setPropsLoading] = useState(false);
+  const [propertyId, setPropertyId] = useState<string>(NEW_PROPERTY);
+  const [newAddress, setNewAddress] = useState("");
+  const [unit, setUnit] = useState("");
+
+  // Bill-to (collapsed)
+  const [billToOpen, setBillToOpen] = useState(false);
+  const [billTo, setBillTo] = useState<ContactHit | null>(null);
+
   const [status, setStatus] = useState<string>("lead");
-
   const dialogRef = useRef<HTMLDivElement>(null);
-  const firstInputRef = useRef<HTMLInputElement>(null);
 
-  // Esc to close
+  // Load the picked contact's properties for the selector
+  useEffect(() => {
+    if (!selectedContact) {
+      setProperties([]);
+      return;
+    }
+    setPropsLoading(true);
+    getContactProperties(selectedContact.id).then((ps) => {
+      setProperties(ps);
+      // Default to the first saved property, else the "new property" row.
+      setPropertyId(ps.length > 0 ? String(ps[0].id) : NEW_PROPERTY);
+      setPropsLoading(false);
+    });
+  }, [selectedContact]);
+
   useEffect(() => {
     if (!open) return;
     function handler(e: KeyboardEvent) {
@@ -64,13 +97,10 @@ export function AddJobButton() {
     return () => window.removeEventListener("keydown", handler);
   }, [open, submitting]);
 
-  // Lock body scroll & focus first field when opened
   useEffect(() => {
     if (open) {
       const original = document.body.style.overflow;
       document.body.style.overflow = "hidden";
-      // Defer to let the modal mount before focusing
-      setTimeout(() => firstInputRef.current?.focus(), 50);
       return () => {
         document.body.style.overflow = original;
       };
@@ -78,9 +108,16 @@ export function AddJobButton() {
   }, [open]);
 
   function reset() {
-    setName("");
+    setSelectedContact(null);
+    setContactQuery("");
     setPhone("");
     setAddress("");
+    setProperties([]);
+    setPropertyId(NEW_PROPERTY);
+    setNewAddress("");
+    setUnit("");
+    setBillToOpen(false);
+    setBillTo(null);
     setStatus("lead");
     setError(null);
   }
@@ -91,11 +128,32 @@ export function AddJobButton() {
     reset();
   }
 
+  const existingMode = selectedContact !== null;
+  const addingNewProperty = propertyId === NEW_PROPERTY;
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
     setSubmitting(true);
-    const result = await createJobManual({ name, phone, address, status });
+
+    const input = existingMode
+      ? {
+          contactId: selectedContact!.id,
+          propertyId: addingNewProperty ? null : Number(propertyId),
+          address: addingNewProperty ? newAddress : undefined,
+          unit: unit || undefined,
+          billToContactId: billTo?.id ?? null,
+          status,
+        }
+      : {
+          name: contactQuery,
+          phone,
+          address,
+          billToContactId: billTo?.id ?? null,
+          status,
+        };
+
+    const result = await createJob(input);
     setSubmitting(false);
     if (!result.ok) {
       setError(result.error);
@@ -120,14 +178,11 @@ export function AddJobButton() {
 
       {open && (
         <>
-          {/* Backdrop */}
           <div
             className="fixed inset-0 z-40 bg-black/60 backdrop-blur-[2px]"
             onClick={close}
             aria-hidden
           />
-
-          {/* Dialog */}
           <div
             ref={dialogRef}
             role="dialog"
@@ -136,7 +191,6 @@ export function AddJobButton() {
             className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 pointer-events-none"
           >
             <div className="bg-ink-1 border border-line-strong rounded-t-md sm:rounded-md w-full sm:max-w-md max-h-[90vh] overflow-y-auto pointer-events-auto shadow-xl">
-              {/* Header */}
               <div className="flex items-center justify-between px-4 py-3 border-b border-line">
                 <h2
                   id="add-job-title"
@@ -155,61 +209,170 @@ export function AddJobButton() {
                 </button>
               </div>
 
-              {/* Form */}
               <form onSubmit={handleSubmit} className="px-4 py-4 space-y-3.5">
                 <p className="text-2xs text-bone-400 leading-relaxed">
-                  Capture a lead manually. The rest of the job details (service,
-                  scope, price, schedule, notes) can be filled in after creation.
+                  Search an existing customer, or just type a new name to
+                  capture a fresh lead.
                 </p>
 
+                {/* Contact */}
                 <div>
                   <label className="label-eyebrow block mb-1">
-                    Customer name <span className="text-status-danger">*</span>
+                    Customer <span className="text-status-danger">*</span>
                   </label>
-                  <input
-                    ref={firstInputRef}
-                    type="text"
-                    value={name}
-                    onChange={(e) => setName(e.target.value)}
+                  <ContactCombobox
+                    selected={selectedContact}
+                    onSelect={setSelectedContact}
+                    onQueryChange={setContactQuery}
+                    placeholder="Search or type a new name…"
+                    allowCreateNew
                     disabled={submitting}
-                    required
-                    placeholder="e.g. Brie Anderson"
-                    className="!bg-ink-2 w-full text-sm h-9"
+                    autoFocus
                   />
                 </div>
 
-                <div>
-                  <label className="label-eyebrow block mb-1">
-                    Phone <span className="text-status-danger">*</span>
-                  </label>
-                  <input
-                    type="tel"
-                    value={phone}
-                    onChange={(e) => setPhone(formatPhoneAsTyped(e.target.value))}
-                    disabled={submitting}
-                    required
-                    placeholder="(801) 555-1234"
-                    inputMode="tel"
-                    className="!bg-ink-2 w-full text-sm h-9 font-mono"
-                  />
+                {/* Manual path: phone + address (unchanged speed) */}
+                {!existingMode && (
+                  <>
+                    <div>
+                      <label className="label-eyebrow block mb-1">
+                        Phone <span className="text-status-danger">*</span>
+                      </label>
+                      <input
+                        type="tel"
+                        value={phone}
+                        onChange={(e) =>
+                          setPhone(formatPhoneAsTyped(e.target.value))
+                        }
+                        disabled={submitting}
+                        required
+                        placeholder="(801) 555-1234"
+                        inputMode="tel"
+                        className="!bg-ink-2 w-full text-sm h-9 font-mono"
+                      />
+                    </div>
+                    <div>
+                      <label className="label-eyebrow block mb-1">
+                        Address / property{" "}
+                        <span className="text-status-danger">*</span>
+                      </label>
+                      <input
+                        type="text"
+                        value={address}
+                        onChange={(e) => setAddress(e.target.value)}
+                        disabled={submitting}
+                        required
+                        placeholder="e.g. 123 Main St, Provo UT"
+                        className="!bg-ink-2 w-full text-sm h-9"
+                      />
+                    </div>
+                  </>
+                )}
+
+                {/* Existing-contact path: property selector */}
+                {existingMode && (
+                  <>
+                    <div>
+                      <label className="label-eyebrow block mb-1">
+                        Property <span className="text-status-danger">*</span>
+                      </label>
+                      {propsLoading ? (
+                        <div className="flex items-center gap-2 h-9 px-2.5 text-2xs text-bone-400">
+                          <Loader2 size={13} className="animate-spin" />
+                          Loading properties…
+                        </div>
+                      ) : (
+                        <select
+                          value={propertyId}
+                          onChange={(e) => setPropertyId(e.target.value)}
+                          disabled={submitting}
+                          className="!bg-ink-2 w-full text-sm h-9"
+                        >
+                          {properties.map((p) => (
+                            <option key={p.id} value={String(p.id)}>
+                              {propLabel(p)}
+                            </option>
+                          ))}
+                          <option value={NEW_PROPERTY}>
+                            + New property / address
+                          </option>
+                        </select>
+                      )}
+                    </div>
+
+                    {addingNewProperty && (
+                      <div>
+                        <label className="label-eyebrow block mb-1">
+                          New address{" "}
+                          <span className="text-status-danger">*</span>
+                        </label>
+                        <input
+                          type="text"
+                          value={newAddress}
+                          onChange={(e) => setNewAddress(e.target.value)}
+                          disabled={submitting}
+                          required
+                          placeholder="e.g. 123 Main St, Provo UT"
+                          className="!bg-ink-2 w-full text-sm h-9"
+                        />
+                      </div>
+                    )}
+
+                    <div>
+                      <label className="label-eyebrow block mb-1">
+                        Unit{" "}
+                        <span className="text-bone-500 normal-case tracking-normal">
+                          (optional)
+                        </span>
+                      </label>
+                      <input
+                        type="text"
+                        value={unit}
+                        onChange={(e) => setUnit(e.target.value)}
+                        disabled={submitting}
+                        placeholder="e.g. 4B"
+                        className="!bg-ink-2 w-full text-sm h-9"
+                      />
+                      <p className="text-2xs text-bone-500 mt-1 flex items-center gap-1">
+                        <Home size={10} />
+                        A new unit is saved as its own property for next time.
+                      </p>
+                    </div>
+                  </>
+                )}
+
+                {/* Bill-to disclosure */}
+                <div className="border-t border-line-subtle pt-2">
+                  <button
+                    type="button"
+                    onClick={() => setBillToOpen((v) => !v)}
+                    className="flex items-center gap-1.5 text-2xs text-bone-400 hover:text-bone-100"
+                  >
+                    <ChevronDown
+                      size={12}
+                      className={`transition-transform ${billToOpen ? "" : "-rotate-90"}`}
+                    />
+                    Bill to a different contact
+                    {billTo && (
+                      <span className="text-field-400">· {billTo.name}</span>
+                    )}
+                  </button>
+                  {billToOpen && (
+                    <div className="mt-2">
+                      <ContactCombobox
+                        selected={billTo}
+                        onSelect={setBillTo}
+                        placeholder="Search a billing contact…"
+                        disabled={submitting}
+                      />
+                      <p className="text-2xs text-bone-500 mt-1">
+                        Leave empty to bill the property&apos;s contact.
+                      </p>
+                    </div>
+                  )}
                 </div>
 
-                <div>
-                  <label className="label-eyebrow block mb-1">
-                    Address / property{" "}
-                    <span className="text-status-danger">*</span>
-                  </label>
-                  <input
-                    type="text"
-                    value={address}
-                    onChange={(e) => setAddress(e.target.value)}
-                    disabled={submitting}
-                    required
-                    placeholder="e.g. 123 Main St, Provo UT"
-                    className="!bg-ink-2 w-full text-sm h-9"
-                  />
-                </div>
-
+                {/* Status */}
                 <div>
                   <label className="label-eyebrow block mb-1">Status</label>
                   <select

@@ -38,7 +38,7 @@ export async function createInvoiceFromEstimate(
     supabase
       .from("estimates")
       .select(
-        "id, job_id, status, billing_entity_id, computed_price, manual_override_price, resolved_travel_fee, jobs(name, email, phone, address), travel_zones(label)",
+        "id, job_id, status, billing_entity_id, computed_price, manual_override_price, resolved_travel_fee, jobs(name, email, phone, address, property_id, bill_to_contact_id), travel_zones(label)",
       )
       .eq("id", estimateId)
       .maybeSingle(),
@@ -64,8 +64,41 @@ export async function createInvoiceFromEstimate(
     email: string | null;
     phone: string | null;
     address: string | null;
+    property_id: number | null;
+    bill_to_contact_id: number | null;
   } | null;
   const zone = est.travel_zones as unknown as { label: string } | null;
+
+  // Bill-to snapshot (§5.4), frozen onto the invoice AT creation: an explicit
+  // bill_to_contact_id wins; otherwise the property's contact is the default
+  // biller; otherwise (property-less job) the job's own captured name. The
+  // WHERE the work happened — the address — stays the property/job address on
+  // the PDF and is deliberately NOT overridden (architect Q3).
+  let billerName = job?.name ?? "Customer";
+  let billerEmail = job?.email ?? null;
+  let billerPhone = job?.phone ?? null;
+  let billerContactId = job?.bill_to_contact_id ?? null;
+  if (!billerContactId && job?.property_id) {
+    const { data: prop } = await supabase
+      .from("properties")
+      .select("contact_id")
+      .eq("id", job.property_id)
+      .maybeSingle();
+    billerContactId = prop?.contact_id ?? null;
+  }
+  if (billerContactId) {
+    // RLS-scoped: the user client only resolves a same-tenant contact.
+    const { data: bc } = await supabase
+      .from("contacts")
+      .select("name, email, phone")
+      .eq("id", billerContactId)
+      .maybeSingle();
+    if (bc) {
+      billerName = bc.name ?? billerName;
+      billerEmail = bc.email ?? billerEmail;
+      billerPhone = bc.phone ?? billerPhone;
+    }
+  }
 
   const { rows, total } = buildClientDocRows({
     lines: (lines ?? []).map((l) => ({
@@ -120,9 +153,9 @@ export async function createInvoiceFromEstimate(
       job_id: est.job_id,
       estimate_id: est.id,
       billing_entity_id: est.billing_entity_id,
-      customer_name: job?.name ?? "Customer",
-      customer_email: job?.email,
-      customer_phone: job?.phone,
+      customer_name: billerName,
+      customer_email: billerEmail,
+      customer_phone: billerPhone,
       line_items: allRows,
       subtotal_cents: subtotalCents,
       tax_rate_pct: taxRatePct,

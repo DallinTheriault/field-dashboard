@@ -91,6 +91,7 @@ export default async function ContactDetailPage({
     { data: jobs },
     { data: calls },
     { data: messages },
+    { data: propertiesData },
     teamMembers,
     events,
     contactTags,
@@ -112,6 +113,11 @@ export default async function ContactDetailPage({
       .select("id, message_body, read_at, responded_at, created_at")
       .eq("contact_id", contact.id)
       .order("created_at", { ascending: false }),
+    supabase
+      .from("properties")
+      .select("id, address, unit, label")
+      .eq("contact_id", contact.id)
+      .order("created_at", { ascending: true }),
     getTeamMembers(contact.client_id),
     getActivityTimeline("contact", Number(contact.id)),
     getContactTags(Number(contact.id)),
@@ -213,7 +219,16 @@ export default async function ContactDetailPage({
             <dl className="divide-y divide-line-subtle">
               <Row label="Phone" value={fmtPhone(contact.phone)} mono icon={Phone} />
               <Row label="Email" value={contact.email ?? "—"} icon={Mail} />
-              <Row label="Address" value={contact.address ?? "—"} icon={MapPin} />
+              <PropertiesRow
+                properties={
+                  (propertiesData ?? []) as Array<{
+                    id: number;
+                    address: string;
+                    unit: string | null;
+                    label: string | null;
+                  }>
+                }
+              />
               <Row label="Created" value={fmtDate(contact.created_at, tz)} />
               <Row label="Updated" value={fmtDate(contact.updated_at ?? contact.created_at, tz)} />
             </dl>
@@ -303,6 +318,51 @@ export default async function ContactDetailPage({
       </div>
     );
   }
+}
+
+/**
+ * Read-only list of the contact's saved properties (address + unit + label).
+ * Replaces the old single Address row — addresses now live on properties
+ * (CONTACTS_PROPERTIES_SPEC Q4). Property creation happens through the job
+ * flow, so there is no add/edit here.
+ */
+function PropertiesRow({
+  properties,
+}: {
+  properties: Array<{
+    id: number;
+    address: string;
+    unit: string | null;
+    label: string | null;
+  }>;
+}) {
+  return (
+    <div className="px-4 py-2.5 grid grid-cols-3 gap-3">
+      <dt className="text-xs text-bone-400 flex items-center gap-1.5">
+        <MapPin size={12} className="text-bone-400" />
+        Properties
+      </dt>
+      <dd className="col-span-2 text-xs text-bone-100">
+        {properties.length === 0 ? (
+          <span className="text-bone-500">—</span>
+        ) : (
+          <ul className="space-y-1.5">
+            {properties.map((p) => (
+              <li key={p.id} className="break-words">
+                <span className="text-bone-100">{p.address}</span>
+                {p.unit && (
+                  <span className="text-bone-300"> · Unit {p.unit}</span>
+                )}
+                {p.label && (
+                  <span className="text-2xs text-bone-500"> · {p.label}</span>
+                )}
+              </li>
+            ))}
+          </ul>
+        )}
+      </dd>
+    </div>
+  );
 }
 
 function fmtDollar(c: number | null | undefined): string {
