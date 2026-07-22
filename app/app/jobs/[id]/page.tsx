@@ -16,6 +16,7 @@ import {
 } from "lucide-react";
 import { EstimateStatusChip } from "../../estimator/estimate-status";
 import { JobActuals } from "../../estimator/job-actuals";
+import { JobExpenseCapture } from "./job-expense-capture";
 import { JobTasks } from "./job-tasks";
 import { getCurrentUserRole } from "@/lib/permissions/current-role";
 import { canViewSettings } from "@/lib/permissions/roles";
@@ -101,6 +102,7 @@ export default async function JobDetailPage({
     { data: jobEstimates },
     { data: looseExtras },
     { data: taskRows },
+    { data: jobExpenseRows },
   ] = await Promise.all([
     getTeamMembers(job.client_id),
     getActivityTimeline("job", Number(job.id)),
@@ -129,7 +131,24 @@ export default async function JobDetailPage({
       .eq("job_id", job.id)
       .order("sort_order")
       .order("id"),
+    // Job-attached expense items for the capture card's read-only list.
+    // All roles may read (RLS select is tenant-wide); shows description /
+    // cost / assignment only — no totals, hours, variance, or margin.
+    estimatorOn
+      ? supabase
+          .from("expenses")
+          .select("id, description, amount, assignment")
+          .eq("job_id", job.id)
+          .order("id", { ascending: false })
+      : Promise.resolve({ data: null }),
   ]);
+
+  const jobExpenseItems = (jobExpenseRows ?? []).map((e) => ({
+    id: e.id as number,
+    description: e.description as string,
+    amount: Number(e.amount),
+    assignment: (e.assignment as string) ?? "unassigned",
+  }));
 
   const assignedMember = job.assigned_user_id
     ? teamMembers.find((m) => m.user_id === job.assigned_user_id) ?? null
@@ -273,6 +292,17 @@ export default async function JobDetailPage({
         tasks={jobTasks}
         canWrite={canSeeInternals}
       />
+
+      {/* Job-level expense capture — all roles (members included). Shows no
+          margin/hours/variance; those stay in JobActuals (owner/manager). */}
+      {estimatorOn && session && (
+        <JobExpenseCapture
+          jobId={Number(job.id)}
+          role={session.role}
+          receiptAiEnabled={flags.receiptAi}
+          items={jobExpenseItems}
+        />
+      )}
 
       {estimatorOn && canSeeInternals && uninvoicedExtras > 0 && (
         <div className="panel px-4 py-2.5 mb-5 border-status-danger/40 flex items-center gap-2 text-sm">

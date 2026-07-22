@@ -23,7 +23,7 @@ const ALL_TABS = [
   { href: "/app/messages", label: "Messages", icon: MessageSquare, flag: "sms" as const },
   { href: "/app/jobs", label: "Jobs", icon: Briefcase, flag: null },
   // Estimating happens on-site — when the module is on it earns a thumb slot.
-  { href: "/app/estimator", label: "Estimator", icon: Calculator, flag: "estimator" as const },
+  { href: "/app/estimator", label: "Business", icon: Calculator, flag: "estimator" as const },
   { href: "/app/calendar", label: "Calendar", icon: CalendarDays, flag: "calendar" as const },
 ] as const;
 

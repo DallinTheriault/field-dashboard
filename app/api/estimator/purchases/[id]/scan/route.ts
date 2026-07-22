@@ -37,12 +37,14 @@ export async function POST(
     return NextResponse.json({ error: "Bad purchase id" }, { status: 400 });
   }
 
-  // Writer check + tenant derivation (from the session, spec §6.1.1).
+  // Any member of the tenant may scan (architect Q1) — a member scan is the
+  // same tenant, same opted-in entitlement, same metered fraction of a cent.
+  // client_id derives from the session, never the body (spec §6.1.1).
   const { data: clientUsers } = await supabase
     .from("client_users")
-    .select("client_id, role")
+    .select("client_id")
     .eq("auth_user_id", user.id)
-    .in("role", ["owner", "manager"])
+    .order("created_at", { ascending: true })
     .limit(1);
   const clientId = clientUsers?.[0]?.client_id;
   if (!clientId) return NextResponse.json({ error: "Forbidden" }, { status: 403 });

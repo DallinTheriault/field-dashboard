@@ -8,6 +8,11 @@ import {
   JOB_ASSIGNMENTS,
   type Assignment,
 } from "@/lib/estimator/expenses";
+import {
+  assignmentAllowedForRole,
+  canEditCustomerNotified,
+} from "@/lib/estimator/expense-roles";
+import { getCurrentUserRole } from "@/lib/permissions/current-role";
 import { refreshInvoiceExtras } from "../invoice-actions";
 
 /**
@@ -58,6 +63,18 @@ export async function setItemAssignment(
   const supabase = await createClient();
   if (!ASSIGNMENTS.includes(patch.assignment)) {
     return { ok: false, error: "Invalid assignment." };
+  }
+
+  // Role gate (defense-in-depth): RLS already limits writes to owner/manager,
+  // but prove the boundary at every route — a member may never set job_extra
+  // or touch the notified flag.
+  const session = await getCurrentUserRole();
+  if (!session) return { ok: false, error: "Not signed in." };
+  if (!assignmentAllowedForRole(session.role, patch.assignment)) {
+    return { ok: false, error: "You can't set that assignment." };
+  }
+  if (patch.customerNotified && !canEditCustomerNotified(session.role)) {
+    return { ok: false, error: "You can't set the notified flag." };
   }
 
   const { data: item } = await supabase
@@ -120,6 +137,10 @@ export async function setCustomerNotified(
   notified: boolean,
 ): Promise<Result> {
   const supabase = await createClient();
+  const session = await getCurrentUserRole();
+  if (!session || !canEditCustomerNotified(session.role)) {
+    return { ok: false, error: "You can't edit the notified flag." };
+  }
   const { data: updated, error } = await supabase
     .from("expenses")
     .update({ customer_notified: notified })

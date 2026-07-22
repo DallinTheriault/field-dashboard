@@ -29,11 +29,14 @@ export async function POST(
     return NextResponse.json({ error: "Bad purchase id" }, { status: 400 });
   }
 
+  // Any member of the tenant may upload receipt photos for the scan flow
+  // (architect Q1); the purchase row itself is created by a gated server
+  // action. client_id derives from the session, never the body.
   const { data: clientUsers } = await supabase
     .from("client_users")
-    .select("client_id, role")
+    .select("client_id")
     .eq("auth_user_id", user.id)
-    .in("role", ["owner", "manager"])
+    .order("created_at", { ascending: true })
     .limit(1);
   const clientId = clientUsers?.[0]?.client_id;
   if (!clientId) return NextResponse.json({ error: "Forbidden" }, { status: 403 });

@@ -72,7 +72,7 @@ export default async function EstimatorHome() {
   return (
     <div className="max-w-3xl mx-auto px-4 py-6 space-y-5">
       <header>
-        <h1 className="text-xl font-semibold text-bone-50">Estimator</h1>
+        <h1 className="text-xl font-semibold text-bone-50">Business</h1>
         <p className="text-sm text-bone-400 mt-0.5">
           Same inputs, same price — every time.
         </p>
