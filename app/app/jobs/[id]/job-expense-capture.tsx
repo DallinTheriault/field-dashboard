@@ -81,8 +81,8 @@ export function JobExpenseCapture({
       {items.length > 0 && (
         <ul className="space-y-1 pt-2 border-t border-line-subtle">
           {items.map((it) => (
-            <li key={it.id} className="flex items-center gap-2 text-sm">
-              <span className="flex-1 min-w-0 text-bone-100 truncate">
+            <li key={it.id} className="flex items-start gap-2 text-sm">
+              <span className="flex-1 min-w-0 text-bone-100 line-clamp-2 leading-snug">
                 {it.description}
               </span>
               <span

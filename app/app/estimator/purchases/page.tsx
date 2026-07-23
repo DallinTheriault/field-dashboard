@@ -28,7 +28,7 @@ export default async function ExpenseIntakePage() {
     supabase
       .from("expenses")
       .select(
-        "id, expense_date, category, description, amount, qty, unit_price, sku, job_id, assignment, customer_notified, stock_category, invoiced_on, receipt_path, purchase_id, jobs(name), purchases(vendor, receipt_path, receipt_paths, source), invoices:invoiced_on(invoice_number)",
+        "id, expense_date, category, description, amount, qty, unit_price, sku, job_id, assignment, customer_notified, stock_category, invoiced_on, receipt_path, purchase_id, jobs(name), purchases(vendor, purchase_date, receipt_path, receipt_paths, source), invoices:invoiced_on(invoice_number)",
       )
       .order("expense_date", { ascending: false })
       .order("id", { ascending: false })
@@ -53,6 +53,7 @@ export default async function ExpenseIntakePage() {
     const job = e.jobs as unknown as { name: string | null } | null;
     const purchase = e.purchases as unknown as {
       vendor: string;
+      purchase_date: string | null;
       receipt_path: string | null;
       receipt_paths: string[] | null;
       source: string;
@@ -76,6 +77,7 @@ export default async function ExpenseIntakePage() {
       invoiceNumber: invoice?.invoice_number ?? null,
       purchaseId: e.purchase_id,
       vendor: purchase?.vendor ?? null,
+      purchaseDate: purchase?.purchase_date ?? null,
       hasReceipt: Boolean(
         e.receipt_path ||
           purchase?.receipt_path ||

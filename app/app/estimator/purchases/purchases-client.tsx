@@ -52,7 +52,19 @@ export type ExpenseItemRow = {
   invoiceNumber: string | null;
   purchaseId: number | null;
   vendor: string | null;
+  purchaseDate: string | null;
   hasReceipt: boolean;
+};
+
+/** Compact assignment labels for the dense collapsed row — the full
+ *  ASSIGNMENT_LABELS ("Job — extra (invoiced at cost)") starved the
+ *  description column on phones. Full labels live in the expanded panel. */
+const ASSIGNMENT_SHORT: Record<string, string> = {
+  unassigned: "unassigned",
+  job_in_bid: "in bid",
+  job_extra: "extra",
+  job_internal: "internal",
+  stock: "stock",
 };
 
 const usd = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" });
@@ -322,25 +334,22 @@ function ItemRow({
       <button
         type="button"
         onClick={() => setOpen(!open)}
-        className="w-full flex items-center gap-2.5 text-left text-sm"
+        className="w-full flex items-start gap-2 text-left text-sm"
       >
-        <span className="font-mono text-2xs text-bone-400 w-14 shrink-0">
+        <span className="font-mono text-2xs text-bone-400 w-11 shrink-0 pt-0.5">
           {item.expense_date.slice(5)}
         </span>
-        <span className="flex-1 min-w-0 text-bone-100 truncate">
+        {/* Description gets the width: wraps to 2 lines then ellipsis,
+            instead of hard-truncating at ~8 chars. */}
+        <span className="flex-1 min-w-0 text-bone-100 line-clamp-2 leading-snug">
           {item.description}
           {item.vendor && <span className="text-2xs text-bone-400"> · {item.vendor}</span>}
           {item.jobName && (
             <span className="text-2xs text-field-400"> · {item.jobName}</span>
           )}
         </span>
-        {item.qty !== null && item.qty !== 1 && item.unit_price !== null && (
-          <span className="text-2xs text-bone-400 shrink-0">
-            {item.qty} × {usd.format(item.unit_price)}
-          </span>
-        )}
         <span className={`chip normal-case tracking-normal shrink-0 ${chipTone}`}>
-          {ASSIGNMENT_LABELS[item.assignment as Assignment] ?? item.assignment}
+          {ASSIGNMENT_SHORT[item.assignment] ?? item.assignment}
         </span>
         {locked && (
           <span
@@ -348,7 +357,6 @@ function ItemRow({
             title={`On invoice ${item.invoiceNumber ?? item.invoiced_on}`}
           >
             <Lock size={9} />
-            {item.invoiceNumber ?? "invoiced"}
           </span>
         )}
         {item.hasReceipt && item.purchaseId && (
@@ -363,16 +371,38 @@ function ItemRow({
             <Paperclip size={12} />
           </a>
         )}
-        <span className="num text-bone-100 shrink-0">{usd.format(item.amount)}</span>
+        <span className="num text-bone-100 shrink-0 pt-0.5">{usd.format(item.amount)}</span>
         {open ? (
-          <ChevronDown size={13} className="text-bone-500 shrink-0" />
+          <ChevronDown size={13} className="text-bone-500 shrink-0 mt-0.5" />
         ) : (
-          <ChevronRight size={13} className="text-bone-500 shrink-0" />
+          <ChevronRight size={13} className="text-bone-500 shrink-0 mt-0.5" />
         )}
       </button>
 
       {open && (
-        <div className="mt-2 pl-16 space-y-2">
+        <div className="mt-2 space-y-2">
+          {/* Full item context — the collapsed row is intentionally terse, so
+              identify the item unambiguously here before assigning it. */}
+          <div className="bg-ink-2 rounded-sm shadow-inset-line p-2.5 space-y-1">
+            <p className="text-sm text-bone-100 break-words leading-snug">
+              {item.description}
+            </p>
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 text-2xs text-bone-400">
+              {item.qty !== null && item.unit_price !== null && (
+                <span className="num">
+                  {item.qty} × {usd.format(item.unit_price)}
+                </span>
+              )}
+              <span className="num text-bone-100">{usd.format(item.amount)}</span>
+              {item.sku && <span className="font-mono">SKU {item.sku}</span>}
+              {item.vendor && <span>{item.vendor}</span>}
+              {(item.purchaseDate ?? item.expense_date) && (
+                <span className="font-mono">
+                  {(item.purchaseDate ?? item.expense_date).slice(0, 10)}
+                </span>
+              )}
+            </div>
+          </div>
           {locked && (
             <p className="text-2xs text-bone-400">
               On invoice {item.invoiceNumber ?? `#${item.invoiced_on}`}. While
