@@ -36,6 +36,7 @@ export type PickJob = {
   address: string | null;
   service: string | null;
   status: string;
+  job_number: string | null;
 };
 
 type Cell = { key: string; dayNum: number; inMonth: boolean };
@@ -516,7 +517,7 @@ export function CalendarClient({
     const q = pickSearch.trim().toLowerCase();
     if (!q) return unscheduled;
     return unscheduled.filter((j) =>
-      [j.name, j.address, j.service]
+      [j.name, j.address, j.service, j.job_number]
         .filter(Boolean)
         .some((v) => v!.toLowerCase().includes(q)),
     );
@@ -818,6 +819,11 @@ export function CalendarClient({
                           className="w-full text-left bg-ink-2 hover:bg-ink-2/70 rounded-sm px-3 py-2 flex items-center gap-2"
                         >
                           <span className="flex-1 min-w-0">
+                            {j.job_number && (
+                              <span className="block text-2xs font-mono text-field-400">
+                                {j.job_number}
+                              </span>
+                            )}
                             <span className="block text-sm text-bone-100 truncate">
                               {j.name || j.service || `Job #${j.id}`}
                             </span>
@@ -840,6 +846,11 @@ export function CalendarClient({
               <>
                 <div className="bg-ink-2 rounded-sm px-3 py-2 flex items-center gap-2">
                   <span className="flex-1 min-w-0">
+                    {pickedJob.job_number && (
+                      <span className="block text-2xs font-mono text-field-400">
+                        {pickedJob.job_number}
+                      </span>
+                    )}
                     <span className="block text-sm text-bone-100 truncate">
                       {pickedJob.name || pickedJob.service || `Job #${pickedJob.id}`}
                     </span>

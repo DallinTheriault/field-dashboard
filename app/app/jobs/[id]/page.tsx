@@ -194,7 +194,9 @@ export default async function JobDetailPage({
         <div className="min-w-0">
           <div className="flex items-center gap-2 mb-1">
             <Briefcase size={14} className="text-field-500" />
-            <span className="label-eyebrow">Job #{job.id}</span>
+            {/* The human job number when present (internal surface, never on
+                customer PDFs); legacy NULL jobs fall back to the db id. */}
+            <span className="label-eyebrow">{job.job_number ?? `Job #${job.id}`}</span>
           </div>
           <h1 className="text-2xl font-semibold text-bone-50 tracking-tight break-words">
             {job.contact_id ? (

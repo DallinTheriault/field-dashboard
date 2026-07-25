@@ -33,13 +33,17 @@ export default async function ExpenseIntakePage() {
       .order("expense_date", { ascending: false })
       .order("id", { ascending: false })
       .limit(300),
+    // Job picker source (JOB_NUMBERING_SPEC Part A): list JOBS with enough
+    // context to tell two jobs for the same contact apart. Include completed
+    // jobs — a late receipt legitimately belongs to a finished job — and
+    // exclude only cancelled. Newest first.
     supabase
       .from("jobs")
-      .select("id, name")
+      .select("id, name, job_number, address, status")
       .is("archived_at", null)
-      .not("status", "in", "(completed,cancelled)")
+      .neq("status", "cancelled")
       .order("created_at", { ascending: false })
-      .limit(50),
+      .limit(100),
     // Receipts photographed but not yet confirmed into items (scan flow
     // "later" path, or parse failures) — they need entry, not oblivion.
     supabase
@@ -89,6 +93,9 @@ export default async function ExpenseIntakePage() {
   const jobs = (jobRows ?? []).map((j) => ({
     id: j.id as number,
     name: (j.name as string | null) ?? `Job #${j.id}`,
+    jobNumber: (j.job_number as string | null) ?? null,
+    address: (j.address as string | null) ?? null,
+    status: (j.status as string | null) ?? null,
   }));
 
   const pendingPurchases = (purchaseRows ?? [])

@@ -70,6 +70,42 @@ const ASSIGNMENT_SHORT: Record<string, string> = {
 const usd = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" });
 const round2 = (n: number) => Math.round((n + 1e-9) * 100) / 100;
 
+/** A job as shown in a picker (JOB_NUMBERING_SPEC Part A). */
+export type JobPick = {
+  id: number;
+  name: string;
+  jobNumber: string | null;
+  address: string | null;
+  status: string | null;
+};
+
+const JOB_STATUS_SHORT: Record<string, string> = {
+  lead: "lead",
+  estimated: "estimated",
+  accepted: "accepted",
+  scheduled: "scheduled",
+  in_progress: "in progress",
+  completed: "completed",
+  callback: "callback",
+  callback_complete: "callback done",
+  cancelled: "cancelled",
+};
+
+/**
+ * Picker label that tells two jobs for the same contact apart: job number
+ * (when present, else nothing), then the property address+unit (what the eye
+ * actually reads), the contact name, and status. Renders fully in the native
+ * <select> OS picker at iPhone width.
+ */
+function jobPickLabel(j: JobPick): string {
+  const parts: string[] = [];
+  if (j.jobNumber) parts.push(j.jobNumber);
+  if (j.address) parts.push(j.address);
+  parts.push(j.name);
+  if (j.status) parts.push(JOB_STATUS_SHORT[j.status] ?? j.status);
+  return parts.join(" · ");
+}
+
 function todayISO(): string {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
@@ -106,7 +142,7 @@ export function PurchasesClient({
 }: {
   clientId: number;
   items: ExpenseItemRow[];
-  jobs: Array<{ id: number; name: string }>;
+  jobs: JobPick[];
   pendingPurchases?: PendingPurchase[];
   receiptAi?: boolean;
 }) {
@@ -278,7 +314,7 @@ function ItemRow({
   onError,
 }: {
   item: ExpenseItemRow;
-  jobs: Array<{ id: number; name: string }>;
+  jobs: JobPick[];
   onChanged: () => void;
   onError: (m: string | null) => void;
 }) {
@@ -434,7 +470,7 @@ function ItemRow({
                   <option value="">Pick a job…</option>
                   {jobs.map((j) => (
                     <option key={j.id} value={j.id}>
-                      {j.name}
+                      {jobPickLabel(j)}
                     </option>
                   ))}
                 </select>
@@ -490,7 +526,7 @@ function LogManualPurchase({
   onDone,
 }: {
   clientId: number;
-  jobs: Array<{ id: number; name: string }>;
+  jobs: JobPick[];
   onDone: () => void;
 }) {
   const supabase = createClient();
@@ -673,7 +709,7 @@ function LogManualPurchase({
                     <option value="">Assign later</option>
                     {jobs.map((j) => (
                       <option key={j.id} value={j.id}>
-                        Job: {j.name}
+                        {jobPickLabel(j)}
                       </option>
                     ))}
                   </select>

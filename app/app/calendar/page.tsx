@@ -85,7 +85,7 @@ export default async function CalendarPage({
     // Bookable backlog for the "Schedule a job → existing" flow.
     supabase
       .from("jobs")
-      .select("id, name, address, service, status")
+      .select("id, name, address, service, status, job_number")
       .is("archived_at", null)
       .is("start_datetime", null)
       .not("status", "in", "(completed,cancelled)")
