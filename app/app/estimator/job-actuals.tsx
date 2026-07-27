@@ -1,8 +1,9 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Clock, Package, Plus, Trash2 } from "lucide-react";
+import { Car, Clock, Loader2, Package, Plus, Trash2 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
+import { createTrip } from "./mileage/mileage-actions";
 
 type TimeEntry = {
   id: number;
@@ -40,16 +41,184 @@ function todayISO(): string {
 }
 
 /**
+ * Per-device memory of "no thanks" so the prompt doesn't nag for a day the
+ * user already declined. This is a CONVENIENCE only — the guarantee that one
+ * job+date can't collect two proposed trips lives server-side (and in a
+ * partial unique index), so a cleared browser can't produce a duplicate.
+ */
+const dismissKey = (jobId: number, date: string) => `mileage-dismissed:${jobId}:${date}`;
+
+function isTripDismissed(jobId: number, date: string): boolean {
+  try {
+    return window.localStorage.getItem(dismissKey(jobId, date)) === "1";
+  } catch {
+    return false;
+  }
+}
+
+function dismissTrip(jobId: number, date: string) {
+  try {
+    window.localStorage.setItem(dismissKey(jobId, date), "1");
+  } catch {
+    /* private mode — the prompt simply reappears next time */
+  }
+}
+
+/**
+ * Propose, don't ask (§5.4): base → property and back, prefilled from the
+ * cached distance. One tap logs it; Edit opens the miles field (needed the
+ * first time a property is visited); No dismisses this day.
+ */
+function TripProposal({
+  jobId,
+  date,
+  ctx,
+  onDone,
+  onDismiss,
+  onError,
+}: {
+  jobId: number;
+  date: string;
+  ctx: MileageContext;
+  onDone: () => void;
+  onDismiss: () => void;
+  onError: (m: string | null) => void;
+}) {
+  const needsMiles = ctx.cachedMiles === null;
+  const [editing, setEditing] = useState(needsMiles);
+  const [miles, setMiles] = useState(ctx.cachedMiles === null ? "" : String(ctx.cachedMiles));
+  const [destination, setDestination] = useState(ctx.destination ?? "");
+  const [saveToProperty, setSaveToProperty] = useState(needsMiles);
+  const [busy, setBusy] = useState(false);
+
+  async function log() {
+    onError(null);
+    setBusy(true);
+    const r = await createTrip({
+      tripDate: date,
+      destination,
+      purpose: ctx.purpose,
+      miles,
+      jobId,
+      source: "proposed",
+      // Only writes the property cache when the user leaves the box ticked —
+      // editing a single trip never silently overwrites the saved distance.
+      saveDistanceToPropertyId:
+        saveToProperty && ctx.propertyId !== null ? ctx.propertyId : null,
+    });
+    setBusy(false);
+    if (!r.ok) return onError(r.error);
+    onDone();
+  }
+
+  return (
+    <div className="panel px-3 py-2.5 border-field-500/40 bg-field-500/[0.06] space-y-2">
+      <div className="flex items-start gap-2">
+        <Car size={13} className="text-field-400 shrink-0 mt-0.5" />
+        <p className="text-2xs text-bone-100 leading-relaxed">
+          Log a trip for {date}?{" "}
+          {ctx.baseAddress ? (
+            <>
+              <span className="text-bone-50">{ctx.baseAddress}</span> →{" "}
+            </>
+          ) : null}
+          <span className="text-bone-50">{destination || "destination"}</span> and
+          back
+          {ctx.cachedMiles !== null && (
+            <>
+              , <span className="num">{ctx.cachedMiles}</span> mi
+            </>
+          )}
+          .
+        </p>
+      </div>
+
+      {editing && (
+        <div className="space-y-1.5">
+          <input
+            value={destination}
+            onChange={(e) => setDestination(e.target.value)}
+            placeholder="Destination"
+            className="w-full text-sm"
+            aria-label="Trip destination"
+          />
+          <div className="flex items-center gap-2">
+            <input
+              inputMode="decimal"
+              value={miles}
+              onChange={(e) => setMiles(e.target.value)}
+              placeholder="total miles"
+              className="w-28 text-sm"
+              aria-label="Trip miles"
+            />
+            {ctx.propertyId !== null && (
+              <label className="flex items-center gap-1.5 text-2xs text-bone-300 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={saveToProperty}
+                  onChange={(e) => setSaveToProperty(e.target.checked)}
+                />
+                Save as this property&apos;s distance
+              </label>
+            )}
+          </div>
+        </div>
+      )}
+
+      <div className="flex flex-wrap items-center gap-2">
+        <button
+          type="button"
+          onClick={log}
+          disabled={busy}
+          className="btn-primary text-xs h-8"
+        >
+          {busy ? <Loader2 size={11} className="animate-spin" /> : null}
+          Log it
+        </button>
+        {!editing && (
+          <button
+            type="button"
+            onClick={() => setEditing(true)}
+            className="btn-secondary text-xs h-8"
+          >
+            Edit
+          </button>
+        )}
+        <button type="button" onClick={onDismiss} className="btn-ghost text-xs h-8">
+          No
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/**
  * One-thumb actuals logging on a job: hours (date defaults today) and
  * materials with real dollars spent. Feeds the Insights variance loop.
  * Owner/manager only — hours and costs are pricing internals.
  */
+export type MileageContext = {
+  /** Origin for the proposed trip; null when the tenant hasn't set one. */
+  baseAddress: string | null;
+  /** The job's property (or its inline address as a fallback). */
+  destination: string | null;
+  /** Cached one-property distance; blank means the user enters it once. */
+  cachedMiles: number | null;
+  /** Only set when the miles came from a property we can update on request. */
+  propertyId: number | null;
+  /** Seeds the business purpose. */
+  purpose: string;
+};
+
 export function JobActuals({
   clientId,
   jobId,
+  mileage,
 }: {
   clientId: number;
   jobId: number;
+  /** Passed from the server component — JobActuals never fetches this. */
+  mileage?: MileageContext;
 }) {
   const supabase = createClient();
   const [loading, setLoading] = useState(true);
@@ -64,6 +233,8 @@ export function JobActuals({
   const [matDesc, setMatDesc] = useState("");
   const [matPrice, setMatPrice] = useState("");
   const [matQty, setMatQty] = useState("1");
+  // Trip proposal: raised right after hours land, for that date only.
+  const [proposeFor, setProposeFor] = useState<string | null>(null);
 
   async function load() {
     const [{ data: time }, { data: mats }, { data: est }] = await Promise.all([
@@ -137,9 +308,25 @@ export function JobActuals({
       setErr(error.message);
       return;
     }
+    const loggedDate = date || todayISO();
     setHours("");
     setNote("");
     load();
+
+    // Propose a trip for the day just logged — unless one already exists for
+    // this job + date, or the user dismissed this day on this device. The
+    // server enforces the no-duplicate rule regardless of what the client
+    // remembers; this check only decides whether to show the prompt.
+    if (mileage) {
+      const { count } = await supabase
+        .from("mileage_entries")
+        .select("*", { count: "exact", head: true })
+        .eq("job_id", jobId)
+        .eq("trip_date", loggedDate);
+      if ((count ?? 0) === 0 && !isTripDismissed(jobId, loggedDate)) {
+        setProposeFor(loggedDate);
+      }
+    }
   }
 
   const matPriceNum = parseFloat(matPrice);
@@ -230,6 +417,21 @@ export function JobActuals({
           )}
         </div>
       </div>
+
+      {/* Trip proposal (§5.4) — offered right after hours land, one tap. */}
+      {mileage && proposeFor && (
+        <TripProposal
+          jobId={jobId}
+          date={proposeFor}
+          ctx={mileage}
+          onDone={() => setProposeFor(null)}
+          onDismiss={() => {
+            dismissTrip(jobId, proposeFor);
+            setProposeFor(null);
+          }}
+          onError={setErr}
+        />
+      )}
 
       {/* Time quick-entry — one thumb: date defaults to today */}
       <div className="space-y-1.5">

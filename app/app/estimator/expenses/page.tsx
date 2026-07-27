@@ -8,6 +8,11 @@ import { getTenantFeatureFlags } from "@/lib/features/flags";
 import { FeatureDisabledPanel } from "@/components/ui/feature-disabled-panel";
 import { dayKeyInTz, getTenantTimezone } from "@/lib/dates";
 import { summarizePnl } from "@/lib/estimator/expenses";
+import {
+  ALTERNATIVE_METHODS_NOTE,
+  buildRateMap,
+  summarizeMileage,
+} from "@/lib/estimator/mileage";
 import { ExpensesManager } from "./expenses-manager";
 
 const usd = new Intl.NumberFormat("en-US", {
@@ -43,7 +48,12 @@ export default async function ExpensesPage({
   // tenant-timezone year, so New Year's Eve payments land in the right year.
   const windowStart = `${year - 1}-12-30`;
   const windowEnd = `${year + 1}-01-02`;
-  const [{ data: expenseRows }, { data: invoiceRows }] = await Promise.all([
+  const [
+    { data: expenseRows },
+    { data: invoiceRows },
+    { data: mileageRows },
+    { data: rateRows },
+  ] = await Promise.all([
     supabase
       .from("expenses")
       .select(
@@ -60,6 +70,14 @@ export default async function ExpensesPage({
       .not("invoice_number", "is", null)
       .gte("paid_at", windowStart)
       .lte("paid_at", windowEnd),
+    // Mileage is stated separately and NEVER summed into the P&L (§6.3):
+    // standard mileage and actual vehicle costs are alternative methods.
+    supabase
+      .from("mileage_entries")
+      .select("trip_date, miles")
+      .gte("trip_date", `${year}-01-01`)
+      .lte("trip_date", `${year}-12-31`),
+    supabase.from("mileage_rates").select("year, rate_per_mile"),
   ]);
 
   const expenses = (expenseRows ?? []).map((e) => {
@@ -87,7 +105,20 @@ export default async function ExpensesPage({
     .filter((i) => i.paid_at && dayKeyInTz(i.paid_at, tz).startsWith(String(year)))
     .map((i) => Number(i.total_cents));
 
+  // NOTE: mileage is deliberately absent from summarizePnl — it must never
+  // enter income, totalExpenses, net, or byCategory.
   const pnl = summarizePnl({ paidInvoiceCents, expenses });
+
+  const mileage = summarizeMileage(
+    (mileageRows ?? []).map((m) => ({
+      trip_date: String(m.trip_date),
+      miles: Number(m.miles),
+    })),
+    year,
+    buildRateMap(rateRows ?? []),
+  );
+  const vehicleExpenseTotal =
+    pnl.byCategory.find((c) => c.category === "Vehicle & fuel")?.total ?? 0;
 
   const clientId = session.clientId;
 
@@ -152,6 +183,48 @@ export default async function ExpensesPage({
           </div>
         ))}
       </div>
+
+      {/* Vehicle: two ALTERNATIVE figures, never summed (§6.3). The app
+          states them; it does not choose a method. */}
+      {(mileage.miles > 0 || vehicleExpenseTotal > 0) && (
+        <section className="panel">
+          <div className="px-4 py-3 border-b border-line">
+            <h2 className="text-sm font-semibold text-bone-100">Vehicle</h2>
+            <p className="text-2xs text-bone-400 mt-0.5">
+              {ALTERNATIVE_METHODS_NOTE}
+            </p>
+          </div>
+          <div className="px-4 py-3 grid grid-cols-2 gap-3">
+            <div>
+              <div className="label-eyebrow">Standard mileage</div>
+              <div className="num text-base text-bone-50 mt-0.5">
+                {mileage.rateSet ? usd.format(mileage.dollars) : "—"}
+              </div>
+              <div className="text-2xs text-bone-400 num mt-0.5">
+                {mileage.miles} miles
+                {mileage.rateSet ? ` × ${mileage.rate}` : ""}
+              </div>
+              {!mileage.rateSet && mileage.miles > 0 && (
+                <Link
+                  href="/app/estimator/mileage"
+                  className="text-2xs text-status-lead hover:text-status-lead/80 underline underline-offset-2"
+                >
+                  Rate not set for {year}
+                </Link>
+              )}
+            </div>
+            <div>
+              <div className="label-eyebrow">Actual vehicle expenses</div>
+              <div className="num text-base text-bone-50 mt-0.5">
+                {usd.format(vehicleExpenseTotal)}
+              </div>
+              <div className="text-2xs text-bone-400 mt-0.5">
+                logged under Vehicle &amp; fuel
+              </div>
+            </div>
+          </div>
+        </section>
+      )}
 
       {/* Category breakdown */}
       {pnl.byCategory.length > 0 && (

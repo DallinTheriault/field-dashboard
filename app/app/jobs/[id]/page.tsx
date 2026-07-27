@@ -9,6 +9,7 @@ import {
   Pencil,
   Calendar,
   Calculator,
+  Car,
   DollarSign,
   FileText,
   User,
@@ -103,6 +104,9 @@ export default async function JobDetailPage({
     { data: looseExtras },
     { data: taskRows },
     { data: jobExpenseRows },
+    { data: mileageRows },
+    { data: mileageSettings },
+    { data: jobProperty },
   ] = await Promise.all([
     getTeamMembers(job.client_id),
     getActivityTimeline("job", Number(job.id)),
@@ -141,7 +145,53 @@ export default async function JobDetailPage({
           .eq("job_id", job.id)
           .order("id", { ascending: false })
       : Promise.resolve({ data: null }),
+    // Mileage context for the trip proposal + the read-only trips line.
+    // Fetched here so JobActuals never round-trips from the client.
+    estimatorOn && canSeeInternals
+      ? supabase.from("mileage_entries").select("miles").eq("job_id", job.id)
+      : Promise.resolve({ data: null }),
+    estimatorOn && canSeeInternals
+      ? supabase.from("pricing_settings").select("mileage_base_address").maybeSingle()
+      : Promise.resolve({ data: null }),
+    estimatorOn && canSeeInternals && job.property_id
+      ? supabase
+          .from("properties")
+          .select("id, address, unit, miles_from_base")
+          .eq("id", job.property_id)
+          .maybeSingle()
+      : Promise.resolve({ data: null }),
   ]);
+
+  // Trips logged against this job — a read-only signal (§6.2). Deliberately
+  // NOT part of job costing math this pass.
+  const tripCount = (mileageRows ?? []).length;
+  const tripMiles =
+    Math.round(
+      (mileageRows ?? []).reduce((s, m) => s + Number(m.miles ?? 0), 0) * 10,
+    ) / 10;
+
+  const propertyAddress = jobProperty
+    ? [jobProperty.address, jobProperty.unit ? `Unit ${jobProperty.unit}` : null]
+        .filter(Boolean)
+        .join(", ")
+    : null;
+  const mileageContext = canSeeInternals && estimatorOn
+    ? {
+        baseAddress:
+          (mileageSettings?.mileage_base_address as string | null) ?? null,
+        // Legacy jobs have no property — fall back to the job's inline address.
+        destination: propertyAddress ?? (job.address as string | null) ?? null,
+        cachedMiles:
+          jobProperty?.miles_from_base === null ||
+          jobProperty?.miles_from_base === undefined
+            ? null
+            : Number(jobProperty.miles_from_base),
+        propertyId: (jobProperty?.id as number | undefined) ?? null,
+        purpose:
+          [job.service, job.scope].filter(Boolean).join(" — ") ||
+          `Job ${job.job_number ?? job.id}`,
+      }
+    : undefined;
 
   const jobExpenseItems = (jobExpenseRows ?? []).map((e) => ({
     id: e.id as number,
@@ -319,7 +369,30 @@ export default async function JobDetailPage({
       )}
 
       {estimatorOn && canSeeInternals && (
-        <JobActuals clientId={job.client_id} jobId={Number(job.id)} />
+        <>
+          <JobActuals
+            clientId={job.client_id}
+            jobId={Number(job.id)}
+            mileage={mileageContext}
+          />
+          {tripCount > 0 && (
+            <div className="panel px-4 py-2.5 mb-5 flex items-center gap-2 text-2xs text-bone-400">
+              <Car size={12} className="text-bone-500" />
+              <span>
+                <span className="num text-bone-100">{tripCount}</span> trip
+                {tripCount === 1 ? "" : "s"} logged ·{" "}
+                <span className="num text-bone-100">{tripMiles}</span> miles
+              </span>
+              <Link
+                href="/app/estimator/mileage"
+                prefetch={false}
+                className="ml-auto text-field-400 hover:text-field-300"
+              >
+                Mileage log
+              </Link>
+            </div>
+          )}
+        </>
       )}
 
       {estimatorOn && (jobEstimates ?? []).length > 0 && (

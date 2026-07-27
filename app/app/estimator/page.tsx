@@ -2,6 +2,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import {
   Briefcase,
+  Car,
   ChevronRight,
   LineChart,
   Receipt,
@@ -48,6 +49,12 @@ export default async function EstimatorHome() {
       icon: Wallet,
       label: "Money",
       blurb: "Year P&L and the tax CSV.",
+    },
+    {
+      href: "/app/estimator/mileage",
+      icon: Car,
+      label: "Mileage",
+      blurb: "Log the drive the day you make it.",
     },
     {
       href: "/app/estimator/insights",
