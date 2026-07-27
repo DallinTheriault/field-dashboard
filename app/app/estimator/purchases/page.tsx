@@ -7,6 +7,8 @@ import { canViewSettings } from "@/lib/permissions/roles";
 import { getTenantFeatureFlags } from "@/lib/features/flags";
 import { FeatureDisabledPanel } from "@/components/ui/feature-disabled-panel";
 import { PurchasesClient, type ExpenseItemRow } from "./purchases-client";
+import { ReceiptsView, type ReceiptRow } from "./receipts-view";
+import { mintReceiptThumbUrls } from "@/lib/estimator/receipt-urls";
 
 /**
  * Expenses — the single intake / list / assignment surface (ruling Q2).
@@ -44,11 +46,14 @@ export default async function ExpenseIntakePage() {
       .neq("status", "cancelled")
       .order("created_at", { ascending: false })
       .limit(100),
-    // Receipts photographed but not yet confirmed into items (scan flow
-    // "later" path, or parse failures) — they need entry, not oblivion.
+    // Every purchase — feeds BOTH the "waiting for items" queue (zero-item
+    // subset) and the Receipts view (§6.2: the list is every purchase, not
+    // only photographed ones). Newest first.
     supabase
       .from("purchases")
-      .select("id, vendor, purchase_date, source, receipt_paths, expenses(count)")
+      .select(
+        "id, vendor, purchase_date, source, total, receipt_path, receipt_paths, expenses(count)",
+      )
       .order("id", { ascending: false })
       .limit(50),
   ]);
@@ -98,17 +103,48 @@ export default async function ExpenseIntakePage() {
     status: (j.status as string | null) ?? null,
   }));
 
+  const itemCountOf = (p: NonNullable<typeof purchaseRows>[number]) =>
+    ((p.expenses as unknown as Array<{ count: number }> | null)?.[0]?.count) ?? 0;
+
   const pendingPurchases = (purchaseRows ?? [])
-    .filter((p) => {
-      const c = p.expenses as unknown as Array<{ count: number }> | null;
-      return (c?.[0]?.count ?? 0) === 0;
-    })
+    .filter((p) => itemCountOf(p) === 0)
     .map((p) => ({
       id: p.id as number,
       vendor: p.vendor as string,
       purchase_date: p.purchase_date as string,
       hasPhotos: ((p.receipt_paths as string[] | null) ?? []).length > 0,
     }));
+
+  // Unassigned-item counts per purchase, in one query (badge accuracy).
+  const unassignedByPurchase = new Map<number, number>();
+  for (const it of itemRows ?? []) {
+    if (it.assignment === "unassigned" && it.purchase_id != null) {
+      const k = it.purchase_id as number;
+      unassignedByPurchase.set(k, (unassignedByPurchase.get(k) ?? 0) + 1);
+    }
+  }
+
+  // ONE batched signed-URL pass for every thumbnail on the page (§6.3).
+  const thumbUrls = await mintReceiptThumbUrls(
+    (purchaseRows ?? []).map((p) => ({
+      id: p.id as number,
+      receipt_paths: (p.receipt_paths as string[] | null) ?? null,
+      receipt_path: (p.receipt_path as string | null) ?? null,
+    })),
+  );
+
+  const receipts: ReceiptRow[] = (purchaseRows ?? []).map((p) => ({
+    id: p.id as number,
+    vendor: (p.vendor as string) ?? "—",
+    purchaseDate: String(p.purchase_date ?? ""),
+    total: p.total === null || p.total === undefined ? null : Number(p.total),
+    itemCount: itemCountOf(p),
+    unassignedCount: unassignedByPurchase.get(p.id as number) ?? 0,
+    photoCount:
+      ((p.receipt_paths as string[] | null) ?? []).length +
+      (p.receipt_path ? 1 : 0),
+    thumbUrl: thumbUrls.get(p.id as number) ?? null,
+  }));
 
   return (
     <div className="max-w-3xl mx-auto px-4 py-6 space-y-5">
@@ -141,6 +177,8 @@ export default async function ExpenseIntakePage() {
         pendingPurchases={pendingPurchases}
         receiptAi={flags.receiptAi}
       />
+
+      <ReceiptsView receipts={receipts} />
     </div>
   );
 }

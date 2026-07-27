@@ -301,14 +301,25 @@ function JobScan({ jobId, options }: { jobId: number; options: Assignment[] }) {
 
       setMsg("Compressing…");
       const compressed: File[] = [];
+      const thumbs: File[] = [];
       for (const f of Array.from(files).slice(0, 6)) {
         const blob = await compressImage(f, 2400, 0.85); // receipt preset
         compressed.push(new File([blob], "receipt.jpg", { type: blob.type || "image/jpeg" }));
+        // Best-effort small rendition for the Receipts list (never fatal).
+        try {
+          const t = await compressImage(f, 400, 0.7);
+          thumbs.push(new File([t], "thumb.jpg", { type: t.type || "image/jpeg" }));
+        } catch {
+          /* degrade to full-image fallback */
+        }
       }
 
       setMsg("Uploading…");
       const fd = new FormData();
       for (const f of compressed) fd.append("receipts", f);
+      if (thumbs.length === compressed.length) {
+        for (const t of thumbs) fd.append("thumbs", t);
+      }
       const up = await fetch(`/api/estimator/purchases/${pid}/receipts`, {
         method: "POST",
         body: fd,

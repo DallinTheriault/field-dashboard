@@ -1,9 +1,10 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   Camera,
+  CopyCheck,
   ImagePlus,
   Loader2,
   Paperclip,
@@ -13,6 +14,11 @@ import {
   TriangleAlert,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
+import {
+  findDuplicatePurchase,
+  mergePurchaseIntoExisting,
+  type DuplicateHit,
+} from "./duplicate-actions";
 import { compressImage } from "@/lib/photos/compress";
 import {
   scanTotalsMismatch,
@@ -94,11 +100,20 @@ export function ScanReceipt({ clientId }: { clientId: number }) {
     try {
       setWorkingMsg("Compressing…");
       const compressed: File[] = [];
+      const thumbs: File[] = [];
       for (const f of Array.from(files).slice(0, 6)) {
         const blob = await compressImage(f, 2400, 0.85); // receipt preset
         compressed.push(
           new File([blob], "receipt.jpg", { type: blob.type || "image/jpeg" }),
         );
+        // Small rendition for the Receipts list/grid. Best-effort: if it
+        // fails, the upload proceeds and readers fall back to the full image.
+        try {
+          const t = await compressImage(f, 400, 0.7);
+          thumbs.push(new File([t], "thumb.jpg", { type: t.type || "image/jpeg" }));
+        } catch {
+          /* degrade to full-image fallback */
+        }
       }
 
       const { data: purchase, error: pErr } = await supabase
@@ -118,6 +133,9 @@ export function ScanReceipt({ clientId }: { clientId: number }) {
       setWorkingMsg("Uploading…");
       const fd = new FormData();
       for (const f of compressed) fd.append("receipts", f);
+      if (thumbs.length === compressed.length) {
+        for (const t of thumbs) fd.append("thumbs", t);
+      }
       const up = await fetch(`/api/estimator/purchases/${purchase.id}/receipts`, {
         method: "POST",
         body: fd,
@@ -256,6 +274,10 @@ export function ConfirmScan({
   );
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const [dupe, setDupe] = useState<DuplicateHit | null>(null);
+  const [dupeDismissed, setDupeDismissed] = useState(false);
+  const [merging, setMerging] = useState(false);
+  const router = useRouter();
 
   const statedTotal = parseFloat(totalStr);
   const statedTax = parseFloat(taxStr);
@@ -267,6 +289,60 @@ export function ConfirmScan({
 
   const patch = (key: number, p: Partial<ConfirmRow>) =>
     setRows((prev) => prev.map((r) => (r.key === key ? { ...r, ...p } : r)));
+
+  // Duplicate check (§5.1): after extraction, before anything else persists.
+  // Re-runs when the user edits vendor/date/total, since those are the match
+  // fields. Never blocks — it surfaces choices.
+  useEffect(() => {
+    const v = vendor.trim();
+    const t = parseFloat(totalStr);
+    if (!v || !date || !Number.isFinite(t)) {
+      setDupe(null);
+      return;
+    }
+    let cancelled = false;
+    const timer = setTimeout(async () => {
+      const res = await findDuplicatePurchase({
+        vendor: v,
+        purchaseDate: date,
+        total: t,
+        excludePurchaseId: purchaseId,
+      });
+      if (!cancelled && res.ok) setDupe(res.data ?? null);
+    }, 350);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [vendor, date, totalStr, purchaseId]);
+
+  async function mergePhotos(alsoItems: boolean) {
+    if (!dupe) return;
+    setErr(null);
+    setMerging(true);
+    const items = rows
+      .filter((r) => r.description.trim() && rowAmount(r) !== null)
+      .map((r) => {
+        const q = parseFloat(r.qtyStr);
+        const u = parseFloat(r.unitStr);
+        return {
+          description: r.description.trim(),
+          sku: r.sku,
+          qty: Number.isFinite(q) && q > 0 ? q : null,
+          unitPrice: Number.isFinite(u) ? u : null,
+          amount: rowAmount(r)!,
+        };
+      });
+    const res = await mergePurchaseIntoExisting({
+      placeholderId: purchaseId,
+      targetId: dupe.id,
+      alsoMoveItems: alsoItems,
+      items,
+    });
+    setMerging(false);
+    if (!res.ok) return setErr(res.error);
+    router.push(`/app/estimator/purchases/${dupe.id}`);
+  }
 
   async function accept() {
     setErr(null);
@@ -337,6 +413,65 @@ export function ConfirmScan({
             Couldn&apos;t read this one — the photo is saved. Type the items in
             below.
           </span>
+        </div>
+      )}
+
+      {/* Possible duplicate (§5.3). Three explicit actions, nothing
+          preselected, never a hard stop. */}
+      {dupe && !dupeDismissed && (
+        <div className="panel px-3 py-2.5 border-status-lead/50 bg-status-lead/[0.06] space-y-2">
+          <div className="flex items-start gap-2">
+            <CopyCheck size={13} className="text-status-lead shrink-0 mt-0.5" />
+            <p className="text-2xs text-bone-100 leading-relaxed">
+              <span className="font-medium">Possible duplicate.</span> You
+              already logged{" "}
+              <span className="text-bone-50">{dupe.vendor}</span>,{" "}
+              <span className="num">{dupe.purchaseDate}</span>
+              {dupe.total !== null && (
+                <>
+                  , <span className="num">{usd.format(dupe.total)}</span>
+                </>
+              )}{" "}
+              with <span className="num">{dupe.itemCount}</span> item
+              {dupe.itemCount === 1 ? "" : "s"}.
+            </p>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <a
+              href={`/app/estimator/purchases/${dupe.id}`}
+              target="_blank"
+              rel="noreferrer"
+              className="btn-secondary text-xs h-8"
+            >
+              View it
+            </a>
+            <button
+              type="button"
+              onClick={() => mergePhotos(false)}
+              disabled={merging}
+              className="btn-secondary text-xs h-8"
+            >
+              {merging ? <Loader2 size={11} className="animate-spin" /> : null}
+              Add these photos to it
+            </button>
+            {dupe.itemCount === 0 && (
+              <button
+                type="button"
+                onClick={() => mergePhotos(true)}
+                disabled={merging}
+                className="btn-secondary text-xs h-8"
+              >
+                …and add these items
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={() => setDupeDismissed(true)}
+              className="btn-ghost text-xs h-8"
+            >
+              Save as separate purchase
+            </button>
+          </div>
         </div>
       )}
       <div className="flex flex-wrap gap-2">

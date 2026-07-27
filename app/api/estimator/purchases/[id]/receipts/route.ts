@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { randomUUID } from "node:crypto";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { thumbPathFor } from "@/lib/estimator/receipt-paths";
 
 const MAX_BYTES = 8 * 1024 * 1024;
 // Scan images only — types Claude vision accepts (HEIC excluded on purpose;
@@ -67,9 +68,13 @@ export async function POST(
     }
   }
 
+  // Optional small renditions, one per photo, same order (field "thumbs").
+  // A receipt is ~1.2MB at 2400px/85%; lists/grids render the ~400px thumb.
+  const thumbs = formData.getAll("thumbs").filter((f): f is File => f instanceof File);
+
   const admin = createAdminClient();
   const newPaths: string[] = [];
-  for (const f of files) {
+  for (const [i, f] of files.entries()) {
     const ext = f.type === "image/png" ? "png" : f.type === "image/webp" ? "webp" : "jpg";
     const path = `${clientId}/purchase-${purchaseId}-${randomUUID()}.${ext}`;
     const { error } = await admin.storage
@@ -81,6 +86,21 @@ export async function POST(
       return NextResponse.json({ error: error.message }, { status: 500 });
     }
     newPaths.push(path);
+
+    // Thumbnail is best-effort by design: field connectivity is unreliable and
+    // losing a receipt because its thumbnail failed would be absurd. The list
+    // falls back to the full image when no -thumb object exists.
+    const thumb = thumbs[i];
+    if (thumb) {
+      const thumbPath = thumbPathFor(path);
+      const { error: tErr } = await admin.storage
+        .from("receipts")
+        .upload(thumbPath, await thumb.arrayBuffer(), {
+          contentType: thumb.type || "image/jpeg",
+          upsert: true,
+        });
+      if (tErr) console.error("[receipts] thumbnail upload failed (degrading)", tErr);
+    }
   }
 
   const allPaths = [...((purchase.receipt_paths as string[] | null) ?? []), ...newPaths];

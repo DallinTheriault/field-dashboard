@@ -26,6 +26,7 @@ import {
   setItemAssignment,
 } from "./purchase-actions";
 import { ConfirmScan, ScanReceipt } from "./scan-receipt";
+import { findDuplicatePurchase, type DuplicateHit } from "./duplicate-actions";
 
 export type PendingPurchase = {
   id: number;
@@ -537,12 +538,13 @@ function LogManualPurchase({
   const [rows, setRows] = useState<ManualRow[]>([blankRow()]);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const [dupe, setDupe] = useState<DuplicateHit | null>(null);
   const total = round2(rows.reduce((s, r) => s + rowTotal(r), 0));
 
   const patch = (key: number, p: Partial<ManualRow>) =>
     setRows((prev) => prev.map((r) => (r.key === key ? { ...r, ...p } : r)));
 
-  async function save() {
+  async function save(force = false) {
     setErr(null);
     if (!vendor.trim()) return setErr("Where was the purchase? (e.g. Home Depot)");
     const items = rows.filter((r) => r.description.trim());
@@ -551,6 +553,21 @@ function LogManualPurchase({
       const p = parseFloat(r.priceStr);
       if (!Number.isFinite(p) || p < 0) {
         return setErr(`"${r.description}": price must be 0 or more.`);
+      }
+    }
+
+    // Same duplicate check as the scan flow (§5.1) — before anything persists.
+    // Never blocks: it surfaces the existing receipt once, then the next tap
+    // saves as a separate purchase.
+    if (!force) {
+      const res = await findDuplicatePurchase({
+        vendor: vendor.trim(),
+        purchaseDate: date || todayISO(),
+        total,
+      });
+      if (res.ok && res.data) {
+        setDupe(res.data);
+        return;
       }
     }
     setBusy(true);
@@ -606,6 +623,7 @@ function LogManualPurchase({
       setDate(todayISO());
       setReceipt(null);
       setRows([blankRow()]);
+      setDupe(null);
       setOpen(false);
       onDone();
     } catch (e) {
@@ -732,13 +750,50 @@ function LogManualPurchase({
             </span>
             <button
               type="button"
-              onClick={save}
+              onClick={() => save(false)}
               disabled={busy}
               className="btn-primary text-sm min-h-[42px]"
             >
               {busy ? <Loader2 size={13} className="animate-spin" /> : "Log purchase"}
             </button>
           </div>
+
+          {/* Same duplicate warning as the scan flow (§5.1). Nothing has
+              persisted yet here, so the choices are view or save anyway. */}
+          {dupe && (
+            <div className="panel px-3 py-2.5 border-status-lead/50 bg-status-lead/[0.06] space-y-2">
+              <p className="text-2xs text-bone-100 leading-relaxed">
+                <span className="font-medium">Possible duplicate.</span> You
+                already logged <span className="text-bone-50">{dupe.vendor}</span>,{" "}
+                <span className="num">{dupe.purchaseDate}</span>
+                {dupe.total !== null && (
+                  <>
+                    , <span className="num">{usd.format(dupe.total)}</span>
+                  </>
+                )}{" "}
+                with <span className="num">{dupe.itemCount}</span> item
+                {dupe.itemCount === 1 ? "" : "s"}.
+              </p>
+              <div className="flex flex-wrap items-center gap-2">
+                <a
+                  href={`/app/estimator/purchases/${dupe.id}`}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="btn-secondary text-xs h-8"
+                >
+                  View it
+                </a>
+                <button
+                  type="button"
+                  onClick={() => save(true)}
+                  disabled={busy}
+                  className="btn-secondary text-xs h-8"
+                >
+                  Save as separate purchase
+                </button>
+              </div>
+            </div>
+          )}
           {err && <div className="form-error">{err}</div>}
         </div>
       )}
