@@ -18,3 +18,24 @@ export function thumbPathFor(path: string): string {
 export function isThumbPath(path: string): boolean {
   return /-thumb(\.[A-Za-z0-9]+)?$/.test(path);
 }
+
+/**
+ * EVERY storage object belonging to a purchase: each full-size image plus its
+ * thumbnail sibling, deduped.
+ *
+ * Deleting a purchase must remove both. The thumbnails aren't recorded in
+ * receipt_paths[] — they're derived — so a delete that only walks that array
+ * leaves them orphaned in the bucket (which is exactly what happened before
+ * this helper existed). Removing a path that was never written is a no-op, so
+ * legacy receipts with no thumbnail are safe.
+ */
+export function allStoragePathsFor(purchase: {
+  receipt_path?: string | null;
+  receipt_paths?: string[] | null;
+}): string[] {
+  const full = [
+    ...((purchase.receipt_paths ?? []).filter(Boolean) as string[]),
+    ...(purchase.receipt_path ? [purchase.receipt_path] : []),
+  ];
+  return [...new Set(full.flatMap((p) => [p, thumbPathFor(p)]))];
+}

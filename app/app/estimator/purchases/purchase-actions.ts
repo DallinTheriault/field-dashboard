@@ -13,6 +13,7 @@ import {
   canEditCustomerNotified,
 } from "@/lib/estimator/expense-roles";
 import { getCurrentUserRole } from "@/lib/permissions/current-role";
+import { allStoragePathsFor } from "@/lib/estimator/receipt-paths";
 import { refreshInvoiceExtras } from "../invoice-actions";
 
 /**
@@ -215,12 +216,14 @@ export async function deletePurchase(purchaseId: number): Promise<Result> {
     return { ok: false, error: "You don't have permission to delete purchases." };
   }
 
-  const paths = [
-    ...(((purchase.receipt_paths as string[] | null) ?? [])),
-    ...(purchase.receipt_path ? [purchase.receipt_path as string] : []),
-  ];
+  // Full images AND their thumbnail siblings — thumbs are derived, not stored
+  // in receipt_paths[], so walking that array alone orphaned them in the bucket.
+  const paths = allStoragePathsFor({
+    receipt_path: purchase.receipt_path as string | null,
+    receipt_paths: purchase.receipt_paths as string[] | null,
+  });
   if (paths.length > 0) {
-    await createAdminClient().storage.from("receipts").remove([...new Set(paths)]);
+    await createAdminClient().storage.from("receipts").remove(paths);
   }
 
   revalidatePath("/app/estimator/purchases");
