@@ -27,12 +27,15 @@ import {
 } from "./purchase-actions";
 import { ConfirmScan, ScanReceipt } from "./scan-receipt";
 import { findDuplicatePurchase, type DuplicateHit } from "./duplicate-actions";
+import type { Role } from "@/lib/permissions/roles";
 
 export type PendingPurchase = {
   id: number;
   vendor: string;
   purchase_date: string;
   hasPhotos: boolean;
+  total: number | null;
+  tax: number | null;
 };
 
 export type ExpenseItemRow = {
@@ -140,12 +143,14 @@ export function PurchasesClient({
   jobs,
   pendingPurchases = [],
   receiptAi = false,
+  role,
 }: {
   clientId: number;
   items: ExpenseItemRow[];
   jobs: JobPick[];
   pendingPurchases?: PendingPurchase[];
   receiptAi?: boolean;
+  role: Role;
 }) {
   const router = useRouter();
   const supabase = createClient();
@@ -173,7 +178,7 @@ export function PurchasesClient({
 
       {/* AI scan — hidden when the entitlement is off (the route enforces
           it server-side regardless; hiding is UX, not security). */}
-      {receiptAi && <ScanReceipt clientId={clientId} />}
+      {receiptAi && <ScanReceipt clientId={clientId} jobs={jobs} role={role} />}
 
       {/* Receipts photographed but not yet turned into items */}
       {pendingPurchases.length > 0 && (
@@ -228,6 +233,12 @@ export function PurchasesClient({
                     purchaseId={p.id}
                     scan={null}
                     parseFailed={false}
+                    jobs={jobs}
+                    role={role}
+                    initialVendor={p.vendor}
+                    initialDate={p.purchase_date}
+                    initialTax={p.tax}
+                    initialTotal={p.total}
                     onDone={() => {
                       setEnteringId(null);
                       router.refresh();

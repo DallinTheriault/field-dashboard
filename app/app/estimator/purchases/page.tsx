@@ -52,7 +52,7 @@ export default async function ExpenseIntakePage() {
     supabase
       .from("purchases")
       .select(
-        "id, vendor, purchase_date, source, total, receipt_path, receipt_paths, expenses(count)",
+        "id, vendor, purchase_date, source, total, tax, receipt_path, receipt_paths, expenses(count)",
       )
       .order("id", { ascending: false })
       .limit(50),
@@ -113,6 +113,8 @@ export default async function ExpenseIntakePage() {
       vendor: p.vendor as string,
       purchase_date: p.purchase_date as string,
       hasPhotos: ((p.receipt_paths as string[] | null) ?? []).length > 0,
+      total: p.total === null || p.total === undefined ? null : Number(p.total),
+      tax: p.tax === null || p.tax === undefined ? null : Number(p.tax),
     }));
 
   // Unassigned-item counts per purchase, in one query (badge accuracy).
@@ -176,6 +178,7 @@ export default async function ExpenseIntakePage() {
         jobs={jobs}
         pendingPurchases={pendingPurchases}
         receiptAi={flags.receiptAi}
+        role={session.role}
       />
 
       <ReceiptsView receipts={receipts} />

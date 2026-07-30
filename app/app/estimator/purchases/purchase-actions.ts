@@ -13,6 +13,7 @@ import {
   canEditCustomerNotified,
 } from "@/lib/estimator/expense-roles";
 import { getCurrentUserRole } from "@/lib/permissions/current-role";
+import { requireMember } from "@/lib/estimator/auth";
 import { allStoragePathsFor } from "@/lib/estimator/receipt-paths";
 import { refreshInvoiceExtras } from "../invoice-actions";
 
@@ -129,6 +130,133 @@ export async function setItemAssignment(
   revalidatePath("/app/estimator/purchases");
   if (jobId) revalidatePath(`/app/jobs/${jobId}`);
   if (item.job_id && item.job_id !== jobId) revalidatePath(`/app/jobs/${item.job_id}`);
+  return { ok: true };
+}
+
+export type ReceiptItemInput = {
+  description: string;
+  sku: string | null;
+  qty: number | null;
+  unitPrice: number | null;
+  amount: number;
+  /** Per-item override from "Split this receipt"; omitted = use the receipt's. */
+  assignment?: Assignment;
+  jobId?: number | null;
+};
+
+/**
+ * Persist a whole scanned/entered receipt with a RECEIPT-LEVEL assignment
+ * (§5.1) — the common path where one store run is one bucket. Items no longer
+ * land `unassigned` unless the user genuinely declines to choose.
+ *
+ * Runs through the server so the role rule is enforced rather than assumed:
+ * a member may never write job_extra, whatever the client sends. Tenant
+ * boundary is re-checked on the purchase and every referenced job because the
+ * admin client bypasses RLS.
+ *
+ * This ONLY defaults new items at confirm time. It never rewrites history —
+ * existing unassigned rows stay exactly as they are.
+ */
+export async function saveScannedReceipt(input: {
+  purchaseId: number;
+  assignment: Assignment;
+  jobId: number | null;
+  vendor: string;
+  date: string;
+  tax: number | null;
+  total: number | null;
+  items: ReceiptItemInput[];
+}): Promise<Result> {
+  const auth = await requireMember();
+  if (!auth.ok) return { ok: false, error: auth.error };
+  const { clientId, role } = auth;
+
+  const admin = createAdminClient();
+  const { data: purchase } = await admin
+    .from("purchases")
+    .select("id, client_id")
+    .eq("id", Number(input.purchaseId))
+    .maybeSingle();
+  if (!purchase || purchase.client_id !== clientId) {
+    return { ok: false, error: "Receipt not found." };
+  }
+
+  const vendor = (input.vendor ?? "").trim();
+  if (!vendor) return { ok: false, error: "Who was the vendor?" };
+  const items = (input.items ?? []).filter((r) => (r.description ?? "").trim());
+  if (items.length === 0) return { ok: false, error: "Add at least one item." };
+
+  // Validate every assignment that will be written — receipt-level and any
+  // per-item override from the split flow.
+  const jobIdsToCheck = new Set<number>();
+  const resolved = items.map((r) => {
+    const assignment = r.assignment ?? input.assignment;
+    const jobId = r.assignment ? (r.jobId ?? null) : input.jobId;
+    return { row: r, assignment, jobId };
+  });
+  for (const { assignment, jobId } of resolved) {
+    if (!ASSIGNMENTS.includes(assignment)) {
+      return { ok: false, error: "Invalid assignment." };
+    }
+    if (!assignmentAllowedForRole(role, assignment)) {
+      return { ok: false, error: "You can't set that assignment." };
+    }
+    if (JOB_ASSIGNMENTS.includes(assignment)) {
+      if (!jobId) return { ok: false, error: "Pick a job for a job assignment." };
+      jobIdsToCheck.add(Number(jobId));
+    }
+  }
+  if (jobIdsToCheck.size > 0) {
+    const { data: jobs } = await admin
+      .from("jobs")
+      .select("id, client_id")
+      .in("id", [...jobIdsToCheck]);
+    const ok = (jobs ?? []).filter((j) => j.client_id === clientId).map((j) => j.id);
+    if (ok.length !== jobIdsToCheck.size) return { ok: false, error: "Job not found." };
+  }
+
+  const tax = input.tax;
+  const total = input.total;
+  const sub =
+    total !== null && tax !== null && Number.isFinite(total) && Number.isFinite(tax)
+      ? Math.round((total - tax) * 100) / 100
+      : null;
+  const date = (input.date || "").slice(0, 10);
+
+  const { error: uErr } = await admin
+    .from("purchases")
+    .update({
+      vendor,
+      purchase_date: date || null,
+      subtotal: sub,
+      tax: tax !== null && Number.isFinite(tax) ? tax : null,
+      total: total !== null && Number.isFinite(total) ? total : null,
+    })
+    .eq("id", purchase.id);
+  if (uErr) return { ok: false, error: uErr.message };
+
+  const { error: iErr } = await admin.from("expenses").insert(
+    resolved.map(({ row, assignment, jobId }) => ({
+      client_id: clientId,
+      purchase_id: purchase.id,
+      expense_date: date || null,
+      category: "Materials & supplies",
+      description: row.description.trim(),
+      sku: row.sku,
+      qty: row.qty !== null && Number.isFinite(row.qty) && row.qty > 0 ? row.qty : 1,
+      unit_price:
+        row.unitPrice !== null && Number.isFinite(row.unitPrice) ? row.unitPrice : null,
+      amount: row.amount,
+      assignment,
+      job_id: JOB_ASSIGNMENTS.includes(assignment) ? jobId : null,
+      stock_category: null,
+      customer_notified: false,
+    })),
+  );
+  if (iErr) return { ok: false, error: iErr.message };
+
+  revalidatePath("/app/estimator/purchases");
+  for (const jid of jobIdsToCheck) revalidatePath(`/app/jobs/${jid}`);
   return { ok: true };
 }
 

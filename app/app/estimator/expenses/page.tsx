@@ -7,7 +7,11 @@ import { canViewSettings } from "@/lib/permissions/roles";
 import { getTenantFeatureFlags } from "@/lib/features/flags";
 import { FeatureDisabledPanel } from "@/components/ui/feature-disabled-panel";
 import { dayKeyInTz, getTenantTimezone } from "@/lib/dates";
-import { summarizePnl } from "@/lib/estimator/expenses";
+import {
+  splitMaterials,
+  summarizePnl,
+  summarizeStock,
+} from "@/lib/estimator/expenses";
 import {
   ALTERNATIVE_METHODS_NOTE,
   buildRateMap,
@@ -57,7 +61,7 @@ export default async function ExpensesPage({
     supabase
       .from("expenses")
       .select(
-        "id, expense_date, category, description, amount, qty, receipt_path, job_id, purchase_id, jobs(name), purchases(vendor, receipt_path)",
+        "id, expense_date, category, description, amount, qty, assignment, receipt_path, job_id, purchase_id, jobs(name), purchases(vendor, receipt_path)",
       )
       .gte("expense_date", `${year}-01-01`)
       .lte("expense_date", `${year}-12-31`)
@@ -92,6 +96,7 @@ export default async function ExpensesPage({
       category: e.category,
       description: e.description,
       amount: Number(e.amount),
+      assignment: (e.assignment as string | null) ?? null,
       qty: e.qty === null ? null : Number(e.qty),
       job_id: e.job_id,
       jobName: job?.name ?? null,
@@ -119,6 +124,11 @@ export default async function ExpensesPage({
   );
   const vehicleExpenseTotal =
     pnl.byCategory.find((c) => c.category === "Vehicle & fuel")?.total ?? 0;
+
+  // Absorbed vs recovered for the year, plus stock spend broken out by the
+  // Schedule-C category already on those rows (§6.2). Display only.
+  const materials = splitMaterials(expenses);
+  const stock = summarizeStock(expenses);
 
   const clientId = session.clientId;
 
@@ -183,6 +193,61 @@ export default async function ExpensesPage({
           </div>
         ))}
       </div>
+
+      {/* Materials: what was recovered vs eaten, and what stock cost this
+          year (§6.2). Stock is a business asset, never a job cost. */}
+      <section className="panel">
+        <div className="px-4 py-3 border-b border-line">
+          <h2 className="text-sm font-semibold text-bone-100">Materials</h2>
+          <p className="text-2xs text-bone-400 mt-0.5">
+            Job materials by how they landed. Stock is company supplies — the
+            input to whether your loaded rate covers overhead.
+          </p>
+        </div>
+        <div className="px-4 py-3 grid grid-cols-2 sm:grid-cols-4 gap-3">
+          <div>
+            <div className="label-eyebrow">In bid</div>
+            <div className="num text-base text-bone-50 mt-0.5">
+              {usd.format(materials.inBid)}
+            </div>
+          </div>
+          <div>
+            <div className="label-eyebrow">Billed</div>
+            <div className="num text-base text-status-completed mt-0.5">
+              {usd.format(materials.billed)}
+            </div>
+          </div>
+          <div>
+            <div className="label-eyebrow">Absorbed</div>
+            <div className="num text-base text-status-lead mt-0.5">
+              {usd.format(materials.absorbed)}
+            </div>
+          </div>
+          <div>
+            <div className="label-eyebrow">Stock</div>
+            <div className="num text-base text-bone-50 mt-0.5">
+              {usd.format(stock.total)}
+            </div>
+          </div>
+        </div>
+        {stock.byCategory.length > 0 && (
+          <div className="px-4 pb-3">
+            <div className="label-eyebrow mb-1">Stock by category</div>
+            <table className="w-full text-2xs">
+              <tbody>
+                {stock.byCategory.map((c) => (
+                  <tr key={c.category} className="border-b border-line-subtle last:border-0">
+                    <td className="py-1 text-bone-300">{c.category}</td>
+                    <td className="py-1 text-right num text-bone-100">
+                      {usd.format(c.total)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
 
       {/* Vehicle: two ALTERNATIVE figures, never summed (§6.3). The app
           states them; it does not choose a method. */}

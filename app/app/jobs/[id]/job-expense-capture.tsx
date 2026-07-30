@@ -19,6 +19,7 @@ import {
 } from "@/lib/estimator/receipt-scan";
 import {
   ASSIGNMENT_LABELS,
+  splitMaterials,
   type Assignment,
 } from "@/lib/estimator/expenses";
 import { allowedAssignmentsForRole } from "@/lib/estimator/expense-roles";
@@ -68,6 +69,7 @@ export function JobExpenseCapture({
   items: JobExpenseItem[];
 }) {
   const options = allowedAssignmentsForRole(role);
+  const split = splitMaterials(items);
   return (
     <div className="panel px-4 py-3 mb-5 space-y-4">
       <div className="flex items-center gap-2">
@@ -77,6 +79,18 @@ export function JobExpenseCapture({
 
       {receiptAiEnabled && <JobScan jobId={jobId} options={options} />}
       <ManualExpense jobId={jobId} options={options} />
+
+      {/* Absorbed vs recovered (§6.2). Zeros render so absence is visible;
+          stock is excluded — it's a business asset, not a job cost. */}
+      <div className="flex flex-wrap items-center gap-x-2 text-2xs text-bone-400 pt-2 border-t border-line-subtle">
+        <span>Materials:</span>
+        <span className="num text-bone-100">{usd.format(split.inBid)}</span>
+        <span>in bid ·</span>
+        <span className="num text-bone-100">{usd.format(split.billed)}</span>
+        <span>billed ·</span>
+        <span className="num text-status-lead">{usd.format(split.absorbed)}</span>
+        <span>absorbed</span>
+      </div>
 
       {items.length > 0 && (
         <ul className="space-y-1 pt-2 border-t border-line-subtle">

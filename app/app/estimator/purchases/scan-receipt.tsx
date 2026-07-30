@@ -4,12 +4,14 @@ import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   Camera,
+  Check,
   CopyCheck,
   ImagePlus,
   Loader2,
   Paperclip,
   Plus,
   ScanLine,
+  SplitSquareHorizontal,
   Trash2,
   TriangleAlert,
 } from "lucide-react";
@@ -19,6 +21,14 @@ import {
   mergePurchaseIntoExisting,
   type DuplicateHit,
 } from "./duplicate-actions";
+import { saveScannedReceipt } from "./purchase-actions";
+import {
+  ReceiptAssignment,
+  resolveTarget,
+  type JobOption,
+  type ReceiptTarget,
+} from "./receipt-assignment";
+import type { Role } from "@/lib/permissions/roles";
 import { compressImage } from "@/lib/photos/compress";
 import {
   scanTotalsMismatch,
@@ -80,7 +90,15 @@ function rowAmount(r: ConfirmRow): number | null {
  * EDITABLE confirm screen. Nothing persists until Accept. Reject keeps
  * the photos on the purchase and drops into manual entry.
  */
-export function ScanReceipt({ clientId }: { clientId: number }) {
+export function ScanReceipt({
+  clientId,
+  jobs = [],
+  role = "owner",
+}: {
+  clientId: number;
+  jobs?: JobOption[];
+  role?: Role;
+}) {
   const router = useRouter();
   const supabase = createClient();
   const cameraRef = useRef<HTMLInputElement>(null);
@@ -244,6 +262,8 @@ export function ScanReceipt({ clientId }: { clientId: number }) {
           scan={scan}
           parseFailed={parseFailed}
           onDone={reset}
+          jobs={jobs}
+          role={role}
         />
       )}
     </section>
@@ -258,17 +278,39 @@ export function ConfirmScan({
   scan,
   parseFailed,
   onDone,
+  jobs = [],
+  role = "owner",
+  initialVendor,
+  initialDate,
+  initialTax,
+  initialTotal,
 }: {
   purchaseId: number;
   scan: ScanResult | null;
   parseFailed: boolean;
   onDone: () => void;
+  jobs?: JobOption[];
+  role?: Role;
+  /** Header the purchase already carries (the "enter items later" path) —
+   *  prefilled so the user verifies rather than retypes. */
+  initialVendor?: string | null;
+  initialDate?: string | null;
+  initialTax?: number | null;
+  initialTotal?: number | null;
 }) {
-  const supabase = createClient();
-  const [vendor, setVendor] = useState(scan?.vendor ?? "");
-  const [date, setDate] = useState(scan?.date ?? todayISO());
-  const [taxStr, setTaxStr] = useState(scan?.tax === null || !scan ? "" : String(scan.tax));
-  const [totalStr, setTotalStr] = useState(scan?.total === null || !scan ? "" : String(scan.total));
+  const [target, setTarget] = useState<ReceiptTarget>({ kind: "unset" });
+  const [splitOpen, setSplitOpen] = useState(false);
+  const [receiptDefault, setReceiptDefault] = useState<ReceiptTarget>({ kind: "unset" });
+  const [selected, setSelected] = useState<Set<number>>(new Set());
+  const [rowTargets, setRowTargets] = useState<Map<number, ReceiptTarget>>(new Map());
+  const [vendor, setVendor] = useState(scan?.vendor ?? initialVendor ?? "");
+  const [date, setDate] = useState(scan?.date ?? initialDate?.slice(0, 10) ?? todayISO());
+  const [taxStr, setTaxStr] = useState(
+    scan?.tax != null ? String(scan.tax) : initialTax != null ? String(initialTax) : "",
+  );
+  const [totalStr, setTotalStr] = useState(
+    scan?.total != null ? String(scan.total) : initialTotal != null ? String(initialTotal) : "",
+  );
   const [rows, setRows] = useState<ConfirmRow[]>(
     scan && scan.items.length > 0 ? rowsFromScan(scan.items) : [blankConfirmRow()],
   );
@@ -354,48 +396,37 @@ export function ConfirmScan({
         return setErr(`"${r.description.trim()}": needs an amount (or $/ea).`);
       }
     }
+    // The receipt-level choice governs everything unless a row was split off.
+    // `unassigned` stays legal: declining to choose is still allowed.
+    const receipt = resolveTarget(target) ?? { assignment: "unassigned" as const, jobId: null };
     setBusy(true);
     try {
       const tax = parseFloat(taxStr);
       const total = parseFloat(totalStr);
-      const sub = Number.isFinite(total) && Number.isFinite(tax) ? round2(total - tax) : null;
-      const { error: uErr } = await supabase
-        .from("purchases")
-        .update({
-          vendor: vendor.trim(),
-          purchase_date: date || todayISO(),
-          subtotal: sub,
-          tax: Number.isFinite(tax) ? round2(tax) : null,
-          total: Number.isFinite(total) ? round2(total) : null,
-        })
-        .eq("id", purchaseId);
-      if (uErr) throw new Error(uErr.message);
-
-      const { data: purchase } = await supabase
-        .from("purchases")
-        .select("client_id")
-        .eq("id", purchaseId)
-        .single();
-
-      const { error: iErr } = await supabase.from("expenses").insert(
-        items.map((r) => {
-          const qty = parseFloat(r.qtyStr);
-          const unit = parseFloat(r.unitStr);
+      const r = await saveScannedReceipt({
+        purchaseId,
+        assignment: receipt.assignment,
+        jobId: receipt.jobId,
+        vendor: vendor.trim(),
+        date: date || todayISO(),
+        tax: Number.isFinite(tax) ? round2(tax) : null,
+        total: Number.isFinite(total) ? round2(total) : null,
+        items: items.map((row) => {
+          const qty = parseFloat(row.qtyStr);
+          const unit = parseFloat(row.unitStr);
+          const override = splitOpen ? rowTargets.get(row.key) : undefined;
+          const res = override ? resolveTarget(override) : null;
           return {
-            client_id: purchase!.client_id,
-            purchase_id: purchaseId,
-            expense_date: date || todayISO(),
-            category: "Materials & supplies",
-            description: r.description.trim(),
-            sku: r.sku,
-            qty: Number.isFinite(qty) && qty > 0 ? qty : 1,
-            unit_price: Number.isFinite(unit) ? round2(unit) : null,
-            amount: rowAmount(r)!,
-            assignment: "unassigned", // assign from the couch (§2.1)
+            description: row.description.trim(),
+            sku: row.sku,
+            qty: Number.isFinite(qty) && qty > 0 ? qty : null,
+            unitPrice: Number.isFinite(unit) ? round2(unit) : null,
+            amount: rowAmount(row)!,
+            ...(res ? { assignment: res.assignment, jobId: res.jobId } : {}),
           };
         }),
-      );
-      if (iErr) throw new Error(iErr.message);
+      });
+      if (!r.ok) throw new Error(r.error);
       onDone();
     } catch (e) {
       setErr(e instanceof Error ? e.message : "Save failed.");
@@ -403,6 +434,30 @@ export function ConfirmScan({
       setBusy(false);
     }
   }
+
+  /**
+   * Apply the currently-shown choice to the checked rows (§5.3), then snap the
+   * control back to the receipt-level default. Without the restore, picking an
+   * assignment for two odd items would silently re-bucket the whole receipt.
+   */
+  function applyToSelected() {
+    if (selected.size === 0 || target.kind === "unset") return;
+    setRowTargets((prev) => {
+      const next = new Map(prev);
+      for (const key of selected) next.set(key, target);
+      return next;
+    });
+    setSelected(new Set());
+    setTarget(receiptDefault);
+  }
+
+  const targetChip = (t: ReceiptTarget | undefined): string => {
+    if (!t) return "receipt";
+    if (t.kind === "stock") return "stock";
+    if (t.kind === "internal") return "absorbed";
+    if (t.kind === "job") return t.assignment === "job_extra" ? "billed" : "in bid";
+    return "receipt";
+  };
 
   return (
     <div className="px-4 pb-4 space-y-3 border-t border-line-subtle pt-3">
@@ -489,6 +544,7 @@ export function ConfirmScan({
             value={taxStr}
             onChange={(e) => setTaxStr(e.target.value)}
             placeholder="0.00"
+            aria-label="Receipt tax"
             className="w-20"
           />
         </label>
@@ -499,6 +555,7 @@ export function ConfirmScan({
             value={totalStr}
             onChange={(e) => setTotalStr(e.target.value)}
             placeholder="0.00"
+            aria-label="Receipt total"
             className="w-24"
           />
         </label>
@@ -514,7 +571,9 @@ export function ConfirmScan({
         </a>
       </div>
 
-      {mismatch && (
+      {/* Verify the total, not every word (§5.4). Amounts are the reliable
+          part of extraction; descriptions are workable-but-imperfect. */}
+      {mismatch ? (
         <div className="form-error flex items-start gap-2">
           <TriangleAlert size={13} className="shrink-0 mt-0.5" />
           <span>
@@ -522,8 +581,68 @@ export function ConfirmScan({
             the receipt says they should be{" "}
             <span className="num">{usd.format(expected ?? 0)}</span>
             {Number.isFinite(statedTax) ? " before tax" : ""} — a line may be
-            missing, doubled, or misread.
+            missing, doubled, or misread. Check the rows below, or accept
+            anyway.
           </span>
+        </div>
+      ) : (
+        itemSum > 0 && (
+          <div className="flex items-center gap-2 text-2xs text-status-completed">
+            <Check size={13} className="shrink-0" />
+            <span>
+              Items add up to the receipt total
+              {Number.isFinite(statedTax) ? " before tax" : ""} —{" "}
+              <span className="num">{usd.format(itemSum)}</span>.
+            </span>
+          </div>
+        )
+      )}
+
+      {/* Receipt-level assignment: one choice for the whole run (§5.1). */}
+      <ReceiptAssignment
+        value={target}
+        onChange={setTarget}
+        jobs={jobs}
+        role={role}
+        disabled={busy}
+      />
+
+      <button
+        type="button"
+        onClick={() =>
+          setSplitOpen((v) => {
+            if (!v) setReceiptDefault(target);
+            return !v;
+          })
+        }
+        className="btn-ghost text-xs h-8"
+      >
+        <SplitSquareHorizontal size={12} />
+        {splitOpen ? "Done splitting" : "Split this receipt"}
+      </button>
+
+      {splitOpen && (
+        <div className="flex flex-wrap items-center gap-2 bg-ink-2 rounded-sm shadow-inset-line p-2">
+          <span className="text-2xs text-bone-400">
+            Tick the odd ones out, pick above, then
+          </span>
+          <button
+            type="button"
+            onClick={applyToSelected}
+            disabled={selected.size === 0 || target.kind === "unset"}
+            className="btn-secondary text-xs h-8"
+          >
+            Apply to {selected.size} selected
+          </button>
+          {rowTargets.size > 0 && (
+            <button
+              type="button"
+              onClick={() => setRowTargets(new Map())}
+              className="btn-ghost text-xs h-8 ml-auto"
+            >
+              Clear overrides
+            </button>
+          )}
         </div>
       )}
 
@@ -531,12 +650,33 @@ export function ConfirmScan({
         {rows.map((r) => (
           <li key={r.key} className="bg-ink-2 rounded-sm shadow-inset-line p-2 space-y-1.5">
             <div className="flex gap-2">
+              {splitOpen && (
+                <input
+                  type="checkbox"
+                  checked={selected.has(r.key)}
+                  onChange={(e) =>
+                    setSelected((prev) => {
+                      const next = new Set(prev);
+                      if (e.target.checked) next.add(r.key);
+                      else next.delete(r.key);
+                      return next;
+                    })
+                  }
+                  aria-label={`Select ${r.description || "item"}`}
+                  className="mt-2 shrink-0"
+                />
+              )}
               <input
                 value={r.description}
                 onChange={(e) => patch(r.key, { description: e.target.value })}
                 placeholder="Item"
                 className="flex-1 min-w-0 text-sm"
               />
+              {splitOpen && rowTargets.has(r.key) && (
+                <span className="chip normal-case tracking-normal shrink-0 self-center border-field-500/40 text-field-400">
+                  {targetChip(rowTargets.get(r.key))}
+                </span>
+              )}
               <button
                 type="button"
                 onClick={() => setRows((prev) => prev.filter((x) => x.key !== r.key))}
@@ -553,6 +693,7 @@ export function ConfirmScan({
                   inputMode="decimal"
                   value={r.qtyStr}
                   onChange={(e) => patch(r.key, { qtyStr: e.target.value })}
+                  aria-label="Quantity"
                   className="w-12"
                 />
               </label>
@@ -562,6 +703,7 @@ export function ConfirmScan({
                   inputMode="decimal"
                   value={r.unitStr}
                   onChange={(e) => patch(r.key, { unitStr: e.target.value })}
+                  aria-label="Unit price"
                   className="w-20"
                 />
               </label>
@@ -572,6 +714,7 @@ export function ConfirmScan({
                   value={r.amountStr}
                   onChange={(e) => patch(r.key, { amountStr: e.target.value })}
                   placeholder={rowAmount(r) === null ? "" : String(rowAmount(r))}
+                  aria-label="Amount"
                   className="w-20"
                 />
               </label>

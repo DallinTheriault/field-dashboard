@@ -10,6 +10,7 @@ import {
   Calendar,
   Calculator,
   Car,
+  ChevronRight,
   DollarSign,
   FileText,
   User,
@@ -153,7 +154,9 @@ export default async function JobDetailPage({
     estimatorOn && canSeeInternals
       ? supabase.from("pricing_settings").select("mileage_base_address").maybeSingle()
       : Promise.resolve({ data: null }),
-    estimatorOn && canSeeInternals && job.property_id
+    // Not role-gated: the property address is customer info shown to every
+    // role in the header block, not a pricing internal.
+    job.property_id
       ? supabase
           .from("properties")
           .select("id, address, unit, miles_from_base")
@@ -338,6 +341,21 @@ export default async function JobDetailPage({
         )}
       </div>
 
+      {/* The ONE customer block (§6.1) — name, phone, email, and the
+          property address with its unit. Nothing repeats this lower down. */}
+      <div className="panel mb-5">
+        <dl className="px-4 py-3 divide-y divide-line-subtle">
+          <Field icon={User} label="Name" value={job.name || "—"} />
+          <Field icon={Phone} label="Phone" value={fmtPhone(job.phone)} mono />
+          <Field icon={Mail} label="Email" value={job.email || "—"} />
+          <Field
+            icon={MapPin}
+            label="Property"
+            value={propertyAddress ?? job.address ?? "—"}
+          />
+        </dl>
+      </div>
+
       <JobTasks
         jobId={Number(job.id)}
         clientId={job.client_id}
@@ -422,93 +440,82 @@ export default async function JobDetailPage({
         </div>
       )}
 
-      <div className="grid grid-cols-1 lg:grid-cols-5 gap-5">
-        <section className="lg:col-span-3 space-y-3">
-          <div className="panel">
-            <div className="px-4 h-11 flex items-center border-b border-line">
-              <h2 className="text-sm font-semibold text-bone-100">Customer</h2>
-            </div>
-            <dl className="px-4 py-3 divide-y divide-line-subtle">
-              <Field icon={User} label="Name" value={job.name || "—"} />
-              <Field
-                icon={Phone}
-                label="Phone"
-                value={fmtPhone(job.phone)}
-                mono
-              />
-              <Field icon={Mail} label="Email" value={job.email || "—"} />
-              <Field
-                icon={MapPin}
-                label="Address"
-                value={job.address || "—"}
-              />
-            </dl>
+      {job.notes && (
+        <div className="panel mb-5">
+          <div className="px-4 h-11 flex items-center gap-2 border-b border-line">
+            <FileText size={13} className="text-bone-400" />
+            <h2 className="text-sm font-semibold text-bone-100">Notes</h2>
           </div>
-
-          <div className="panel">
-            <div className="px-4 h-11 flex items-center border-b border-line">
-              <h2 className="text-sm font-semibold text-bone-100">Job</h2>
-            </div>
-            <dl className="px-4 py-3 divide-y divide-line-subtle">
-              <Field
-                icon={Briefcase}
-                label="Service"
-                value={job.service || "—"}
-              />
-              <Field label="Scope" value={job.scope || "—"} />
-              <Field
-                icon={DollarSign}
-                label="Quoted price"
-                value={fmtPrice(job.quoted_price)}
-                mono
-              />
-              <Field
-                icon={Calendar}
-                label="Start"
-                value={fmtDate(job.start_datetime, tz)}
-              />
-              <Field label="End" value={fmtDate(job.end_datetime, tz)} />
-            </dl>
+          <div className="px-4 py-3 text-sm text-bone-100 leading-relaxed whitespace-pre-wrap">
+            {job.notes}
           </div>
+        </div>
+      )}
 
-          {job.notes && (
-            <div className="panel">
-              <div className="px-4 h-11 flex items-center gap-2 border-b border-line">
-                <FileText size={13} className="text-bone-400" />
-                <h2 className="text-sm font-semibold text-bone-100">Notes</h2>
-              </div>
-              <div className="px-4 py-3 text-sm text-bone-100 leading-relaxed whitespace-pre-wrap">
-                {job.notes}
-              </div>
-            </div>
-          )}
-        </section>
+      {/* Rarely-needed detail, collapsed by default (§6.1). Native <details>
+          keeps this zero-JS and accessible; state need not persist. */}
+      <div className="space-y-2">
+        <Disclosure label="Job">
+          <dl className="px-4 py-3 divide-y divide-line-subtle">
+            <Field icon={Briefcase} label="Service" value={job.service || "—"} />
+            <Field label="Scope" value={job.scope || "—"} />
+            <Field
+              icon={DollarSign}
+              label="Quoted price"
+              value={fmtPrice(job.quoted_price)}
+              mono
+            />
+            <Field
+              icon={Calendar}
+              label="Start"
+              value={fmtDate(job.start_datetime, tz)}
+            />
+            <Field label="End" value={fmtDate(job.end_datetime, tz)} />
+          </dl>
+        </Disclosure>
 
-        <aside className="lg:col-span-2 space-y-3">
-          <div className="panel">
-            <div className="px-4 h-11 flex items-center justify-between border-b border-line">
-              <div className="flex items-center gap-2">
-                <Activity size={13} className="text-bone-400" />
-                <h2 className="text-sm font-semibold text-bone-100">Activity</h2>
-              </div>
-              <span className="text-2xs text-bone-400">{events.length}</span>
-            </div>
-            <div className="px-4 py-3">
-              <ActivityTimeline events={events} members={teamMembers} />
-            </div>
+        <Disclosure label="Activity" count={events.length}>
+          <div className="px-4 py-3">
+            <ActivityTimeline events={events} members={teamMembers} />
           </div>
+        </Disclosure>
 
-          <div className="panel p-4">
-            <div className="label-eyebrow mb-3">Timestamps</div>
-            <dl className="space-y-2 text-xs">
-              <Mini label="Created" value={fmtDate(job.created_at, tz)} />
-              <Mini label="Updated" value={fmtDate(job.updated_at, tz)} />
-              {job.source && <Mini label="Source" value={job.source} />}
-            </dl>
-          </div>
-        </aside>
+        <Disclosure label="Timestamps">
+          <dl className="px-4 py-3 space-y-2 text-xs">
+            <Mini label="Created" value={fmtDate(job.created_at, tz)} />
+            <Mini label="Updated" value={fmtDate(job.updated_at, tz)} />
+            {job.source && <Mini label="Source" value={job.source} />}
+          </dl>
+        </Disclosure>
       </div>
     </div>
+  );
+}
+
+/** Closed-by-default detail section. Native <details> — no client JS. */
+function Disclosure({
+  label,
+  count,
+  children,
+}: {
+  label: string;
+  count?: number;
+  children: React.ReactNode;
+}) {
+  return (
+    <details className="panel group">
+      <summary className="px-4 h-11 flex items-center gap-2 cursor-pointer list-none select-none">
+        <ChevronRight
+          size={13}
+          className="text-bone-400 transition-transform group-open:rotate-90"
+        />
+        <h2 className="text-sm font-semibold text-bone-100">{label}</h2>
+        {count !== undefined && (
+          <span className="text-2xs text-bone-400 ml-auto">{count}</span>
+        )}
+      </summary>
+      <div className="border-t border-line">{children}</div>
+    </details>
   );
 }
 

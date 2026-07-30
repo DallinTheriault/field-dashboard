@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Car, Clock, Loader2, Package, Plus, Trash2 } from "lucide-react";
+import { Car, Clock, Loader2, Plus, Trash2 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { createTrip } from "./mileage/mileage-actions";
 
@@ -21,12 +21,6 @@ type ActualMaterial = {
   invoiced: boolean;
 };
 
-const ASSIGNMENT_SHORT: Record<string, string> = {
-  job_in_bid: "in bid",
-  job_extra: "extra",
-  job_internal: "internal",
-  unassigned: "in bid", // transitional rows logged before assignments existed
-};
 
 const round2 = (n: number) => Math.round((n + 1e-9) * 100) / 100;
 
@@ -230,9 +224,6 @@ export function JobActuals({
   const [date, setDate] = useState(todayISO());
   const [hours, setHours] = useState("");
   const [note, setNote] = useState("");
-  const [matDesc, setMatDesc] = useState("");
-  const [matPrice, setMatPrice] = useState("");
-  const [matQty, setMatQty] = useState("1");
   // Trip proposal: raised right after hours land, for that date only.
   const [proposeFor, setProposeFor] = useState<string | null>(null);
 
@@ -329,61 +320,8 @@ export function JobActuals({
     }
   }
 
-  const matPriceNum = parseFloat(matPrice);
-  const matQtyNum = parseFloat(matQty);
-  const matTotalPreview =
-    Number.isFinite(matPriceNum) && matPriceNum >= 0
-      ? round2(matPriceNum * (Number.isFinite(matQtyNum) && matQtyNum > 0 ? matQtyNum : 1))
-      : null;
-
-  async function addMaterial() {
-    setErr(null);
-    const price = parseFloat(matPrice);
-    const description = matDesc.trim();
-    if (!description) {
-      setErr("Name the material.");
-      return;
-    }
-    if (!Number.isFinite(price) || price < 0) {
-      setErr("Price must be ≥ 0.");
-      return;
-    }
-    const q = Number.isFinite(matQtyNum) && matQtyNum > 0 ? matQtyNum : 1;
-    const total = round2(price * q);
-    // Unified source of truth: a job material IS an expense line with a job.
-    // Quick-adds default to in-bid (spec §7.1) — reassign on the Expenses page.
-    const { error } = await supabase.from("expenses").insert({
-      client_id: clientId,
-      job_id: jobId,
-      category: "Materials & supplies",
-      description,
-      qty: q,
-      unit_price: price,
-      amount: total,
-      assignment: "job_in_bid",
-    });
-    if (error) {
-      setErr(error.message);
-      return;
-    }
-    setMatDesc("");
-    setMatPrice("");
-    setMatQty("1");
-    load();
-  }
-
   async function removeTime(id: number) {
     await supabase.from("time_entries").delete().eq("id", id);
-    load();
-  }
-
-  async function removeMaterial(id: number) {
-    const m = materials.find((x) => x.id === id);
-    if (m?.invoiced) {
-      setErr("This item is on an invoice — manage it from the Expenses page.");
-      return;
-    }
-    await supabase.from("expenses").delete().eq("id", id);
     load();
   }
 
@@ -486,99 +424,6 @@ export function JobActuals({
                 </button>
               </li>
             ))}
-          </ul>
-        )}
-      </div>
-
-      {/* Materials used — Item, then Price × Qty = Total */}
-      <div className="space-y-2 pt-2 border-t border-line-subtle">
-        <div className="label-eyebrow flex items-center gap-1.5">
-          <Package size={11} />
-          Materials used
-        </div>
-        <input
-          value={matDesc}
-          onChange={(e) => setMatDesc(e.target.value)}
-          placeholder="Item (e.g. Goo Gone 12-oz)"
-          className="w-full"
-        />
-        <div className="flex items-center gap-2">
-          <label className="flex items-center gap-1">
-            <span className="text-2xs text-bone-400">$/ea</span>
-            <input
-              inputMode="decimal"
-              value={matPrice}
-              onChange={(e) => setMatPrice(e.target.value)}
-              placeholder="0.00"
-              className="w-24"
-            />
-          </label>
-          <span className="text-bone-500">×</span>
-          <label className="flex items-center gap-1">
-            <span className="text-2xs text-bone-400">qty</span>
-            <input
-              inputMode="decimal"
-              value={matQty}
-              onChange={(e) => setMatQty(e.target.value)}
-              placeholder="1"
-              className="w-14"
-            />
-          </label>
-          {matTotalPreview !== null && (
-            <span className="num text-sm text-bone-300">
-              = {usd.format(matTotalPreview)}
-            </span>
-          )}
-          <button
-            type="button"
-            onClick={addMaterial}
-            className="btn-secondary shrink-0 min-h-[42px] ml-auto"
-            aria-label="Log material"
-          >
-            <Plus size={13} />
-            Add
-          </button>
-        </div>
-        {materials.length > 0 && (
-          <ul className="space-y-1 pt-1">
-            {materials.map((m) => {
-              const qty = m.qty ?? 1;
-              const unit = qty > 0 ? round2(m.actual_cost / qty) : m.actual_cost;
-              return (
-                <li key={m.id} className="flex items-center gap-2 text-sm">
-                  <span className="flex-1 text-bone-100 truncate">
-                    {m.description}
-                  </span>
-                  <span
-                    className={`chip normal-case tracking-normal shrink-0 ${
-                      m.assignment === "job_extra"
-                        ? "border-status-danger/40 text-status-danger"
-                        : "border-line-strong text-bone-400"
-                    }`}
-                    title={m.invoiced ? "On an invoice" : undefined}
-                  >
-                    {ASSIGNMENT_SHORT[m.assignment] ?? m.assignment}
-                    {m.invoiced ? " · invoiced" : ""}
-                  </span>
-                  {qty !== 1 && (
-                    <span className="text-2xs text-bone-400 shrink-0">
-                      {qty} × {usd.format(unit)}
-                    </span>
-                  )}
-                  <span className="num text-bone-100 w-20 text-right shrink-0">
-                    {usd.format(m.actual_cost)}
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => removeMaterial(m.id)}
-                    className="text-bone-500 hover:text-status-danger p-1"
-                    aria-label="Delete material"
-                  >
-                    <Trash2 size={12} />
-                  </button>
-                </li>
-              );
-            })}
           </ul>
         )}
       </div>

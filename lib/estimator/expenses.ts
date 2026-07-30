@@ -160,6 +160,76 @@ export function buildExtraInvoiceRows(items: ExtraItem[]): {
   };
 }
 
+export type MaterialsSplit = {
+  /** Covered by the quote. */
+  inBid: number;
+  /** Recovered — invoiced at cost as an extra. */
+  billed: number;
+  /** Absorbed — eaten, never billed. */
+  absorbed: number;
+};
+
+/**
+ * Absorbed vs recovered over a set of expense items (JOB_PAGE_EXPENSE_SPEC
+ * §6.2). `stock` is excluded entirely: company tools and consumables are a
+ * business asset, not a job cost.
+ *
+ * This is explicit absorption only. It cannot tell you that in-bid materials
+ * overran what the bid assumed — both the assumed and the overrun dollars sit
+ * in `job_in_bid`. Insights' estimated-vs-actual is the complementary signal.
+ */
+export function splitMaterials(
+  items: Array<{ assignment?: string | null; amount: number | string }>,
+): MaterialsSplit {
+  let inBid = 0;
+  let billed = 0;
+  let absorbed = 0;
+  for (const it of items) {
+    const amt = Number(it.amount);
+    if (!Number.isFinite(amt)) continue;
+    switch (it.assignment) {
+      case "job_in_bid":
+        inBid += amt;
+        break;
+      case "job_extra":
+        billed += amt;
+        break;
+      case "job_internal":
+        absorbed += amt;
+        break;
+      default:
+        break; // stock and unassigned never count toward job materials
+    }
+  }
+  return { inBid: round2(inBid), billed: round2(billed), absorbed: round2(absorbed) };
+}
+
+/**
+ * Stock spend for the year, broken out by the Schedule-C category already on
+ * those rows (§6.2 addition). Display only — no new field, no split of the
+ * stock assignment value.
+ */
+export function summarizeStock(
+  items: Array<{ assignment?: string | null; amount: number | string; category?: string | null }>,
+): { total: number; byCategory: Array<{ category: string; total: number }> } {
+  const byCat = new Map<string, number>();
+  let total = 0;
+  for (const it of items) {
+    if (it.assignment !== "stock") continue;
+    const amt = Number(it.amount);
+    if (!Number.isFinite(amt)) continue;
+    total += amt;
+    const key = it.category || "Other";
+    byCat.set(key, (byCat.get(key) ?? 0) + amt);
+  }
+  return {
+    total: round2(total),
+    byCategory: [...byCat.entries()]
+      .map(([category, t]) => ({ category, total: round2(t) }))
+      .sort((a, b) => b.total - a.total),
+  };
+}
+
 /** Strip previously-injected extras (refresh support: drop then re-add). */
 export function withoutExtraRows(rows: InvoiceRow[]): InvoiceRow[] {
   return rows.filter((r) => r.extra_expense_id === undefined);
