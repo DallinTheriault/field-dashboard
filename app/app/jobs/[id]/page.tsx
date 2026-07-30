@@ -4,25 +4,20 @@ import {
   ArrowLeft,
   Briefcase,
   Phone,
-  Mail,
-  MapPin,
-  Pencil,
   Calendar,
-  Calculator,
   Car,
   ChevronRight,
   DollarSign,
   FileText,
-  User,
   Activity,
 } from "lucide-react";
 import { EstimateStatusChip } from "../../estimator/estimate-status";
 import { JobActuals } from "../../estimator/job-actuals";
 import { JobExpenseCapture } from "./job-expense-capture";
+import { JobOptionsMenu } from "./job-options-menu";
 import { JobTasks } from "./job-tasks";
 import { getCurrentUserRole } from "@/lib/permissions/current-role";
 import { canViewSettings } from "@/lib/permissions/roles";
-import { TextAndCopyButtons } from "@/components/ui/text-copy-buttons";
 import { TagChipList } from "@/components/tags/tag-chip";
 import { InlineAddTagButton } from "@/components/tags/inline-add-tag";
 import { AssignmentChip } from "@/components/assignment/assignment-select";
@@ -243,39 +238,55 @@ export default async function JobDetailPage({
         Back to jobs
       </Link>
 
-      <div className="flex items-start justify-between gap-3 mb-2 flex-wrap">
-        <div className="min-w-0">
-          <div className="flex items-center gap-2 mb-1">
-            <Briefcase size={14} className="text-field-500" />
-            {/* The human job number when present (internal surface, never on
-                customer PDFs); legacy NULL jobs fall back to the db id. */}
-            <span className="label-eyebrow">{job.job_number ?? `Job #${job.id}`}</span>
-          </div>
-          <h1 className="text-2xl font-semibold text-bone-50 tracking-tight break-words">
-            {job.contact_id ? (
-              <Link
-                href={`/app/contacts/${job.contact_id}`}
-                className="hover:text-field-500"
-              >
-                {job.name || "—"}
-              </Link>
-            ) : (
-              job.name || "—"
-            )}
-          </h1>
-        </div>
-        <Link
-          href={`/app/jobs/${job.id}/edit`}
-          className="btn-secondary text-xs h-9 shrink-0"
-        >
-          <Pencil size={12} />
-          Edit
-        </Link>
+      {/* Header — no card chrome: heading, then content. Job number sits with
+          the status and assignment pills; the phone and address stay tappable
+          here because they're the two most frequent actions. */}
+      <div className="flex flex-wrap items-center gap-2 mb-1.5">
+        <Briefcase size={13} className="text-field-500 shrink-0" />
+        <span className="label-eyebrow">{job.job_number ?? `Job #${job.id}`}</span>
+        <InlineStatusEdit jobId={job.id} currentStatus={job.status ?? "lead"} />
+        <AssignmentChip member={assignedMember} />
       </div>
 
-      {/* Tags row — directly under the name so they're clearly the job's,
-          not the assignee's. Includes the inline +tag quick-add button. */}
-      <div className="flex flex-wrap items-center gap-2 mb-3">
+      <h1 className="text-2xl font-semibold text-bone-50 tracking-tight break-words">
+        {job.contact_id ? (
+          <Link href={`/app/contacts/${job.contact_id}`} className="hover:text-field-500">
+            {job.name || "—"}
+          </Link>
+        ) : (
+          job.name || "—"
+        )}
+      </h1>
+
+      <div className="mt-1 space-y-0.5">
+        {job.phone && (
+          <div>
+            <a href={`tel:${job.phone}`} className="text-sm text-bone-300 hover:text-field-400 num">
+              {fmtPhone(job.phone)}
+            </a>
+          </div>
+        )}
+        {(propertyAddress ?? job.address) && (
+          <div>
+            <a
+              href={`https://maps.google.com/?q=${encodeURIComponent(propertyAddress ?? job.address ?? "")}`}
+              target="_blank"
+              rel="noreferrer"
+              className="text-sm text-bone-300 hover:text-field-400 break-words"
+            >
+              {propertyAddress ?? job.address}
+            </a>
+          </div>
+        )}
+        {job.service && (
+          <div className="text-2xs text-bone-400">
+            {job.service}
+            {job.scope && ` · ${job.scope}`}
+          </div>
+        )}
+      </div>
+
+      <div className="flex flex-wrap items-center gap-2 mt-2.5 mb-5">
         {jobTags.length > 0 && <TagChipList tags={jobTags} maxVisible={10} />}
         <InlineAddTagButton
           entityType="job"
@@ -284,84 +295,18 @@ export default async function JobDetailPage({
           allTags={allTags}
           attachedTagIds={jobTags.map((t) => t.id)}
         />
-      </div>
-
-      {/* Status + assignment + service meta, on their own row */}
-      <div className="flex flex-wrap items-center gap-3 mb-5">
-        <InlineStatusEdit jobId={job.id} currentStatus={job.status ?? "lead"} />
-        <AssignmentChip member={assignedMember} />
-        {job.service && (
-          <span className="text-2xs text-bone-400">
-            {job.service}
-            {job.scope && ` · ${job.scope}`}
-          </span>
-        )}
-      </div>
-
-      {/* Quick contact actions */}
-      <div className="flex flex-wrap items-center gap-1.5 mb-6">
-        {job.phone && (
-          <>
-            <a href={`tel:${job.phone}`} className="btn-secondary text-xs h-8">
-              <Phone size={12} />
-              Call
-            </a>
-            <TextAndCopyButtons
-              phone={job.phone}
-              contactId={job.contact_id ?? null}
-              displayPhone={fmtPhone(job.phone)}
-            />
-          </>
-        )}
-        {job.email && (
-          <a href={`mailto:${job.email}`} className="btn-secondary text-xs h-8">
-            <Mail size={12} />
-            Email
-          </a>
-        )}
-        {job.address && (
-          <a
-            href={`https://maps.google.com/?q=${encodeURIComponent(job.address)}`}
-            target="_blank"
-            rel="noreferrer"
-            className="btn-secondary text-xs h-8"
-          >
-            <MapPin size={12} />
-            Map
-          </a>
-        )}
-        {estimatorOn && (
-          <Link
-            href={`/app/estimator/new?job=${job.id}`}
-            className="btn-secondary text-xs h-8"
-          >
-            <Calculator size={12} />
-            New estimate
-          </Link>
-        )}
-      </div>
-
-      {/* The ONE customer block (§6.1) — name, phone, email, and the
-          property address with its unit. Nothing repeats this lower down. */}
-      <div className="panel mb-5">
-        <dl className="px-4 py-3 divide-y divide-line-subtle">
-          <Field icon={User} label="Name" value={job.name || "—"} />
-          <Field icon={Phone} label="Phone" value={fmtPhone(job.phone)} mono />
-          <Field icon={Mail} label="Email" value={job.email || "—"} />
-          <Field
-            icon={MapPin}
-            label="Property"
-            value={propertyAddress ?? job.address ?? "—"}
+        <div className="ml-auto">
+          <JobOptionsMenu
+            jobId={Number(job.id)}
+            phone={job.phone ?? null}
+            displayPhone={fmtPhone(job.phone)}
+            email={job.email ?? null}
+            address={propertyAddress ?? job.address ?? null}
+            contactId={job.contact_id ?? null}
+            showNewEstimate={estimatorOn}
           />
-        </dl>
+        </div>
       </div>
-
-      <JobTasks
-        jobId={Number(job.id)}
-        clientId={job.client_id}
-        tasks={jobTasks}
-        canWrite={canSeeInternals}
-      />
 
       {/* Job-level expense capture — all roles (members included). Shows no
           margin/hours/variance; those stay in JobActuals (owner/manager). */}
@@ -412,6 +357,13 @@ export default async function JobDetailPage({
           )}
         </>
       )}
+
+      <JobTasks
+        jobId={Number(job.id)}
+        clientId={job.client_id}
+        tasks={jobTasks}
+        canWrite={canSeeInternals}
+      />
 
       {estimatorOn && (jobEstimates ?? []).length > 0 && (
         <div className="panel px-4 py-3 mb-5">
