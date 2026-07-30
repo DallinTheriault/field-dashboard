@@ -4,16 +4,15 @@ import {
   ArrowLeft,
   Briefcase,
   Phone,
-  Calendar,
   Car,
   ChevronRight,
-  DollarSign,
   FileText,
   Activity,
 } from "lucide-react";
 import { EstimateStatusChip } from "../../estimator/estimate-status";
 import { JobActuals } from "../../estimator/job-actuals";
 import { JobExpenseCapture } from "./job-expense-capture";
+import { JobDetailsSheet } from "./job-details-sheet";
 import { JobOptionsMenu } from "./job-options-menu";
 import { JobTasks } from "./job-tasks";
 import { getCurrentUserRole } from "@/lib/permissions/current-role";
@@ -278,15 +277,16 @@ export default async function JobDetailPage({
             </a>
           </div>
         )}
-        {job.service && (
-          <div className="text-2xs text-bone-400">
-            {job.service}
-            {job.scope && ` · ${job.scope}`}
-          </div>
-        )}
       </div>
 
       <div className="flex flex-wrap items-center gap-2 mt-2.5 mb-5">
+        <JobDetailsSheet
+          service={job.service ?? null}
+          scope={job.scope ?? null}
+          quotedPrice={fmtPrice(job.quoted_price)}
+          start={fmtDate(job.start_datetime, tz)}
+          end={fmtDate(job.end_datetime, tz)}
+        />
         {jobTags.length > 0 && <TagChipList tags={jobTags} maxVisible={10} />}
         <InlineAddTagButton
           entityType="job"
@@ -407,25 +407,6 @@ export default async function JobDetailPage({
       {/* Rarely-needed detail, collapsed by default (§6.1). Native <details>
           keeps this zero-JS and accessible; state need not persist. */}
       <div className="space-y-2">
-        <Disclosure label="Job">
-          <dl className="px-4 py-3 divide-y divide-line-subtle">
-            <Field icon={Briefcase} label="Service" value={job.service || "—"} />
-            <Field label="Scope" value={job.scope || "—"} />
-            <Field
-              icon={DollarSign}
-              label="Quoted price"
-              value={fmtPrice(job.quoted_price)}
-              mono
-            />
-            <Field
-              icon={Calendar}
-              label="Start"
-              value={fmtDate(job.start_datetime, tz)}
-            />
-            <Field label="End" value={fmtDate(job.end_datetime, tz)} />
-          </dl>
-        </Disclosure>
-
         <Disclosure label="Activity" count={events.length}>
           <div className="px-4 py-3">
             <ActivityTimeline events={events} members={teamMembers} />
