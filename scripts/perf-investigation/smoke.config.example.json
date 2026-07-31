@@ -1,0 +1,12 @@
+{
+  "_comment": "Copy to smoke.config.json (gitignored) and fill in. Every value may also be supplied as an env var; see _config.mjs for the names. Credentials are NOT here — they are read from the app's .env.local.",
+  "playwrightPath": "/absolute/path/to/a/node_modules/playwright",
+  "outDir": "/absolute/path/for/screenshots-and-crash-manifests",
+  "baseUrl": "http://localhost:3000",
+  "smokeClientId": 0,
+  "refClientId": 0,
+  "refJobId": 0,
+  "smokeUserId": "00000000-0000-0000-0000-000000000000",
+  "smokeUserEmail": "smoke-user@example.com",
+  "prodBaseUrl": "https://app.example.com"
+}

@@ -19,8 +19,14 @@ docs/task-brief-template.md
 docs/ESTIMATOR_INTEGRATION_KICKOFF.md
 lib/estimator/golden-riverton.test.ts
 
-# Perf investigation — report carries tenant/business numbers; scripts touch
-# the smoke user via service role. Local-only; the committed PERF_TRACE tracer
-# (lib/supabase/perf-trace.ts) is the standing instrumentation they drive.
+# Perf report carries tenant/business numbers — local-only.
 PERF_PHASE0_REPORT.md
-scripts/perf-investigation/
+
+# The smoke suite in scripts/perf-investigation/ IS tracked: it encodes
+# safety-critical rules (captured-id cleanup, skip-is-never-a-pass) that are
+# worth reviewing in diffs. Only its machine- and business-specific values stay
+# out — those live in the gitignored config below, and credentials stay in
+# .env.local as always.
+scripts/perf-investigation/smoke.config.json
+# A spent one-off holding production storage-object paths.
+scripts/perf-investigation/orphan-thumb-cleanup.mjs
