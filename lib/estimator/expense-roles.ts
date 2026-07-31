@@ -32,6 +32,21 @@ export function assignmentAllowedForRole(role: Role, a: Assignment): boolean {
 }
 
 /**
+ * Can this role reassign an EXISTING expense item?
+ *
+ * Distinct from `allowedAssignmentsForRole`, which answers "which assignment
+ * may this role stamp on an item it is creating". Members create expenses
+ * through server actions that use the admin client behind a role gate, but
+ * reassignment goes through `setItemAssignment`, which writes as the caller —
+ * and the expenses RLS write policy is owner/manager. A member's UPDATE
+ * returns zero rows (verified by the member RLS probes), so offering a member
+ * a reassignment control would be offering a control that always fails.
+ */
+export function canReassignExpense(role: Role): boolean {
+  return role === "owner" || role === "manager";
+}
+
+/**
  * Can this role set/edit the customer_notified flag? It only exists on
  * job_extra items, which members can't create anyway — but gate it
  * explicitly so no route lets a member touch it.

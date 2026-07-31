@@ -133,10 +133,16 @@ export default async function JobDetailPage({
     // Job-attached expense items for the capture card's read-only list.
     // All roles may read (RLS select is tenant-wide); shows description /
     // cost / assignment only — no totals, hours, variance, or margin.
+    // invoiced_on alone can't decide the lock: an item on a DRAFT invoice is
+    // still reassignable (the draft re-derives its lines), only a finalized
+    // one is frozen. Embed the invoice so the row can show which it is
+    // instead of offering a control that the server would refuse.
     estimatorOn
       ? supabase
           .from("expenses")
-          .select("id, description, amount, assignment")
+          .select(
+            "id, description, amount, assignment, invoiced_on, invoices(invoice_number, status, stripe_invoice_id)",
+          )
           .eq("job_id", job.id)
           .order("id", { ascending: false })
       : Promise.resolve({ data: null }),
@@ -190,12 +196,22 @@ export default async function JobDetailPage({
       }
     : undefined;
 
-  const jobExpenseItems = (jobExpenseRows ?? []).map((e) => ({
-    id: e.id as number,
-    description: e.description as string,
-    amount: Number(e.amount),
-    assignment: (e.assignment as string) ?? "unassigned",
-  }));
+  // Mirrors invoiceGuard() in purchase-actions: finalized (sent, or issued
+  // through Stripe) means frozen; draft means still editable.
+  const jobExpenseItems = (jobExpenseRows ?? []).map((e) => {
+    const inv = (Array.isArray(e.invoices) ? e.invoices[0] : e.invoices) as
+      | { invoice_number: string | null; status: string | null; stripe_invoice_id: string | null }
+      | null
+      | undefined;
+    const frozen = !!e.invoiced_on && !!inv && (inv.status !== "draft" || !!inv.stripe_invoice_id);
+    return {
+      id: e.id as number,
+      description: e.description as string,
+      amount: Number(e.amount),
+      assignment: (e.assignment as string) ?? "unassigned",
+      lockedToInvoice: frozen ? (inv?.invoice_number ?? "an invoice") : null,
+    };
+  });
 
   const assignedMember = job.assigned_user_id
     ? teamMembers.find((m) => m.user_id === job.assigned_user_id) ?? null

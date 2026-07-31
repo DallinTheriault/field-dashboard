@@ -371,38 +371,52 @@ export function JobActuals({
         />
       )}
 
-      {/* Time quick-entry — one thumb: date defaults to today */}
+      {/* Time quick-entry — one thumb: date defaults to today.
+          Stacked rather than one line: at 390px four controls on a row
+          squeezed the note down to a single character of its placeholder,
+          so nothing after the hours field could be identified. Each control
+          now carries a visible label and the note gets the full width. */}
       <div className="space-y-1.5">
         <div className="flex gap-2">
-          <input
-            type="date"
-            value={date}
-            onChange={(e) => setDate(e.target.value)}
-            className="w-36"
-          />
-          <input
-            inputMode="decimal"
-            value={hours}
-            onChange={(e) => setHours(e.target.value)}
-            placeholder="hrs"
-            className="w-20"
-          />
+          <label className="flex-1 min-w-0">
+            <span className="block text-2xs text-bone-400 mb-0.5">Date</span>
+            <input
+              type="date"
+              value={date}
+              onChange={(e) => setDate(e.target.value)}
+              className="w-full"
+            />
+          </label>
+          <label className="w-24 shrink-0">
+            <span className="block text-2xs text-bone-400 mb-0.5">Hours</span>
+            <input
+              inputMode="decimal"
+              value={hours}
+              onChange={(e) => setHours(e.target.value)}
+              placeholder="0.0"
+              className="w-full"
+            />
+          </label>
+        </div>
+        <label className="block">
+          <span className="block text-2xs text-bone-400 mb-0.5">Note (optional)</span>
           <input
             value={note}
             onChange={(e) => setNote(e.target.value)}
             placeholder="Note (optional)"
-            className="flex-1 min-w-0"
+            className="w-full"
           />
-          <button
-            type="button"
-            onClick={addTime}
-            className="btn-secondary shrink-0 min-h-[42px]"
-            aria-label="Log time"
-          >
-            <Plus size={13} />
-            <Clock size={13} />
-          </button>
-        </div>
+        </label>
+        <button
+          type="button"
+          onClick={addTime}
+          className="btn-secondary w-full min-h-[42px]"
+          aria-label="Log time"
+        >
+          <Plus size={13} />
+          <Clock size={13} />
+          Log time
+        </button>
         {entries.length > 0 && (
           <ul className="space-y-1">
             {entries.map((e) => (

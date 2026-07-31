@@ -1,11 +1,13 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   Camera,
+  Check,
   ImagePlus,
   Loader2,
+  Lock,
   Plus,
   Receipt,
   ScanLine,
@@ -22,8 +24,12 @@ import {
   splitMaterials,
   type Assignment,
 } from "@/lib/estimator/expenses";
-import { allowedAssignmentsForRole } from "@/lib/estimator/expense-roles";
+import {
+  allowedAssignmentsForRole,
+  canReassignExpense,
+} from "@/lib/estimator/expense-roles";
 import type { Role } from "@/lib/permissions/roles";
+import { setItemAssignment } from "../../estimator/purchases/purchase-actions";
 import {
   createJobExpense,
   saveJobScanItems,
@@ -39,6 +45,8 @@ export type JobExpenseItem = {
   description: string;
   amount: number;
   assignment: string;
+  /** Invoice number when frozen onto a finalized invoice; null when editable. */
+  lockedToInvoice?: string | null;
 };
 
 const CHIP_SHORT: Record<string, string> = {
@@ -47,6 +55,27 @@ const CHIP_SHORT: Record<string, string> = {
   job_extra: "extra",
   job_internal: "internal",
   stock: "stock",
+};
+
+/** The four destinations offered inline, in the order the money moves:
+ *  covered by the bid → billed on top → eaten → not this job's cost at all. */
+const REASSIGN_ORDER: Assignment[] = ["job_in_bid", "job_extra", "job_internal", "stock"];
+
+const REASSIGN_LABELS: Record<string, string> = {
+  job_in_bid: "In bid",
+  job_extra: "Extra",
+  job_internal: "Internal",
+  stock: "Stock",
+};
+
+/** What just happened, in the user's terms. Stock and internal get the
+ *  consequence spelled out: stock makes the row vanish from the job, and
+ *  internal silently moves money into the absorbed figure. */
+const MOVE_TOAST: Record<string, string> = {
+  job_in_bid: "Moved to in bid",
+  job_extra: "Moved to extra — billable",
+  job_internal: "Moved to internal — now absorbed",
+  stock: "Moved to stock — off this job",
 };
 
 /**
@@ -68,8 +97,52 @@ export function JobExpenseCapture({
   receiptAiEnabled: boolean;
   items: JobExpenseItem[];
 }) {
+  const router = useRouter();
   const options = allowedAssignmentsForRole(role);
-  const split = splitMaterials(items);
+  const canReassign = canReassignExpense(role);
+
+  // Local mirror of the server list so a reassignment shows immediately —
+  // including in the split below — instead of waiting on the refresh round
+  // trip. Re-syncs whenever the server sends a new list, so the server stays
+  // the source of truth and a failed write can never leave a phantom row.
+  const [rows, setRows] = useState<JobExpenseItem[]>(items);
+  useEffect(() => setRows(items), [items]);
+
+  const [openId, setOpenId] = useState<number | null>(null);
+  const [busyId, setBusyId] = useState<number | null>(null);
+  const [toast, setToast] = useState<string | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!toast) return;
+    const t = window.setTimeout(() => setToast(null), 2600);
+    return () => window.clearTimeout(t);
+  }, [toast]);
+
+  async function reassign(item: JobExpenseItem, next: Assignment) {
+    setErr(null);
+    setBusyId(item.id);
+    // Same action the Expenses page calls — one ledger, one set of guards.
+    const r = await setItemAssignment(item.id, {
+      assignment: next,
+      jobId: next === "stock" ? null : jobId,
+    });
+    setBusyId(null);
+    if (!r.ok) {
+      setErr(r.error);
+      return;
+    }
+    setRows((prev) =>
+      next === "stock"
+        ? prev.filter((x) => x.id !== item.id) // stock leaves the job entirely
+        : prev.map((x) => (x.id === item.id ? { ...x, assignment: next } : x)),
+    );
+    setOpenId(null);
+    setToast(MOVE_TOAST[next] ?? "Moved");
+    router.refresh();
+  }
+
+  const split = splitMaterials(rows);
   return (
     <div className="panel px-4 py-3 mb-5 space-y-4">
       <div className="flex items-center gap-2">
@@ -92,32 +165,175 @@ export function JobExpenseCapture({
         <span>absorbed</span>
       </div>
 
-      {items.length > 0 && (
+      {err && <div className="form-error">{err}</div>}
+
+      {rows.length > 0 && (
         <ul className="space-y-1 pt-2 border-t border-line-subtle">
-          {items.map((it) => (
-            <li key={it.id} className="flex items-start gap-2 text-sm">
-              <span className="flex-1 min-w-0 text-bone-100 line-clamp-2 leading-snug">
-                {it.description}
-              </span>
-              <span
-                className={`chip normal-case tracking-normal shrink-0 ${
-                  it.assignment === "job_extra"
-                    ? "border-status-danger/40 text-status-danger"
-                    : it.assignment === "unassigned"
-                      ? "border-status-lead/50 text-status-lead"
-                      : "border-line-strong text-bone-400"
-                }`}
-              >
-                {CHIP_SHORT[it.assignment] ?? it.assignment}
-              </span>
-              <span className="num text-bone-100 w-20 text-right shrink-0">
-                {usd.format(it.amount)}
-              </span>
-            </li>
+          {rows.map((it) => (
+            <ExpenseRow
+              key={it.id}
+              item={it}
+              canReassign={canReassign}
+              options={options}
+              open={openId === it.id}
+              busy={busyId === it.id}
+              onToggle={() => setOpenId((cur) => (cur === it.id ? null : it.id))}
+              onPick={(a) => reassign(it, a)}
+            />
           ))}
         </ul>
       )}
+
+      {toast && (
+        <div
+          role="status"
+          aria-live="polite"
+          // Clears the mobile nav (h-16 + safe area, z-30) the way the estimate
+          // builder's action bar does — a confirmation that covers the nav
+          // trades one moment of reassurance for a moment of lost navigation.
+          className="fixed inset-x-0 bottom-[calc(4.5rem_+_env(safe-area-inset-bottom))] md:bottom-6 z-40 flex justify-center px-4 pointer-events-none"
+        >
+          <span className="flex items-center gap-2 rounded-md bg-ink-1 border border-line-strong shadow-lg px-3 py-2 text-sm text-bone-50">
+            <Check size={13} className="text-status-completed shrink-0" />
+            {toast}
+          </span>
+        </div>
+      )}
     </div>
+  );
+}
+
+/**
+ * One ledger line. Tapping it opens the reassignment control in place — the
+ * same four destinations the Expenses page offers, writing through the same
+ * action. An item frozen onto a finalized invoice shows WHY it can't move
+ * rather than a control that the server would refuse.
+ */
+function ExpenseRow({
+  item,
+  canReassign,
+  options,
+  open,
+  busy,
+  onToggle,
+  onPick,
+}: {
+  item: JobExpenseItem;
+  canReassign: boolean;
+  options: Assignment[];
+  open: boolean;
+  busy: boolean;
+  onToggle: () => void;
+  onPick: (a: Assignment) => void;
+}) {
+  // Pending destination, discarded when the row collapses so reopening always
+  // starts from what the item actually is.
+  const [pick, setPick] = useState<Assignment | null>(null);
+  useEffect(() => {
+    if (!open) setPick(null);
+  }, [open]);
+
+  const locked = !!item.lockedToInvoice;
+  const chip = (
+    <span
+      className={`chip normal-case tracking-normal shrink-0 ${
+        item.assignment === "job_extra"
+          ? "border-status-danger/40 text-status-danger"
+          : item.assignment === "unassigned"
+            ? "border-status-lead/50 text-status-lead"
+            : "border-line-strong text-bone-400"
+      }`}
+    >
+      {CHIP_SHORT[item.assignment] ?? item.assignment}
+    </span>
+  );
+  const amount = (
+    <span className="num text-bone-100 w-20 text-right shrink-0">
+      {usd.format(item.amount)}
+    </span>
+  );
+
+  if (locked) {
+    return (
+      <li className="flex items-start gap-2 text-sm">
+        <span className="flex-1 min-w-0 leading-snug">
+          <span className="text-bone-100 line-clamp-2">{item.description}</span>
+          <span className="flex items-center gap-1 text-2xs text-bone-500 mt-0.5">
+            <Lock size={9} className="shrink-0" />
+            on invoice {item.lockedToInvoice} — locked
+          </span>
+        </span>
+        {chip}
+        {amount}
+      </li>
+    );
+  }
+
+  if (!canReassign) {
+    return (
+      <li className="flex items-start gap-2 text-sm">
+        <span className="flex-1 min-w-0 text-bone-100 line-clamp-2 leading-snug">
+          {item.description}
+        </span>
+        {chip}
+        {amount}
+      </li>
+    );
+  }
+
+  const choices = REASSIGN_ORDER.filter((a) => options.includes(a));
+  return (
+    <li>
+      <button
+        type="button"
+        onClick={onToggle}
+        aria-expanded={open}
+        aria-label={`Reassign ${item.description}`}
+        className="flex items-start gap-2 text-sm w-full text-left py-1 -my-0.5 rounded-sm hover:bg-ink-2"
+      >
+        <span className="flex-1 min-w-0 text-bone-100 line-clamp-2 leading-snug">
+          {item.description}
+        </span>
+        {chip}
+        {amount}
+      </button>
+
+      {open && (
+        <div className="flex flex-wrap items-center gap-1.5 pb-2 pt-1">
+          {choices.map((a) => {
+            const selected = a === (pick ?? item.assignment);
+            return (
+              <button
+                key={a}
+                type="button"
+                disabled={busy}
+                onClick={() => setPick(a)}
+                aria-label={`Assign to ${REASSIGN_LABELS[a]}`}
+                aria-pressed={selected}
+                className={`chip normal-case tracking-normal min-h-[34px] ${
+                  selected
+                    ? "border-field-500/60 text-bone-100"
+                    : "border-line-strong text-bone-300 hover:text-bone-50 hover:border-field-500/50"
+                }`}
+              >
+                {REASSIGN_LABELS[a]}
+              </button>
+            );
+          })}
+          <button
+            type="button"
+            // Deliberate second step: moving to stock makes the row disappear,
+            // so the destination is chosen and then committed, never in one tap.
+            disabled={busy || !pick || pick === item.assignment}
+            onClick={() => pick && onPick(pick)}
+            className="btn-secondary text-xs min-h-[34px] ml-auto"
+          >
+            {busy ? <Loader2 size={11} className="animate-spin" /> : <Check size={11} />}
+            Apply
+          </button>
+        </div>
+      )}
+    </li>
   );
 }
 
