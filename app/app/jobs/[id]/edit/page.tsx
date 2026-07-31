@@ -4,6 +4,7 @@ import { ArrowLeft, Briefcase } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { getTeamMembers } from "@/lib/team/members";
 import { getJobTags, listTagsForClient } from "@/lib/tags/server";
+import { listServiceSuggestions } from "@/lib/jobs/services";
 import { JobEditForm } from "./form";
 
 export default async function JobEditPage({
@@ -22,10 +23,11 @@ export default async function JobEditPage({
 
   if (!job) notFound();
 
-  const [allTags, jobTags, teamMembers] = await Promise.all([
+  const [allTags, jobTags, teamMembers, serviceOptions] = await Promise.all([
     listTagsForClient(job.client_id),
     getJobTags(Number(job.id)),
     getTeamMembers(job.client_id),
+    listServiceSuggestions(job.client_id),
   ]);
 
   return (
@@ -71,6 +73,7 @@ export default async function JobEditPage({
         initialJobTags={jobTags}
         allTags={allTags}
         teamMembers={teamMembers}
+        serviceOptions={serviceOptions}
       />
     </div>
   );

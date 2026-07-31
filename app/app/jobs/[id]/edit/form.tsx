@@ -64,11 +64,14 @@ export function JobEditForm({
   initialJobTags = [],
   allTags = [],
   teamMembers = [],
+  serviceOptions = [],
 }: {
   job: JobInput;
   initialJobTags?: Tag[];
   allTags?: Tag[];
   teamMembers?: TeamMember[];
+  /** This tenant's own past service values — suggestions only, never a constraint. */
+  serviceOptions?: string[];
 }) {
   const router = useRouter();
   const [name, setName] = useState(job.name);
@@ -237,7 +240,23 @@ export function JobEditForm({
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <div className="field-group">
           <label className="field-label">Service</label>
-          <input value={service} onChange={(e) => setService(e.target.value)} />
+          {/* Still free text — the datalist only makes reusing an existing
+              spelling the path of least resistance. Typing anything new is
+              unchanged, and the list holds nothing but this tenant's own
+              past values. */}
+          <input
+            value={service}
+            onChange={(e) => setService(e.target.value)}
+            list={serviceOptions.length > 0 ? "job-service-options" : undefined}
+            autoComplete="off"
+          />
+          {serviceOptions.length > 0 && (
+            <datalist id="job-service-options">
+              {serviceOptions.map((option) => (
+                <option key={option} value={option} />
+              ))}
+            </datalist>
+          )}
         </div>
         <div className="field-group">
           <label className="field-label">Scope</label>
