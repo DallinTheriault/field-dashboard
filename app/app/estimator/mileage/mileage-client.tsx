@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Car, Loader2, Pencil, Plus, Settings2, Trash2, TriangleAlert } from "lucide-react";
 import type { MileageTotal } from "@/lib/estimator/mileage";
+import { jobPickLabel, type JobPick } from "@/lib/jobs/address";
 import {
   createTrip,
   deleteTrip,
@@ -24,13 +25,6 @@ export type TripRow = {
   vehicle: string | null;
   source: "manual" | "proposed";
   createdAt: string;
-};
-
-type JobPick = {
-  id: number;
-  name: string;
-  jobNumber: string | null;
-  address: string | null;
 };
 
 const usd = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" });
@@ -246,7 +240,7 @@ function AddTrip({
               <option value="">No job link</option>
               {jobs.map((j) => (
                 <option key={j.id} value={j.id}>
-                  {[j.jobNumber, j.address, j.name].filter(Boolean).join(" · ")}
+                  {jobPickLabel(j)}
                 </option>
               ))}
             </select>

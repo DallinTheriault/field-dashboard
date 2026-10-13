@@ -41,6 +41,29 @@ export type PickJob = {
 
 type Cell = { key: string; dayNum: number; inMonth: boolean };
 
+/**
+ * A job in the "schedule an existing job" picker: address + unit on top (what
+ * tells a property manager's jobs apart), then job number, then contact.
+ */
+function PickJobLines({ job }: { job: PickJob }) {
+  const title = job.address || job.name || job.service || `Job #${job.id}`;
+  const contact = job.address ? job.name : null;
+  return (
+    <span className="flex-1 min-w-0">
+      <span className="block text-sm text-bone-100 truncate">{title}</span>
+      {(job.job_number || contact) && (
+        <span className="block text-2xs text-bone-400 truncate">
+          {job.job_number && (
+            <span className="font-mono text-field-400">{job.job_number}</span>
+          )}
+          {job.job_number && contact && " · "}
+          {contact}
+        </span>
+      )}
+    </span>
+  );
+}
+
 const STATUS_BG: Record<string, string> = {
   lead: "bg-status-lead/20 text-status-lead border-status-lead/30",
   estimated: "bg-status-estimated/20 text-status-estimated border-status-estimated/30",
@@ -818,21 +841,7 @@ export function CalendarClient({
                           onClick={() => setPickedJob(j)}
                           className="w-full text-left bg-ink-2 hover:bg-ink-2/70 rounded-sm px-3 py-2 flex items-center gap-2"
                         >
-                          <span className="flex-1 min-w-0">
-                            {j.job_number && (
-                              <span className="block text-2xs font-mono text-field-400">
-                                {j.job_number}
-                              </span>
-                            )}
-                            <span className="block text-sm text-bone-100 truncate">
-                              {j.name || j.service || `Job #${j.id}`}
-                            </span>
-                            {j.address && (
-                              <span className="block text-2xs text-bone-400 truncate">
-                                {j.address}
-                              </span>
-                            )}
-                          </span>
+                          <PickJobLines job={j} />
                           {statusChip(j.status)}
                         </button>
                       </li>
@@ -845,21 +854,7 @@ export function CalendarClient({
             {addMode === "existing" && pickedJob && (
               <>
                 <div className="bg-ink-2 rounded-sm px-3 py-2 flex items-center gap-2">
-                  <span className="flex-1 min-w-0">
-                    {pickedJob.job_number && (
-                      <span className="block text-2xs font-mono text-field-400">
-                        {pickedJob.job_number}
-                      </span>
-                    )}
-                    <span className="block text-sm text-bone-100 truncate">
-                      {pickedJob.name || pickedJob.service || `Job #${pickedJob.id}`}
-                    </span>
-                    {pickedJob.address && (
-                      <span className="block text-2xs text-bone-400 truncate">
-                        {pickedJob.address}
-                      </span>
-                    )}
-                  </span>
+                  <PickJobLines job={pickedJob} />
                   <button
                     type="button"
                     onClick={() => setPickedJob(null)}

@@ -8,6 +8,7 @@ import { getTenantFeatureFlags } from "@/lib/features/flags";
 import { FeatureDisabledPanel } from "@/components/ui/feature-disabled-panel";
 import { dayKeyInTz, getTenantTimezone } from "@/lib/dates";
 import { buildRateMap, summarizeMileage } from "@/lib/estimator/mileage";
+import { JOB_LOCATION_SELECT, toJobPick } from "@/lib/jobs/address";
 import { MileageClient, type TripRow } from "./mileage-client";
 
 /**
@@ -47,7 +48,7 @@ export default async function MileagePage({
       supabase.from("pricing_settings").select("mileage_base_address").maybeSingle(),
       supabase
         .from("jobs")
-        .select("id, name, job_number, address, status")
+        .select(`id, name, job_number, status, ${JOB_LOCATION_SELECT}`)
         .is("archived_at", null)
         .neq("status", "cancelled")
         .order("created_at", { ascending: false })
@@ -115,12 +116,7 @@ export default async function MileagePage({
         year={year}
         trips={trips}
         total={total}
-        jobs={(jobRows ?? []).map((j) => ({
-          id: j.id as number,
-          name: (j.name as string | null) ?? `Job #${j.id}`,
-          jobNumber: (j.job_number as string | null) ?? null,
-          address: (j.address as string | null) ?? null,
-        }))}
+        jobs={(jobRows ?? []).map(toJobPick)}
         baseAddress={(settings?.mileage_base_address as string | null) ?? null}
         rateForYear={rates.get(year) ?? null}
         todayISO={dayKeyInTz(new Date(), tz)}

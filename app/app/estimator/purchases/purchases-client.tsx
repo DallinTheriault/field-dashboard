@@ -28,6 +28,7 @@ import {
 import { ConfirmScan, ScanReceipt } from "./scan-receipt";
 import { findDuplicatePurchase, type DuplicateHit } from "./duplicate-actions";
 import type { Role } from "@/lib/permissions/roles";
+import { jobPickLabel, type JobPick } from "@/lib/jobs/address";
 
 export type PendingPurchase = {
   id: number;
@@ -73,42 +74,6 @@ const ASSIGNMENT_SHORT: Record<string, string> = {
 
 const usd = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" });
 const round2 = (n: number) => Math.round((n + 1e-9) * 100) / 100;
-
-/** A job as shown in a picker (JOB_NUMBERING_SPEC Part A). */
-export type JobPick = {
-  id: number;
-  name: string;
-  jobNumber: string | null;
-  address: string | null;
-  status: string | null;
-};
-
-const JOB_STATUS_SHORT: Record<string, string> = {
-  lead: "lead",
-  estimated: "estimated",
-  accepted: "accepted",
-  scheduled: "scheduled",
-  in_progress: "in progress",
-  completed: "completed",
-  callback: "callback",
-  callback_complete: "callback done",
-  cancelled: "cancelled",
-};
-
-/**
- * Picker label that tells two jobs for the same contact apart: job number
- * (when present, else nothing), then the property address+unit (what the eye
- * actually reads), the contact name, and status. Renders fully in the native
- * <select> OS picker at iPhone width.
- */
-function jobPickLabel(j: JobPick): string {
-  const parts: string[] = [];
-  if (j.jobNumber) parts.push(j.jobNumber);
-  if (j.address) parts.push(j.address);
-  parts.push(j.name);
-  if (j.status) parts.push(JOB_STATUS_SHORT[j.status] ?? j.status);
-  return parts.join(" · ");
-}
 
 function todayISO(): string {
   const d = new Date();

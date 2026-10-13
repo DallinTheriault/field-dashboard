@@ -3,6 +3,7 @@
 import type { Assignment } from "@/lib/estimator/expenses";
 import type { Role } from "@/lib/permissions/roles";
 import { allowedAssignmentsForRole } from "@/lib/estimator/expense-roles";
+import { jobPickLabel, type JobPick } from "@/lib/jobs/address";
 
 export type ReceiptTarget =
   | { kind: "unset" }
@@ -10,34 +11,7 @@ export type ReceiptTarget =
   | { kind: "internal"; jobId: number | null }
   | { kind: "job"; jobId: number | null; assignment: Assignment };
 
-export type JobOption = {
-  id: number;
-  name: string;
-  jobNumber: string | null;
-  address: string | null;
-  status: string | null;
-};
-
-const JOB_STATUS_SHORT: Record<string, string> = {
-  lead: "lead",
-  estimated: "estimated",
-  accepted: "accepted",
-  scheduled: "scheduled",
-  in_progress: "in progress",
-  completed: "completed",
-  callback: "callback",
-  callback_complete: "callback done",
-  cancelled: "cancelled",
-};
-
-export function jobOptionLabel(j: JobOption): string {
-  const parts: string[] = [];
-  if (j.jobNumber) parts.push(j.jobNumber);
-  if (j.address) parts.push(j.address);
-  parts.push(j.name);
-  if (j.status) parts.push(JOB_STATUS_SHORT[j.status] ?? j.status);
-  return parts.join(" · ");
-}
+export type JobOption = JobPick;
 
 /** The persisted assignment + job for a target, or null when nothing is chosen. */
 export function resolveTarget(
@@ -149,7 +123,7 @@ export function ReceiptAssignment({
             <option value="">Pick a job…</option>
             {jobs.map((j) => (
               <option key={j.id} value={j.id}>
-                {jobOptionLabel(j)}
+                {jobPickLabel(j)}
               </option>
             ))}
           </select>

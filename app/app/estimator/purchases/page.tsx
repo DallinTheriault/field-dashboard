@@ -9,6 +9,7 @@ import { FeatureDisabledPanel } from "@/components/ui/feature-disabled-panel";
 import { PurchasesClient, type ExpenseItemRow } from "./purchases-client";
 import { ReceiptsView, type ReceiptRow } from "./receipts-view";
 import { mintReceiptThumbUrls } from "@/lib/estimator/receipt-urls";
+import { JOB_LOCATION_SELECT, toJobPick } from "@/lib/jobs/address";
 
 /**
  * Expenses — the single intake / list / assignment surface (ruling Q2).
@@ -41,7 +42,7 @@ export default async function ExpenseIntakePage() {
     // exclude only cancelled. Newest first.
     supabase
       .from("jobs")
-      .select("id, name, job_number, address, status")
+      .select(`id, name, job_number, status, ${JOB_LOCATION_SELECT}`)
       .is("archived_at", null)
       .neq("status", "cancelled")
       .order("created_at", { ascending: false })
@@ -95,13 +96,7 @@ export default async function ExpenseIntakePage() {
     };
   });
 
-  const jobs = (jobRows ?? []).map((j) => ({
-    id: j.id as number,
-    name: (j.name as string | null) ?? `Job #${j.id}`,
-    jobNumber: (j.job_number as string | null) ?? null,
-    address: (j.address as string | null) ?? null,
-    status: (j.status as string | null) ?? null,
-  }));
+  const jobs = (jobRows ?? []).map(toJobPick);
 
   const itemCountOf = (p: NonNullable<typeof purchaseRows>[number]) =>
     ((p.expenses as unknown as Array<{ count: number }> | null)?.[0]?.count) ?? 0;

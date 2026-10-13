@@ -9,6 +9,7 @@ import { getTagsByJobIds, listTagsForClient } from "@/lib/tags/server";
 import { Download } from "lucide-react";
 import { getTenantTimezone } from "@/lib/dates";
 import { getCurrentUserRole } from "@/lib/permissions/current-role";
+import { JOB_LOCATION_SELECT, jobAddress } from "@/lib/jobs/address";
 
 function fmtDate(d: string | null, tz: string): string {
   if (!d) return "—";
@@ -17,18 +18,6 @@ function fmtDate(d: string | null, tz: string): string {
     day: "numeric",
     year: "numeric",
   });
-}
-
-function fmtPhone(phone: string | null): string {
-  if (!phone) return "—";
-  const d = phone.replace(/\D/g, "");
-  if (d.length === 11 && d.startsWith("1")) {
-    return `(${d.slice(1, 4)}) ${d.slice(4, 7)}-${d.slice(7)}`;
-  }
-  if (d.length === 10) {
-    return `(${d.slice(0, 3)}) ${d.slice(3, 6)}-${d.slice(6)}`;
-  }
-  return phone;
 }
 
 export default async function JobsPage({
@@ -49,7 +38,7 @@ export default async function JobsPage({
 
   let baseQuery = supabase
     .from("jobs")
-    .select("id, name, phone, address, service, status, quoted_price, start_datetime, created_at")
+    .select(`id, name, phone, service, status, quoted_price, start_datetime, created_at, ${JOB_LOCATION_SELECT}`)
     .is("archived_at", null)
     .order("created_at", { ascending: false });
 
@@ -82,7 +71,8 @@ export default async function JobsPage({
   }
 
   const { data: jobs } = await baseQuery;
-  const rows = jobs ?? [];
+  // Resolve each job's address from its property once, for both layouts.
+  const rows = (jobs ?? []).map((j) => ({ ...j, address: jobAddress(j) }));
 
   // Bulk-fetch tags for visible jobs + the tag-filter list in one wave
   const [tagsByJob, allTags] = await Promise.all([
@@ -190,8 +180,8 @@ export default async function JobsPage({
               <table className="table-pro">
                 <thead>
                   <tr>
+                    <th>Address</th>
                     <th>Customer</th>
-                    <th>Phone</th>
                     <th>Service</th>
                     <th>Tags</th>
                     <th>Start</th>
@@ -205,11 +195,9 @@ export default async function JobsPage({
                     return (
                       <ClickableTableRow key={j.id} href={`/app/jobs/${j.id}`}>
                         <td className="text-bone-100 font-medium">
-                          {j.name || "—"}
+                          {j.address || "—"}
                         </td>
-                        <td className="num text-xs text-bone-300">
-                          {fmtPhone(j.phone)}
-                        </td>
+                        <td className="text-bone-300">{j.name || "—"}</td>
                         <td className="text-bone-300">{j.service || "—"}</td>
                         <td className="max-w-[200px]">
                           {jobTags.length > 0 ? (

@@ -5,6 +5,7 @@ import { getTenantFeatureFlags } from "@/lib/features/flags";
 import { getCurrentUserRole } from "@/lib/permissions/current-role";
 import { dayKeyInTz, getTenantTimezone } from "@/lib/dates";
 import { FeatureDisabledPanel } from "@/components/ui/feature-disabled-panel";
+import { JOB_LOCATION_SELECT, jobAddress, jobContactName } from "@/lib/jobs/address";
 import { CalendarClient, type CalJob, type PickJob } from "./calendar-client";
 
 /**
@@ -85,7 +86,7 @@ export default async function CalendarPage({
     // Bookable backlog for the "Schedule a job → existing" flow.
     supabase
       .from("jobs")
-      .select("id, name, address, service, status, job_number")
+      .select(`id, name, service, status, job_number, ${JOB_LOCATION_SELECT}`)
       .is("archived_at", null)
       .is("start_datetime", null)
       .not("status", "in", "(completed,cancelled)")
@@ -96,7 +97,14 @@ export default async function CalendarPage({
   const jobs = ((rawJobs ?? []) as CalJob[]).filter(
     (j) => j.start_datetime != null,
   );
-  const unscheduled = (rawUnscheduled ?? []) as PickJob[];
+  const unscheduled: PickJob[] = (rawUnscheduled ?? []).map((j) => ({
+    id: j.id as number,
+    name: jobContactName(j),
+    address: jobAddress(j),
+    service: (j.service as string | null) ?? null,
+    status: j.status as string,
+    job_number: (j.job_number as string | null) ?? null,
+  }));
 
   // Detect conflicts (same day jobs overlapping in time)
   const byDay = new Map<string, CalJob[]>();
