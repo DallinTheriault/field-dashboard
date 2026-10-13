@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { toE164US } from "@/lib/sms/phone";
+import { findOrCreateProperty, repointJobAddress } from "@/lib/jobs/properties";
 
 const VALID_STATUSES = [
   "lead",
@@ -23,9 +24,9 @@ type CreateJobResult =
   | { ok: false; error: string };
 
 /**
- * Compose the single free-text address that every display path reads
- * (jobs.address is the displayed truth — see CONTACTS_PROPERTIES_SPEC §4).
- * A property's structured address + unit collapse into one string here.
+ * Compose jobs.address, the text copy of a property's address + unit. Screens
+ * read the property itself (lib/jobs/address.ts); the copy serves legacy
+ * readers such as the estimate and invoice PDFs.
  */
 function composeAddress(address: string, unit: string | null): string {
   const a = address.trim();
@@ -34,10 +35,10 @@ function composeAddress(address: string, unit: string | null): string {
 }
 
 /**
- * Resolve the caller's tenant, requiring owner/manager (job creation is a
- * write). Returns the client_id or an error message.
+ * Resolve the caller's tenant, requiring owner/manager (creating or editing a
+ * job is a write). Returns the client_id or an error message.
  */
-async function requireWriterClientId(): Promise<
+async function requireWriterClientId(verb: "create" | "edit" = "create"): Promise<
   { ok: true; clientId: number } | { ok: false; error: string }
 > {
   const supabase = await createClient();
@@ -54,7 +55,7 @@ async function requireWriterClientId(): Promise<
 
   const allowed = memberships ?? [];
   if (allowed.length === 0) {
-    return { ok: false, error: "You don't have permission to create jobs." };
+    return { ok: false, error: `You don't have permission to ${verb} jobs.` };
   }
   // V1: one tenant per user; first membership wins (matches prior behavior).
   return { ok: true, clientId: allowed[0].client_id };
@@ -263,37 +264,27 @@ export async function createJob(input: CreateJobInput): Promise<CreateJobResult>
 }
 
 /**
- * Reuse an exact (contact, address, unit) property or create a new one.
- * Soft-guards duplicates at the app layer (§5.2) — never hard-fails.
- * Returns the property id, or null on write failure.
+ * Save an edited job address: moves the job onto the matching property for
+ * its contact (found or created) and rewrites jobs.address to match. Never
+ * edits an existing property — other jobs may share it.
  */
-async function findOrCreateProperty(
-  admin: ReturnType<typeof createAdminClient>,
-  clientId: number,
-  contactId: number,
+export async function updateJobAddress(
+  jobId: number,
   address: string,
-  unit: string | null,
-): Promise<number | null> {
-  let match = admin
-    .from("properties")
-    .select("id")
-    .eq("client_id", clientId)
-    .eq("contact_id", contactId)
-    .eq("address", address);
-  match = unit === null ? match.is("unit", null) : match.eq("unit", unit);
-  const { data: existing } = await match.maybeSingle();
-  if (existing) return existing.id;
+  unit: string,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  const gate = await requireWriterClientId("edit");
+  if (!gate.ok) return gate;
 
-  const { data: created, error } = await admin
-    .from("properties")
-    .insert({ client_id: clientId, contact_id: contactId, address, unit })
-    .select("id")
-    .single();
-  if (error || !created) {
-    console.error("[create-job] property create failed", error);
-    return null;
-  }
-  return created.id;
+  const result = await repointJobAddress(createAdminClient(), gate.clientId, jobId, {
+    address,
+    unit,
+  });
+  if (!result.ok) return result;
+
+  revalidatePath(`/app/jobs/${jobId}`);
+  revalidatePath("/app/jobs");
+  return { ok: true };
 }
 
 /**

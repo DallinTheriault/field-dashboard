@@ -17,11 +17,15 @@ export default async function JobEditPage({
 
   const { data: job } = await supabase
     .from("jobs")
-    .select("*")
+    .select("*, property:properties(address, unit)")
     .eq("id", id)
     .maybeSingle();
 
   if (!job) notFound();
+
+  // The form edits the job's property address + unit; legacy jobs with no
+  // property edit their inline address.
+  const property = job.property as { address: string; unit: string | null } | null;
 
   const [allTags, jobTags, teamMembers, serviceOptions] = await Promise.all([
     listTagsForClient(job.client_id),
@@ -60,7 +64,8 @@ export default async function JobEditPage({
           name: job.name ?? "",
           phone: job.phone ?? "",
           email: job.email ?? "",
-          address: job.address ?? "",
+          address: property ? property.address : (job.address ?? ""),
+          unit: property?.unit ?? "",
           service: job.service ?? "",
           scope: job.scope ?? "",
           quoted_price: job.quoted_price ?? null,

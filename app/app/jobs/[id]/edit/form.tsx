@@ -7,6 +7,7 @@ import { Loader2, Save, Check, Trash2, AlertTriangle } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { TagPicker } from "@/components/tags/tag-picker";
 import { AssignmentSelect } from "@/components/assignment/assignment-select";
+import { updateJobAddress } from "../../_components/actions";
 import type { Tag } from "@/lib/tags/types";
 import type { TeamMember } from "@/lib/team/types";
 
@@ -31,6 +32,7 @@ type JobInput = {
   phone: string;
   email: string;
   address: string;
+  unit: string;
   service: string;
   scope: string;
   quoted_price: number | null;
@@ -78,6 +80,7 @@ export function JobEditForm({
   const [phone, setPhone] = useState(job.phone);
   const [email, setEmail] = useState(job.email);
   const [address, setAddress] = useState(job.address);
+  const [unit, setUnit] = useState(job.unit);
   const [service, setService] = useState(job.service);
   const [scope, setScope] = useState(job.scope);
   const [quotedPrice, setQuotedPrice] = useState<string>(
@@ -136,13 +139,23 @@ export function JobEditForm({
       return;
     }
 
+    // The address goes through the server: it re-points the job at the
+    // matching property rather than editing a property other jobs may share.
+    if (address.trim() !== job.address.trim() || unit.trim() !== job.unit.trim()) {
+      const moved = await updateJobAddress(Number(job.id), address, unit);
+      if (!moved.ok) {
+        setSaving(false);
+        setErr(moved.error);
+        return;
+      }
+    }
+
     const { error } = await supabase
       .from("jobs")
       .update({
         name: name || null,
         phone: phone || null,
         email: email || null,
-        address: address || null,
         service: service || null,
         scope: scope || null,
         quoted_price: priceCents,
@@ -232,9 +245,15 @@ export function JobEditForm({
         />
       </div>
 
-      <div className="field-group">
-        <label className="field-label">Address</label>
-        <input value={address} onChange={(e) => setAddress(e.target.value)} />
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+        <div className="field-group sm:col-span-2">
+          <label className="field-label">Address</label>
+          <input value={address} onChange={(e) => setAddress(e.target.value)} />
+        </div>
+        <div className="field-group">
+          <label className="field-label">Unit</label>
+          <input value={unit} onChange={(e) => setUnit(e.target.value)} />
+        </div>
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
