@@ -1,7 +1,7 @@
 # Schema snapshot
 
-`prod.sql` is the full prod schema as of 2026-10-13 (latest migration `v091_mileage`).
-It is the rebuild source of truth; `supabase/migrations/` holds only 34 of the 112
+`prod.sql` is the full prod schema as of 2026-10-13 (through migration `v092_lock_down_secret_rpcs`).
+It is the rebuild source of truth; `supabase/migrations/` holds only 35 of the 113
 migrations prod has applied, so replaying migrations cannot rebuild the database.
 
 **Rebuild** a fresh Supabase project (run as `postgres`):

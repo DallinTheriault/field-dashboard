@@ -5,6 +5,8 @@
 -- every section below matched prod's md5 for that section at capture time.
 -- Latest applied migration at capture: v091_mileage (112 entries in prod's
 -- migration history; the repo's supabase/migrations holds 34 of them).
+-- Privileges section refreshed after v092_lock_down_secret_rpcs and re-checked
+-- against prod.
 --
 -- Schema only: no row data except storage bucket config. Supabase-managed
 -- objects (auth/storage/realtime internals, supabase_admin default privileges,
@@ -4873,12 +4875,14 @@ REVOKE ALL ON FUNCTION
     public.get_jobs_for_caller(p_client_id bigint, p_phone text),
     public.handle_auth_user_link(),
     public.log_audit_event(p_action text, p_client_id bigint, p_target_type text, p_target_id text, p_details jsonb),
+    public.lookup_client_by_secret(p_secret text),
     public.resolve_client_id_by_email(p_email text),
     public.rotate_webhook_secret(p_client_id bigint),
     public.save_message_for_tenant(p_client_id bigint, p_caller_name text, p_caller_phone text, p_callback_phone text, p_message_body text, p_call_summary_id bigint),
     public.set_client_active_by_subscription(p_stripe_subscription_id text, p_is_active boolean),
     public.upsert_contact(p_client_id bigint, p_phone text, p_name text, p_email text, p_address text),
-    public.upsert_subscription_from_stripe(p_email text, p_client_id bigint, p_stripe_customer_id text, p_stripe_subscription_id text, p_status text, p_current_period_end timestamp with time zone, p_setup_fee_paid_at timestamp with time zone, p_monthly_price_cents integer, p_setup_fee_cents integer, p_cancel_at_period_end boolean)
+    public.upsert_subscription_from_stripe(p_email text, p_client_id bigint, p_stripe_customer_id text, p_stripe_subscription_id text, p_status text, p_current_period_end timestamp with time zone, p_setup_fee_paid_at timestamp with time zone, p_monthly_price_cents integer, p_setup_fee_cents integer, p_cancel_at_period_end boolean),
+    public.verify_stripe_signature(p_body text, p_signature_header text, p_tolerance_seconds integer)
   FROM PUBLIC, anon, authenticated, service_role;
 GRANT EXECUTE ON FUNCTION
     public.admin_reset_platform(),
@@ -4889,21 +4893,21 @@ GRANT EXECUTE ON FUNCTION
     public.get_jobs_for_caller(p_client_id bigint, p_phone text),
     public.handle_auth_user_link(),
     public.log_audit_event(p_action text, p_client_id bigint, p_target_type text, p_target_id text, p_details jsonb),
+    public.lookup_client_by_secret(p_secret text),
     public.resolve_client_id_by_email(p_email text),
     public.rotate_webhook_secret(p_client_id bigint),
     public.save_message_for_tenant(p_client_id bigint, p_caller_name text, p_caller_phone text, p_callback_phone text, p_message_body text, p_call_summary_id bigint),
     public.set_client_active_by_subscription(p_stripe_subscription_id text, p_is_active boolean),
     public.upsert_contact(p_client_id bigint, p_phone text, p_name text, p_email text, p_address text),
-    public.upsert_subscription_from_stripe(p_email text, p_client_id bigint, p_stripe_customer_id text, p_stripe_subscription_id text, p_status text, p_current_period_end timestamp with time zone, p_setup_fee_paid_at timestamp with time zone, p_monthly_price_cents integer, p_setup_fee_cents integer, p_cancel_at_period_end boolean)
+    public.upsert_subscription_from_stripe(p_email text, p_client_id bigint, p_stripe_customer_id text, p_stripe_subscription_id text, p_status text, p_current_period_end timestamp with time zone, p_setup_fee_paid_at timestamp with time zone, p_monthly_price_cents integer, p_setup_fee_cents integer, p_cancel_at_period_end boolean),
+    public.verify_stripe_signature(p_body text, p_signature_header text, p_tolerance_seconds integer)
   TO service_role;
 
 REVOKE ALL ON FUNCTION
     public.client_owner_count(target_client_id bigint),
     public.is_platform_admin(),
     public.job_number_slug(p_name text),
-    public.list_team_members(p_client_id bigint),
     public.log_job_status_change(),
-    public.lookup_client_by_secret(p_secret text),
     public.mileage_entries_touch(),
     public.normalize_clients_phones(),
     public.normalize_contacts_phones(),
@@ -4911,7 +4915,6 @@ REVOKE ALL ON FUNCTION
     public.normalize_jobs_phones(),
     public.normalize_lead_intake_phone(),
     public.normalize_messages_phones(),
-    public.rotate_stripe_webhook_secret(p_new_secret text),
     public.set_clients_updated_at(),
     public.set_job_number(),
     public.set_properties_updated_at(),
@@ -4923,16 +4926,13 @@ REVOKE ALL ON FUNCTION
     public.trg_client_users_role_change_guard(),
     public.trg_clients_protect_system_fields(),
     public.trg_clients_trim_text_fields(),
-    public.user_can_write_client(target_client_id bigint),
-    public.verify_stripe_signature(p_body text, p_signature_header text, p_tolerance_seconds integer)
+    public.user_can_write_client(target_client_id bigint)
   FROM PUBLIC, anon, authenticated, service_role;
 GRANT EXECUTE ON FUNCTION
     public.client_owner_count(target_client_id bigint),
     public.is_platform_admin(),
     public.job_number_slug(p_name text),
-    public.list_team_members(p_client_id bigint),
     public.log_job_status_change(),
-    public.lookup_client_by_secret(p_secret text),
     public.mileage_entries_touch(),
     public.normalize_clients_phones(),
     public.normalize_contacts_phones(),
@@ -4940,7 +4940,6 @@ GRANT EXECUTE ON FUNCTION
     public.normalize_jobs_phones(),
     public.normalize_lead_intake_phone(),
     public.normalize_messages_phones(),
-    public.rotate_stripe_webhook_secret(p_new_secret text),
     public.set_clients_updated_at(),
     public.set_job_number(),
     public.set_properties_updated_at(),
@@ -4952,16 +4951,13 @@ GRANT EXECUTE ON FUNCTION
     public.trg_client_users_role_change_guard(),
     public.trg_clients_protect_system_fields(),
     public.trg_clients_trim_text_fields(),
-    public.user_can_write_client(target_client_id bigint),
-    public.verify_stripe_signature(p_body text, p_signature_header text, p_tolerance_seconds integer)
+    public.user_can_write_client(target_client_id bigint)
   TO PUBLIC;
 GRANT EXECUTE ON FUNCTION
     public.client_owner_count(target_client_id bigint),
     public.is_platform_admin(),
     public.job_number_slug(p_name text),
-    public.list_team_members(p_client_id bigint),
     public.log_job_status_change(),
-    public.lookup_client_by_secret(p_secret text),
     public.mileage_entries_touch(),
     public.normalize_clients_phones(),
     public.normalize_contacts_phones(),
@@ -4969,7 +4965,6 @@ GRANT EXECUTE ON FUNCTION
     public.normalize_jobs_phones(),
     public.normalize_lead_intake_phone(),
     public.normalize_messages_phones(),
-    public.rotate_stripe_webhook_secret(p_new_secret text),
     public.set_clients_updated_at(),
     public.set_job_number(),
     public.set_properties_updated_at(),
@@ -4981,16 +4976,13 @@ GRANT EXECUTE ON FUNCTION
     public.trg_client_users_role_change_guard(),
     public.trg_clients_protect_system_fields(),
     public.trg_clients_trim_text_fields(),
-    public.user_can_write_client(target_client_id bigint),
-    public.verify_stripe_signature(p_body text, p_signature_header text, p_tolerance_seconds integer)
+    public.user_can_write_client(target_client_id bigint)
   TO authenticated;
 GRANT EXECUTE ON FUNCTION
     public.client_owner_count(target_client_id bigint),
     public.is_platform_admin(),
     public.job_number_slug(p_name text),
-    public.list_team_members(p_client_id bigint),
     public.log_job_status_change(),
-    public.lookup_client_by_secret(p_secret text),
     public.mileage_entries_touch(),
     public.normalize_clients_phones(),
     public.normalize_contacts_phones(),
@@ -4998,7 +4990,6 @@ GRANT EXECUTE ON FUNCTION
     public.normalize_jobs_phones(),
     public.normalize_lead_intake_phone(),
     public.normalize_messages_phones(),
-    public.rotate_stripe_webhook_secret(p_new_secret text),
     public.set_clients_updated_at(),
     public.set_job_number(),
     public.set_properties_updated_at(),
@@ -5010,8 +5001,7 @@ GRANT EXECUTE ON FUNCTION
     public.trg_client_users_role_change_guard(),
     public.trg_clients_protect_system_fields(),
     public.trg_clients_trim_text_fields(),
-    public.user_can_write_client(target_client_id bigint),
-    public.verify_stripe_signature(p_body text, p_signature_header text, p_tolerance_seconds integer)
+    public.user_can_write_client(target_client_id bigint)
   TO service_role;
 
 REVOKE ALL ON FUNCTION
@@ -5104,6 +5094,17 @@ GRANT EXECUTE ON FUNCTION
     public.touch_contacts_updated_at(),
     public.update_jobs_updated_at()
   TO service_role;
+
+REVOKE ALL ON FUNCTION
+    public.list_team_members(p_client_id bigint)
+  FROM PUBLIC, anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION
+    public.list_team_members(p_client_id bigint)
+  TO authenticated;
+
+REVOKE ALL ON FUNCTION
+    public.rotate_stripe_webhook_secret(p_new_secret text)
+  FROM PUBLIC, anon, authenticated, service_role;
 
 -- ==========================================================================
 -- Default privileges
