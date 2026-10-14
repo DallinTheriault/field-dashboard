@@ -39,6 +39,7 @@ export async function session(email) {
     get: (path) => call("GET", path),
     post: (path, payload) => call("POST", path, payload),
     patch: (path, payload) => call("PATCH", path, payload),
+    del: (path) => call("DELETE", path),
   };
 }
 
