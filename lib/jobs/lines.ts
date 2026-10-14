@@ -30,11 +30,12 @@ export function jobTotal(lines: LinePrice[]): number {
 }
 
 /**
- * A line with a unit is meant to be sold; without a price it can't bill yet.
- * A plain reminder ("bring ladder") has no unit and never needs a price.
+ * Billable with no price yet: an invoice won't go out until it's priced or
+ * marked not billable. A reminder ("bring ladder") isn't billable, so it
+ * never needs a price.
  */
-export function needsPrice(line: { unit: LineUnit | null; unit_price: number | null }): boolean {
-  return line.unit !== null && line.unit_price === null;
+export function needsPrice(line: { billable: boolean; unit_price: number | null }): boolean {
+  return line.billable && line.unit_price === null;
 }
 
 /** Hours step by half an hour; everything else by one. */
@@ -55,16 +56,6 @@ export function parseMoney(input: string): number | null {
   if (s === "") return null;
   const n = Number(s);
   return Number.isFinite(n) && n >= 0 ? n : Number.NaN;
-}
-
-/**
- * Setting a line's price. The first price on an unpriced line also makes it
- * billable: a line only exists unpriced because it couldn't bill yet.
- * Clearing the price makes it non-billable, which the database requires.
- */
-export function withPrice<T extends LinePrice>(line: T, price: number | null): T {
-  if (price === null) return { ...line, unit_price: null, billable: false };
-  return { ...line, unit_price: price, billable: line.unit_price === null ? true : line.billable };
 }
 
 export const UNIT_SHORT: Record<LineUnit, string> = {
@@ -147,7 +138,10 @@ export type NewLine = {
   billable: boolean;
 };
 
-/** One tap on an entry: qty 1 at the entry's price, billable when priced. */
+/**
+ * One tap on an entry: qty 1 at the entry's price, billable. An entry with no
+ * price yet adds a line that needs one.
+ */
 export function lineFromEntry(e: PriceBookEntry): NewLine {
   return {
     title: e.name,
@@ -155,7 +149,7 @@ export function lineFromEntry(e: PriceBookEntry): NewLine {
     qty: 1,
     unit: e.unit,
     unit_price: e.unit_price,
-    billable: e.unit_price !== null,
+    billable: true,
   };
 }
 
@@ -179,7 +173,7 @@ export function customLine(
       qty: amount,
       unit: "hour",
       unit_price: hourlyRate,
-      billable: hourlyRate !== null,
+      billable: true,
     };
   }
   return { title, service_id: null, qty: 1, unit: "each", unit_price: amount, billable: true };

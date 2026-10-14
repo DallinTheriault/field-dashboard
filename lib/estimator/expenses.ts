@@ -76,7 +76,7 @@ export type Assignment = (typeof ASSIGNMENTS)[number];
 
 export const ASSIGNMENT_LABELS: Record<Assignment, string> = {
   unassigned: "Unassigned",
-  job_in_bid: "Job — in bid",
+  job_in_bid: "Job — covered by task price",
   job_extra: "Job — extra (invoiced at cost)",
   job_internal: "Job — internal (eaten)",
   stock: "Stock / company",
@@ -100,6 +100,8 @@ export type ExtraItem = {
    * when the purchase carries no tax data (manual entries). */
   purchaseTax?: number | null;
   purchaseSubtotal?: number | null;
+  /** Bill marked up by the tenant's material markup instead of at cost. */
+  billMarkup?: boolean;
 };
 
 export type InvoiceRow = {
@@ -108,6 +110,8 @@ export type InvoiceRow = {
   amount: number;
   /** Marks a row injected from a job_extra expense item (refresh/strip key). */
   extra_expense_id?: number;
+  /** Marks a row billed from a job line (task); the draft claims that task. */
+  task_id?: number;
 };
 
 /**
@@ -132,25 +136,45 @@ export function taxFactor(
 }
 
 /**
- * job_extra items -> invoice rows AT COST (locked decision: no markup —
- * effort is billed via labor), tax-inclusive: what the owner actually
- * paid for the item including its prorated share of the receipt's sales
- * tax. Grouped under a clear label so the customer sees these as
- * additional materials, separate from the bid scope.
+ * What one extra cost (tax-inclusive: its prorated share of the receipt's
+ * sales tax) and what it bills: the same, or marked up by the tenant's
+ * material markup when the item says so. The app shows both when they differ.
  */
-export function buildExtraInvoiceRows(items: ExtraItem[]): {
+export function extraAmounts(
+  it: Pick<ExtraItem, "amount" | "purchaseTax" | "purchaseSubtotal" | "billMarkup">,
+  markupPct = 0,
+): { cost: number; billed: number } {
+  const cost = round2(it.amount * taxFactor(it.purchaseTax, it.purchaseSubtotal));
+  const billed = it.billMarkup && markupPct > 0 ? round2(cost * (1 + markupPct)) : cost;
+  return { cost, billed };
+}
+
+/**
+ * job_extra items -> invoice rows, at cost by default (tax-inclusive: what
+ * the owner actually paid, including the receipt's prorated sales tax) or
+ * marked up per item. Grouped under a clear label so the customer sees these
+ * as additional materials, separate from the scope.
+ */
+export function buildExtraInvoiceRows(
+  items: ExtraItem[],
+  markupPct = 0,
+): {
   rows: InvoiceRow[];
   addedTotal: number;
 } {
   const rows = items.map((it) => {
-    const factor = taxFactor(it.purchaseTax, it.purchaseSubtotal);
+    const marked = !!it.billMarkup && markupPct > 0;
+    const factor =
+      taxFactor(it.purchaseTax, it.purchaseSubtotal) * (marked ? 1 + markupPct : 1);
     return {
-      description: `Additional materials (at cost, incl. sales tax): ${it.description}`,
+      description: marked
+        ? `Additional materials: ${it.description}`
+        : `Additional materials (at cost, incl. sales tax): ${it.description}`,
       qtyLabel:
         it.qty !== null && it.qty !== 1 && it.unit_price !== null
           ? `${it.qty} × $${round2(it.unit_price * factor).toFixed(2)}`
           : null,
-      amount: round2(it.amount * factor),
+      amount: extraAmounts(it, markupPct).billed,
       extra_expense_id: it.id,
     };
   });

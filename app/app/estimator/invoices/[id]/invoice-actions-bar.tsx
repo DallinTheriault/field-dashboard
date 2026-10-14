@@ -2,23 +2,16 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import {
-  BadgeCheck,
-  Copy,
-  FileDown,
-  Loader2,
-  RefreshCcw,
-  Send,
-  Trash2,
-} from "lucide-react";
-import {
-  deleteInvoice,
-  markInvoicePaid,
-  refreshInvoiceExtras,
-  sendInvoiceWithStripe,
-} from "../../invoice-actions";
+import { BadgeCheck, Ban, Copy, FileDown, Loader2, Trash2 } from "lucide-react";
+import { deleteInvoice, markInvoicePaid } from "../../invoice-actions";
+import { voidInvoice } from "../../job-invoice-actions";
 import { SharePdfButton } from "../../share-pdf-button";
 
+/**
+ * Everything but sending (the Send panel does that for drafts). An invoice
+ * that went out is voided, never deleted; voiding frees its lines and extras
+ * to be billed again. Unsent drafts are deleted.
+ */
 export function InvoiceActionsBar({
   invoiceId,
   invoiceNumber,
@@ -36,6 +29,9 @@ export function InvoiceActionsBar({
   const [busy, setBusy] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+
+  const isDraft = status === "draft" && !hasStripe;
+  const wentOut = !isDraft && status !== "voided";
 
   async function run(name: string, fn: () => Promise<{ ok: boolean; error?: string }>) {
     setErr(null);
@@ -60,58 +56,25 @@ export function InvoiceActionsBar({
           href={`/api/estimator/invoices/${invoiceId}/pdf`}
           target="_blank"
           rel="noreferrer"
-          className="btn-secondary text-sm min-h-[42px]"
+          className="btn-secondary text-sm min-h-[44px]"
         >
           <FileDown size={13} />
           View PDF
         </a>
-        <SharePdfButton
-          url={`/api/estimator/invoices/${invoiceId}/pdf`}
-          filename={`${invoiceNumber}.pdf`}
-          label="Send invoice"
-        />
-        {status === "draft" && !hasStripe && (
-          <button
-            type="button"
-            disabled={busy !== null}
-            onClick={() => run("extras", () => refreshInvoiceExtras(invoiceId))}
-            className="btn-secondary text-sm min-h-[42px]"
-            title="Re-pull the job's uninvoiced extra materials onto this draft"
-          >
-            {busy === "extras" ? (
-              <Loader2 size={13} className="animate-spin" />
-            ) : (
-              <RefreshCcw size={13} />
-            )}
-            Refresh extras
-          </button>
+        {wentOut && (
+          <SharePdfButton
+            url={`/api/estimator/invoices/${invoiceId}/pdf`}
+            filename={`${invoiceNumber}.pdf`}
+            label="Share PDF again"
+          />
         )}
-        {status !== "paid" && !hasStripe && (
-          <button
-            type="button"
-            disabled={busy !== null}
-            onClick={() => run("stripe", () => sendInvoiceWithStripe(invoiceId))}
-            className="btn-primary text-sm min-h-[42px]"
-          >
-            {busy === "stripe" ? (
-              <Loader2 size={13} className="animate-spin" />
-            ) : (
-              <Send size={13} />
-            )}
-            Send with Stripe
-          </button>
-        )}
-        {hostedUrl && (
-          <button
-            type="button"
-            onClick={copyHosted}
-            className="btn-secondary text-sm min-h-[42px]"
-          >
+        {hostedUrl && status !== "voided" && (
+          <button type="button" onClick={copyHosted} className="btn-secondary text-sm min-h-[44px]">
             <Copy size={13} />
             {copied ? "Copied!" : "Copy pay link"}
           </button>
         )}
-        {status !== "paid" && (
+        {wentOut && status !== "paid" && (
           <button
             type="button"
             disabled={busy !== null}
@@ -120,32 +83,47 @@ export function InvoiceActionsBar({
                 run("paid", () => markInvoicePaid(invoiceId));
               }
             }}
-            className="btn-secondary text-sm min-h-[42px]"
+            className="btn-secondary text-sm min-h-[44px]"
           >
-            {busy === "paid" ? (
-              <Loader2 size={13} className="animate-spin" />
-            ) : (
-              <BadgeCheck size={13} />
-            )}
+            {busy === "paid" ? <Loader2 size={13} className="animate-spin" /> : <BadgeCheck size={13} />}
             Mark paid
           </button>
         )}
-        {status === "draft" && !hasStripe && (
+        {wentOut && status !== "paid" && (
+          <button
+            type="button"
+            disabled={busy !== null}
+            onClick={() => {
+              if (
+                confirm(
+                  `Void ${invoiceNumber}? Its lines and extras become billable again${hasStripe ? ", and its card link stops working" : ""}. This can't be undone.`,
+                )
+              ) {
+                run("void", () => voidInvoice(invoiceId));
+              }
+            }}
+            className="btn-secondary text-sm min-h-[44px]"
+          >
+            {busy === "void" ? <Loader2 size={13} className="animate-spin" /> : <Ban size={13} />}
+            Void
+          </button>
+        )}
+        {isDraft && (
           <button
             type="button"
             disabled={busy !== null}
             onClick={async () => {
-              if (!confirm("Delete this draft invoice?")) return;
+              if (!confirm("Delete this draft invoice? Its lines go back to the job, ready to bill.")) return;
               setBusy("delete");
               const r = await deleteInvoice(invoiceId);
               setBusy(null);
               if (!r.ok) setErr(r.error ?? "Delete failed.");
               else router.push("/app/estimator/invoices");
             }}
-            className="btn-danger text-sm min-h-[42px]"
+            className="btn-danger text-sm min-h-[44px]"
           >
             <Trash2 size={13} />
-            Delete
+            Delete draft
           </button>
         )}
       </div>

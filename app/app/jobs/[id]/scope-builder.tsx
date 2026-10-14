@@ -28,7 +28,6 @@ import {
   rankEntries,
   recentServiceIds,
   stepQty,
-  withPrice,
   UNIT_SHORT,
   type LineUnit,
   type NewLine,
@@ -615,10 +614,7 @@ function LineRow({
               <PriceField
                 price={line.unit_price}
                 unit={line.unit}
-                onChange={(price) => {
-                  const next = withPrice(line, price);
-                  onWrite({ unit_price: next.unit_price, billable: next.billable });
-                }}
+                onChange={(price) => onWrite({ unit_price: price })}
               />
             </>
           ) : (
@@ -896,7 +892,7 @@ function LineDetails({
         line.note && <p className="text-sm text-bone-300">{line.note}</p>
       )}
 
-      {pricing && priceEditable && line.unit_price !== null && (
+      {pricing && priceEditable && line.unit !== null && (
         <label className="flex items-center gap-2 text-sm text-bone-100 min-h-[44px]">
           <input
             type="checkbox"

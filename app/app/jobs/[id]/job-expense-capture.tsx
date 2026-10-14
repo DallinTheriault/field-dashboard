@@ -29,7 +29,7 @@ import {
   canReassignExpense,
 } from "@/lib/estimator/expense-roles";
 import type { Role } from "@/lib/permissions/roles";
-import { setItemAssignment } from "../../estimator/purchases/purchase-actions";
+import { setExtraBilling, setItemAssignment } from "../../estimator/purchases/purchase-actions";
 import {
   createJobExpense,
   saveJobScanItems,
@@ -47,11 +47,18 @@ export type JobExpenseItem = {
   assignment: string;
   /** Invoice number when frozen onto a finalized invoice; null when editable. */
   lockedToInvoice?: string | null;
+  /** Extras: billed marked up instead of at cost; the cost (with its share
+   *  of the receipt's sales tax) and what it bills. */
+  billMarkup?: boolean;
+  cost?: number;
+  billed?: number;
+  /** Extras: the receipt photo goes out with the invoice. */
+  attachReceipt?: boolean;
 };
 
 const CHIP_SHORT: Record<string, string> = {
   unassigned: "unassigned",
-  job_in_bid: "in bid",
+  job_in_bid: "covered",
   job_extra: "extra",
   job_internal: "internal",
   stock: "stock",
@@ -62,7 +69,7 @@ const CHIP_SHORT: Record<string, string> = {
 const REASSIGN_ORDER: Assignment[] = ["job_in_bid", "job_extra", "job_internal", "stock"];
 
 const REASSIGN_LABELS: Record<string, string> = {
-  job_in_bid: "In bid",
+  job_in_bid: "Covered by task price",
   job_extra: "Extra",
   job_internal: "Internal",
   stock: "Stock",
@@ -72,7 +79,7 @@ const REASSIGN_LABELS: Record<string, string> = {
  *  consequence spelled out: stock makes the row vanish from the job, and
  *  internal silently moves money into the absorbed figure. */
 const MOVE_TOAST: Record<string, string> = {
-  job_in_bid: "Moved to in bid",
+  job_in_bid: "Moved to covered by task price",
   job_extra: "Moved to extra — billable",
   job_internal: "Moved to internal — now absorbed",
   stock: "Moved to stock — off this job",
@@ -142,6 +149,25 @@ export function JobExpenseCapture({
     router.refresh();
   }
 
+  async function billing(item: JobExpenseItem, patch: { billMarkup?: boolean; attachReceipt?: boolean }) {
+    setErr(null);
+    setBusyId(item.id);
+    // The box flips on tap; a refused write puts it back.
+    const set = (p: typeof patch) => setRows((prev) => prev.map((x) => (x.id === item.id ? { ...x, ...p } : x)));
+    set(patch);
+    const r = await setExtraBilling(item.id, patch);
+    setBusyId(null);
+    if (!r.ok) {
+      set({
+        ...(patch.billMarkup !== undefined && { billMarkup: item.billMarkup }),
+        ...(patch.attachReceipt !== undefined && { attachReceipt: item.attachReceipt }),
+      });
+      setErr(r.error);
+      return;
+    }
+    router.refresh();
+  }
+
   const split = splitMaterials(rows);
   return (
     <div className="panel px-4 py-3 mb-5 space-y-4">
@@ -158,7 +184,7 @@ export function JobExpenseCapture({
       <div className="flex flex-wrap items-center gap-x-2 text-2xs text-bone-400 pt-2 border-t border-line-subtle">
         <span>Materials:</span>
         <span className="num text-bone-100">{usd.format(split.inBid)}</span>
-        <span>in bid ·</span>
+        <span>covered by task prices ·</span>
         <span className="num text-bone-100">{usd.format(split.billed)}</span>
         <span>billed ·</span>
         <span className="num text-status-lead">{usd.format(split.absorbed)}</span>
@@ -179,6 +205,7 @@ export function JobExpenseCapture({
               busy={busyId === it.id}
               onToggle={() => setOpenId((cur) => (cur === it.id ? null : it.id))}
               onPick={(a) => reassign(it, a)}
+              onBilling={(patch) => billing(it, patch)}
             />
           ))}
         </ul>
@@ -217,6 +244,7 @@ function ExpenseRow({
   busy,
   onToggle,
   onPick,
+  onBilling,
 }: {
   item: JobExpenseItem;
   canReassign: boolean;
@@ -225,6 +253,7 @@ function ExpenseRow({
   busy: boolean;
   onToggle: () => void;
   onPick: (a: Assignment) => void;
+  onBilling: (patch: { billMarkup?: boolean; attachReceipt?: boolean }) => void;
 }) {
   // Pending destination, discarded when the row collapses so reopening always
   // starts from what the item actually is.
@@ -247,7 +276,14 @@ function ExpenseRow({
       {CHIP_SHORT[item.assignment] ?? item.assignment}
     </span>
   );
-  const amount = (
+  // A marked-up extra shows both numbers: what it cost and what it bills.
+  const marked = item.assignment === "job_extra" && item.billMarkup && item.billed !== undefined && item.billed !== item.cost;
+  const amount = marked ? (
+    <span className="num text-right shrink-0 leading-tight">
+      <span className="block text-bone-100">{usd.format(item.billed as number)}</span>
+      <span className="block text-2xs text-bone-400">cost {usd.format(item.cost ?? item.amount)}</span>
+    </span>
+  ) : (
     <span className="num text-bone-100 w-20 text-right shrink-0">
       {usd.format(item.amount)}
     </span>
@@ -331,6 +367,30 @@ function ExpenseRow({
             {busy ? <Loader2 size={11} className="animate-spin" /> : <Check size={11} />}
             Apply
           </button>
+        </div>
+      )}
+      {open && item.assignment === "job_extra" && (
+        <div className="flex flex-wrap gap-x-4 pb-2">
+          <label className="flex items-center gap-2 text-sm text-bone-100 min-h-[44px]">
+            <input
+              type="checkbox"
+              checked={!!item.billMarkup}
+              disabled={busy}
+              onChange={(e) => onBilling({ billMarkup: e.target.checked })}
+              className="w-5 h-5"
+            />
+            Bill marked up
+          </label>
+          <label className="flex items-center gap-2 text-sm text-bone-100 min-h-[44px]">
+            <input
+              type="checkbox"
+              checked={!!item.attachReceipt}
+              disabled={busy}
+              onChange={(e) => onBilling({ attachReceipt: e.target.checked })}
+              className="w-5 h-5"
+            />
+            Attach receipt when sharing the invoice
+          </label>
         </div>
       )}
     </li>

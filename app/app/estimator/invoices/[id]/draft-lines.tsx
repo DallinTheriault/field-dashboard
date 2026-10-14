@@ -2,11 +2,19 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { Loader2, Plus } from "lucide-react";
-import { updateDraftInvoiceLines } from "../../invoice-actions";
+import { Loader2, Plus, X } from "lucide-react";
+import { updateDraftInvoiceRows } from "../../job-invoice-actions";
 
 const usd = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" });
 const round2 = (n: number) => Math.round((n + 1e-9) * 100) / 100;
+
+export type DraftRow = {
+  description: string;
+  qtyLabel: string | null;
+  amount: number;
+  extra_expense_id?: number;
+  task_id?: number;
+};
 
 type Line = {
   key: number;
@@ -14,16 +22,18 @@ type Line = {
   qtyLabel: string | null;
   amountStr: string;
   extraExpenseId?: number;
+  taskId?: number;
   /** User-added adjustment lines get an editable description. */
   isNew: boolean;
 };
 let lineKey = 0;
 
 /**
- * Draft-only line editor (micro-fix 2026-07-15): amounts edit in place,
- * adjustment lines exist ONLY when the user explicitly adds one — no
- * auto-generated rows. Once the invoice is sent it renders read-only
- * (the server enforces immutability regardless).
+ * Draft-only line editor: amounts edit in place, adjustment lines exist only
+ * when the user adds one, and any row can be removed. Edits change the
+ * invoice, never the job; removing a row that came from a job line or extra
+ * releases it so a later invoice can bill it. Once the invoice goes out it
+ * renders read-only (the database enforces that regardless).
  */
 export function DraftLines({
   invoiceId,
@@ -32,12 +42,7 @@ export function DraftLines({
   dueTerms,
 }: {
   invoiceId: number;
-  rows: Array<{
-    description: string;
-    qtyLabel: string | null;
-    amount: number;
-    extra_expense_id?: number;
-  }>;
+  rows: DraftRow[];
   taxRatePct: number;
   dueTerms: string;
 }) {
@@ -47,8 +52,9 @@ export function DraftLines({
       key: ++lineKey,
       description: r.description,
       qtyLabel: r.qtyLabel,
-      amountStr: String(r.amount),
+      amountStr: r.amount.toFixed(2),
       extraExpenseId: r.extra_expense_id,
+      taskId: r.task_id,
       isNew: false,
     })),
   );
@@ -73,13 +79,14 @@ export function DraftLines({
   async function save() {
     setErr(null);
     setBusy(true);
-    const r = await updateDraftInvoiceLines(
+    const r = await updateDraftInvoiceRows(
       invoiceId,
       lines.map((l) => ({
         description: l.description,
         qtyLabel: l.qtyLabel,
         amount: parseFloat(l.amountStr),
         extra_expense_id: l.extraExpenseId,
+        task_id: l.taskId,
       })),
     );
     setBusy(false);
@@ -93,21 +100,19 @@ export function DraftLines({
       <table className="w-full text-sm">
         <tbody>
           {lines.map((l) => (
-            <tr key={l.key} className="border-b border-line-subtle">
+            <tr key={l.key} className="border-b border-line-subtle" data-row={l.description}>
               <td className="py-1.5 text-bone-100 pr-2">
                 {l.isNew ? (
                   <input
                     value={l.description}
                     onChange={(e) => patch(l.key, { description: e.target.value })}
                     placeholder="Adjustment (e.g. Senior discount)"
-                    className="w-full text-sm"
+                    className="w-full text-sm min-h-[44px]"
                   />
                 ) : (
                   <>
                     {l.description}
-                    {l.qtyLabel && (
-                      <span className="text-2xs text-bone-400"> {l.qtyLabel}</span>
-                    )}
+                    {l.qtyLabel && <span className="text-2xs text-bone-400"> {l.qtyLabel}</span>}
                   </>
                 )}
               </td>
@@ -116,34 +121,57 @@ export function DraftLines({
                   inputMode="decimal"
                   value={l.amountStr}
                   onChange={(e) => patch(l.key, { amountStr: e.target.value })}
-                  className="w-24 text-right num"
+                  className="w-24 text-right num min-h-[44px]"
                   aria-label={`Amount for ${l.description || "new line"}`}
                 />
               </td>
+              <td className="py-1.5 w-11">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setLines((prev) => prev.filter((x) => x.key !== l.key));
+                    setDirty(true);
+                  }}
+                  className="w-11 h-11 flex items-center justify-center text-bone-500 hover:text-status-danger"
+                  aria-label={`Remove ${l.description || "line"}`}
+                >
+                  <X size={14} />
+                </button>
+              </td>
             </tr>
           ))}
+          {lines.length === 0 && (
+            <tr>
+              <td colSpan={3} className="py-3 text-2xs text-bone-400">
+                No lines yet. Add finished job lines or extras below.
+              </td>
+            </tr>
+          )}
           {taxRatePct > 0 && (
             <>
               <tr>
                 <td className="py-2 text-bone-300">Subtotal</td>
                 <td className="py-2 text-right num text-bone-300">{usd.format(subtotal)}</td>
+                <td />
               </tr>
               <tr>
                 <td className="py-2 text-bone-300">Tax ({taxRatePct}%)</td>
                 <td className="py-2 text-right num text-bone-300">{usd.format(tax)}</td>
+                <td />
               </tr>
             </>
           )}
           <tr>
             <td className="py-2.5 font-semibold text-bone-50">Total due</td>
-            <td className="py-2.5 text-right num font-semibold text-bone-50">
+            <td className="py-2.5 text-right num font-semibold text-bone-50" data-testid="draft-total">
               {usd.format(total)}
             </td>
+            <td />
           </tr>
         </tbody>
       </table>
 
-      <div className="flex items-center gap-2 mt-2">
+      <div className="flex flex-wrap items-center gap-2 mt-2">
         <button
           type="button"
           onClick={() => {
@@ -153,26 +181,22 @@ export function DraftLines({
             ]);
             setDirty(true);
           }}
-          className="btn-ghost text-xs h-8"
+          className="btn-ghost text-xs min-h-[44px]"
         >
           <Plus size={12} />
-          Add line
+          Add adjustment
         </button>
         <span className="text-2xs text-bone-400">Terms: {dueTerms}</span>
         {dirty && (
-          <button
-            type="button"
-            onClick={save}
-            disabled={busy}
-            className="btn-primary text-xs h-8 ml-auto"
-          >
+          <button type="button" onClick={save} disabled={busy} className="btn-primary text-xs min-h-[44px] ml-auto">
             {busy ? <Loader2 size={11} className="animate-spin" /> : "Save changes"}
           </button>
         )}
       </div>
       {err && <div className="form-error mt-2">{err}</div>}
       <p className="text-2xs text-bone-500 mt-2">
-        Draft — amounts are editable until the invoice is sent.
+        Draft: edits change this invoice only, never the job. Removing a job line here
+        leaves it on the job, ready for a later invoice.
       </p>
     </div>
   );

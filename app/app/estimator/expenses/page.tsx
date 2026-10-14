@@ -206,7 +206,7 @@ export default async function ExpensesPage({
         </div>
         <div className="px-4 py-3 grid grid-cols-2 sm:grid-cols-4 gap-3">
           <div>
-            <div className="label-eyebrow">In bid</div>
+            <div className="label-eyebrow">Covered by task price</div>
             <div className="num text-base text-bone-50 mt-0.5">
               {usd.format(materials.inBid)}
             </div>

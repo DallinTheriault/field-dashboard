@@ -12,7 +12,6 @@ import {
   rankEntries,
   recentServiceIds,
   stepQty,
-  withPrice,
 } from "./lines";
 
 describe("lineTotal / jobTotal", () => {
@@ -35,10 +34,10 @@ describe("lineTotal / jobTotal", () => {
 });
 
 describe("needsPrice", () => {
-  it("flags sold lines without a price, never reminders", () => {
-    expect(needsPrice({ unit: "each", unit_price: null })).toBe(true);
-    expect(needsPrice({ unit: "each", unit_price: 0 })).toBe(false);
-    expect(needsPrice({ unit: null, unit_price: null })).toBe(false);
+  it("flags billable lines without a price, never reminders or lines marked not billable", () => {
+    expect(needsPrice({ billable: true, unit_price: null })).toBe(true);
+    expect(needsPrice({ billable: true, unit_price: 0 })).toBe(false);
+    expect(needsPrice({ billable: false, unit_price: null })).toBe(false);
   });
 });
 
@@ -61,19 +60,6 @@ describe("parseMoney", () => {
     expect(parseMoney("")).toBeNull();
     expect(parseMoney("abc")).toBeNaN();
     expect(parseMoney("-5")).toBeNaN();
-  });
-});
-
-describe("withPrice", () => {
-  const unpriced = { qty: 1, unit_price: null, billable: false };
-  it("makes a line billable when it first gets a price", () => {
-    expect(withPrice(unpriced, 120)).toEqual({ qty: 1, unit_price: 120, billable: true });
-  });
-  it("keeps a priced line's billable choice on a price change", () => {
-    expect(withPrice({ qty: 1, unit_price: 100, billable: false }, 120).billable).toBe(false);
-  });
-  it("clearing the price stops it billing", () => {
-    expect(withPrice({ qty: 1, unit_price: 100, billable: true }, null)).toEqual(unpriced);
   });
 });
 
@@ -111,17 +97,17 @@ describe("picker", () => {
 });
 
 describe("new lines", () => {
-  it("one tap adds qty 1, billable when the entry has a price", () => {
+  it("one tap adds a billable line at qty 1; an unpriced entry needs a price", () => {
     expect(lineFromEntry({ id: 3, name: "Patch", unit: "each", unit_price: 95 })).toMatchObject({
       service_id: 3, qty: 1, unit_price: 95, billable: true,
     });
-    expect(lineFromEntry({ id: 1, name: "Walls", unit: "sqft", unit_price: null }).billable).toBe(false);
+    expect(lineFromEntry({ id: 1, name: "Walls", unit: "sqft", unit_price: null })).toMatchObject({ unit_price: null, billable: true });
   });
 
   it("custom lines: flat price, hours at the hourly rate, or a reminder", () => {
     expect(customLine("Haul debris", "price", 60, 85)).toMatchObject({ qty: 1, unit: "each", unit_price: 60, billable: true });
     expect(customLine("Extra labor", "hours", 2.5, 85)).toMatchObject({ qty: 2.5, unit: "hour", unit_price: 85, billable: true });
-    expect(customLine("Extra labor", "hours", 2, null)).toMatchObject({ unit: "hour", unit_price: null, billable: false });
+    expect(customLine("Extra labor", "hours", 2, null)).toMatchObject({ unit: "hour", unit_price: null, billable: true });
     expect(customLine("Bring ladder", "price", null, 85)).toMatchObject({ unit: null, unit_price: null, billable: false });
   });
 });

@@ -66,7 +66,7 @@ export type ExpenseItemRow = {
  *  description column on phones. Full labels live in the expanded panel. */
 const ASSIGNMENT_SHORT: Record<string, string> = {
   unassigned: "unassigned",
-  job_in_bid: "in bid",
+  job_in_bid: "covered",
   job_extra: "extra",
   job_internal: "internal",
   stock: "stock",

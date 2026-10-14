@@ -14,6 +14,17 @@ import Stripe from "stripe";
 export function getEstimatorStripe(): Stripe | null {
   const key = process.env.ESTIMATOR_STRIPE_SECRET_KEY;
   if (!key) return null;
+  // Local testing only: point at stripe-mock (scripts/local-stack). Unset in
+  // every deployed environment.
+  const base = process.env.ESTIMATOR_STRIPE_API_BASE;
+  if (base) {
+    const u = new URL(base);
+    return new Stripe(key, {
+      host: u.hostname,
+      port: Number(u.port),
+      protocol: u.protocol.replace(":", "") as "http" | "https",
+    });
+  }
   return new Stripe(key);
 }
 

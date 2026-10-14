@@ -15,7 +15,7 @@ import {
 import { getCurrentUserRole } from "@/lib/permissions/current-role";
 import { requireMember } from "@/lib/estimator/auth";
 import { allStoragePathsFor } from "@/lib/estimator/receipt-paths";
-import { refreshInvoiceExtras } from "../invoice-actions";
+import { refreshDraftExtras } from "../job-invoice-actions";
 
 /**
  * Ruling Q1c, precisely: an item stamped on a FINALIZED invoice (sent or
@@ -125,11 +125,44 @@ export async function setItemAssignment(
   }
 
   // The draft invoice's lines follow the reassignment (§6.4).
-  if (guard.refreshDraft) await refreshInvoiceExtras(guard.refreshDraft);
+  if (guard.refreshDraft) await refreshDraftExtras(guard.refreshDraft);
 
   revalidatePath("/app/estimator/purchases");
   if (jobId) revalidatePath(`/app/jobs/${jobId}`);
   if (item.job_id && item.job_id !== jobId) revalidatePath(`/app/jobs/${item.job_id}`);
+  return { ok: true };
+}
+
+/**
+ * How an extra bills: at cost or marked up by the tenant's material markup,
+ * and whether its receipt photo goes out with the invoice. Owner/manager
+ * only (RLS). Frozen once on an invoice that went out; on a draft, the
+ * draft re-prices to follow.
+ */
+export async function setExtraBilling(
+  itemId: number,
+  patch: { billMarkup?: boolean; attachReceipt?: boolean },
+): Promise<Result> {
+  const supabase = await createClient();
+  const { data: item } = await supabase
+    .from("expenses")
+    .select("id, job_id, assignment, invoiced_on")
+    .eq("id", itemId)
+    .maybeSingle();
+  if (!item) return { ok: false, error: "Item not found." };
+  if (item.assignment !== "job_extra") return { ok: false, error: "Only extras bill to the customer." };
+  const guard = await invoiceGuard(supabase, item.invoiced_on);
+  if ("error" in guard) return { ok: false, error: guard.error };
+
+  const update: { bill_markup?: boolean; attach_receipt?: boolean } = {};
+  if (typeof patch.billMarkup === "boolean") update.bill_markup = patch.billMarkup;
+  if (typeof patch.attachReceipt === "boolean") update.attach_receipt = patch.attachReceipt;
+  const { data: updated, error } = await supabase.from("expenses").update(update).eq("id", itemId).select("id");
+  if (error) return { ok: false, error: error.message };
+  if ((updated ?? []).length === 0) return { ok: false, error: "You don't have permission to change billing." };
+
+  if (guard.refreshDraft && "bill_markup" in update) await refreshDraftExtras(guard.refreshDraft);
+  if (item.job_id) revalidatePath(`/app/jobs/${item.job_id}`);
   return { ok: true };
 }
 
@@ -304,7 +337,7 @@ export async function deleteExpenseItem(itemId: number): Promise<Result> {
   if ((deleted ?? []).length === 0) {
     return { ok: false, error: "You don't have permission to delete items." };
   }
-  if (guard.refreshDraft) await refreshInvoiceExtras(guard.refreshDraft);
+  if (guard.refreshDraft) await refreshDraftExtras(guard.refreshDraft);
   revalidatePath("/app/estimator/purchases");
   if (item.job_id) revalidatePath(`/app/jobs/${item.job_id}`);
   return { ok: true };

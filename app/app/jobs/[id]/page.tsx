@@ -28,6 +28,7 @@ import { getActivityTimeline } from "@/lib/timeline/fetch";
 import { getJobTags, listTagsForClient } from "@/lib/tags/server";
 import { getTenantTimezone } from "@/lib/dates";
 import { getTenantFeatureFlags } from "@/lib/features/flags";
+import { extraAmounts } from "@/lib/estimator/expenses";
 
 function fmtDate(d: string | null, tz: string): string {
   if (!d) return "—";
@@ -143,7 +144,7 @@ export default async function JobDetailPage({
       ? supabase
           .from("expenses")
           .select(
-            "id, description, amount, assignment, invoiced_on, invoices(invoice_number, status, stripe_invoice_id)",
+            "id, description, amount, assignment, invoiced_on, bill_markup, attach_receipt, purchases(tax, subtotal), invoices(invoice_number, status, stripe_invoice_id)",
           )
           .eq("job_id", job.id)
           .order("id", { ascending: false })
@@ -156,7 +157,7 @@ export default async function JobDetailPage({
     estimatorOn && canSeeInternals
       ? supabase
           .from("pricing_settings")
-          .select("mileage_base_address, default_hourly_rate")
+          .select("mileage_base_address, default_hourly_rate, material_markup_pct")
           .maybeSingle()
       : Promise.resolve({ data: null }),
     // Not role-gated: the property address is customer info shown to every
@@ -209,12 +210,24 @@ export default async function JobDetailPage({
       | null
       | undefined;
     const frozen = !!e.invoiced_on && !!inv && (inv.status !== "draft" || !!inv.stripe_invoice_id);
+    const purchase = e.purchases as unknown as { tax: number | string | null; subtotal: number | string | null } | null;
     return {
       id: e.id as number,
       description: e.description as string,
       amount: Number(e.amount),
       assignment: (e.assignment as string) ?? "unassigned",
       lockedToInvoice: frozen ? (inv?.invoice_number ?? "an invoice") : null,
+      billMarkup: e.bill_markup as boolean,
+      attachReceipt: e.attach_receipt as boolean,
+      ...extraAmounts(
+        {
+          amount: Number(e.amount),
+          purchaseTax: purchase?.tax == null ? null : Number(purchase.tax),
+          purchaseSubtotal: purchase?.subtotal == null ? null : Number(purchase.subtotal),
+          billMarkup: e.bill_markup as boolean,
+        },
+        Number(pricingSettings?.material_markup_pct ?? 0),
+      ),
     };
   });
 
@@ -343,6 +356,7 @@ export default async function JobDetailPage({
             address={propertyAddress ?? job.address ?? null}
             contactId={job.contact_id ?? null}
             showNewEstimate={estimatorOn}
+            showCreateInvoice={estimatorOn && canSeeInternals}
           />
         </div>
       </div>

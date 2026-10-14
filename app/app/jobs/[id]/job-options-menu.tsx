@@ -12,6 +12,7 @@ import {
   Pencil,
   Phone,
   Calculator,
+  Receipt,
   type LucideIcon,
 } from "lucide-react";
 import { openSmsThread } from "@/lib/sms/open-thread-action";
@@ -33,7 +34,7 @@ type Entry = {
  * which stay tappable in the header itself: they're the two most frequent
  * actions and must not cost an extra tap to reach.
  *
- * Entries are data, so the next one (Create invoice) is a single array item.
+ * Entries are data, so adding one is a single array item.
  */
 export function JobOptionsMenu({
   jobId,
@@ -43,6 +44,7 @@ export function JobOptionsMenu({
   address,
   contactId,
   showNewEstimate,
+  showCreateInvoice,
 }: {
   jobId: number;
   phone: string | null;
@@ -51,6 +53,7 @@ export function JobOptionsMenu({
   address: string | null;
   contactId: number | null;
   showNewEstimate: boolean;
+  showCreateInvoice: boolean;
 }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
@@ -128,6 +131,14 @@ export function JobOptionsMenu({
   }
   if (email) {
     entries.push({ key: "email", label: email, icon: Mail, href: `mailto:${email}` });
+  }
+  if (showCreateInvoice) {
+    entries.push({
+      key: "create-invoice",
+      label: "Create invoice",
+      icon: Receipt,
+      href: `/app/jobs/${jobId}/invoice`,
+    });
   }
   if (showNewEstimate) {
     entries.push({
