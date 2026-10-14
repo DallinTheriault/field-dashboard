@@ -1,6 +1,5 @@
 "use server";
 
-import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 
@@ -12,13 +11,15 @@ type Result = { ok: true } | { ok: false; error: string };
  * after it succeeds does the admin client remove the objects. Orphaned
  * storage files are a silent cost leak; orphaned rows would 404 the UI.
  * Everything else (create, toggle, reorder, captions) is plain
- * RLS-enforced client-side CRUD.
+ * RLS-enforced client-side CRUD. Neither revalidates the job page: the scope
+ * builder updates its list in place, and re-rendering the page would cost a
+ * full server render per delete.
  */
 export async function deleteTaskPhoto(photoId: number): Promise<Result> {
   const supabase = await createClient();
   const { data: photo } = await supabase
     .from("task_photos")
-    .select("id, storage_path, tasks(job_id)")
+    .select("id, storage_path")
     .eq("id", photoId)
     .maybeSingle();
   if (!photo) return { ok: false, error: "Photo not found." };
@@ -35,9 +36,6 @@ export async function deleteTaskPhoto(photoId: number): Promise<Result> {
 
   const admin = createAdminClient();
   await admin.storage.from("job-photos").remove([photo.storage_path]);
-
-  const job = photo.tasks as unknown as { job_id: number } | null;
-  if (job) revalidatePath(`/app/jobs/${job.job_id}`);
   return { ok: true };
 }
 
@@ -50,7 +48,7 @@ export async function deleteTask(taskId: number): Promise<Result> {
   const supabase = await createClient();
   const { data: task } = await supabase
     .from("tasks")
-    .select("id, job_id, task_photos(storage_path)")
+    .select("id, task_photos(storage_path)")
     .eq("id", taskId)
     .maybeSingle();
   if (!task) return { ok: false, error: "Task not found." };
@@ -71,7 +69,5 @@ export async function deleteTask(taskId: number): Promise<Result> {
     const admin = createAdminClient();
     await admin.storage.from("job-photos").remove(paths);
   }
-
-  revalidatePath(`/app/jobs/${task.job_id}`);
   return { ok: true };
 }

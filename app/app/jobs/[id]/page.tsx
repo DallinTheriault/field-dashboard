@@ -14,7 +14,7 @@ import { JobActuals } from "../../estimator/job-actuals";
 import { JobExpenseCapture } from "./job-expense-capture";
 import { JobDetailsSheet } from "./job-details-sheet";
 import { JobOptionsMenu } from "./job-options-menu";
-import { JobTasks } from "./job-tasks";
+import { ScopeBuilder, type JobLine } from "./scope-builder";
 import { getCurrentUserRole } from "@/lib/permissions/current-role";
 import { canViewSettings } from "@/lib/permissions/roles";
 import { TagChipList } from "@/components/tags/tag-chip";
@@ -100,7 +100,7 @@ export default async function JobDetailPage({
     { data: taskRows },
     { data: jobExpenseRows },
     { data: mileageRows },
-    { data: mileageSettings },
+    { data: pricingSettings },
     { data: jobProperty },
   ] = await Promise.all([
     getTeamMembers(job.client_id),
@@ -126,7 +126,9 @@ export default async function JobDetailPage({
       : Promise.resolve({ data: null }),
     supabase
       .from("tasks")
-      .select("id, title, note, status, sort_order, task_photos(id, caption)")
+      .select(
+        "id, title, note, status, sort_order, service_id, qty, unit, unit_price, billable, task_photos(id, caption), invoice:invoices!tasks_invoice_same_tenant(invoice_number, status, stripe_invoice_id)",
+      )
       .eq("job_id", job.id)
       .order("sort_order")
       .order("id"),
@@ -152,7 +154,10 @@ export default async function JobDetailPage({
       ? supabase.from("mileage_entries").select("miles").eq("job_id", job.id)
       : Promise.resolve({ data: null }),
     estimatorOn && canSeeInternals
-      ? supabase.from("pricing_settings").select("mileage_base_address").maybeSingle()
+      ? supabase
+          .from("pricing_settings")
+          .select("mileage_base_address, default_hourly_rate")
+          .maybeSingle()
       : Promise.resolve({ data: null }),
     // Not role-gated: the property address is customer info shown to every
     // role in the header block, not a pricing internal.
@@ -181,7 +186,7 @@ export default async function JobDetailPage({
   const mileageContext = canSeeInternals && estimatorOn
     ? {
         baseAddress:
-          (mileageSettings?.mileage_base_address as string | null) ?? null,
+          (pricingSettings?.mileage_base_address as string | null) ?? null,
         // Legacy jobs have no property — fall back to the job's inline address.
         destination: propertyAddress ?? (job.address as string | null) ?? null,
         cachedMiles:
@@ -232,16 +237,34 @@ export default async function JobDetailPage({
       linkCounts.set(r.task_id, (linkCounts.get(r.task_id) ?? 0) + 1);
     }
   }
-  const jobTasks = (taskRows ?? []).map((t) => ({
-    id: t.id as number,
-    title: t.title as string,
-    note: (t.note as string | null) ?? null,
-    status: t.status as "open" | "done",
-    sort_order: t.sort_order as number,
-    photos: ((t.task_photos as unknown as Array<{ id: number; caption: string | null }>) ?? [])
-      .sort((a, b) => a.id - b.id),
-    linkedLines: linkCounts.get(t.id) ?? 0,
-  }));
+  const jobLines: JobLine[] = (taskRows ?? []).map((t) => {
+    // Same rule as the expense lock above: a line is final once its invoice
+    // went out (not draft, or issued through Stripe), unless it was voided.
+    const inv = t.invoice as unknown as
+      | { invoice_number: string | null; status: string; stripe_invoice_id: string | null }
+      | null;
+    const final = !!inv && inv.status !== "voided" && (inv.status !== "draft" || !!inv.stripe_invoice_id);
+    return {
+      id: t.id as number,
+      title: t.title as string,
+      note: (t.note as string | null) ?? null,
+      status: t.status as "open" | "done",
+      sort_order: t.sort_order as number,
+      service_id: (t.service_id as number | null) ?? null,
+      qty: Number(t.qty),
+      unit: (t.unit as JobLine["unit"]) ?? null,
+      unit_price: t.unit_price === null ? null : Number(t.unit_price),
+      billable: t.billable as boolean,
+      lockedOn: final ? (inv?.invoice_number ?? "an invoice") : null,
+      photos: ((t.task_photos as unknown as Array<{ id: number; caption: string | null }>) ?? [])
+        .sort((a, b) => a.id - b.id),
+      linkedLines: linkCounts.get(t.id) ?? 0,
+    };
+  });
+  const hourlyRate =
+    pricingSettings?.default_hourly_rate === null || pricingSettings?.default_hourly_rate === undefined
+      ? null
+      : Number(pricingSettings.default_hourly_rate);
 
   return (
     <div>
@@ -324,6 +347,17 @@ export default async function JobDetailPage({
         </div>
       </div>
 
+      {/* Scope first: it's what gets built on the walkthrough, and it's the
+          job's price. */}
+      <ScopeBuilder
+        jobId={Number(job.id)}
+        clientId={job.client_id}
+        lines={jobLines}
+        canWrite={canSeeInternals}
+        pricing={estimatorOn}
+        hourlyRate={hourlyRate}
+      />
+
       {/* Job-level expense capture — all roles (members included). Shows no
           margin/hours/variance; those stay in JobActuals (owner/manager). */}
       {estimatorOn && session && (
@@ -373,13 +407,6 @@ export default async function JobDetailPage({
           )}
         </>
       )}
-
-      <JobTasks
-        jobId={Number(job.id)}
-        clientId={job.client_id}
-        tasks={jobTasks}
-        canWrite={canSeeInternals}
-      />
 
       {estimatorOn && (jobEstimates ?? []).length > 0 && (
         <div className="panel px-4 py-3 mb-5">
@@ -437,6 +464,8 @@ export default async function JobDetailPage({
           </dl>
         </Disclosure>
       </div>
+      {/* Room for the scope's fixed job-total bar, so it never covers the end of the page. */}
+      {estimatorOn && <div className="h-16" aria-hidden />}
     </div>
   );
 }
