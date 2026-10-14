@@ -51,3 +51,15 @@ export async function adminGet(path) {
   });
   return r.json();
 }
+
+/** Write as service_role: stands in for server-side code (e.g. invoices). */
+export async function adminCall(method, path, payload) {
+  const key = env.SUPABASE_SERVICE_ROLE_KEY;
+  const r = await fetch(`${URL_}/rest/v1/${path}`, {
+    method,
+    headers: { apikey: key, authorization: `Bearer ${key}`, "content-type": "application/json", prefer: "return=representation" },
+    body: payload === undefined ? undefined : JSON.stringify(payload),
+  });
+  const text = await r.text();
+  return { status: r.status, body: text ? JSON.parse(text) : null };
+}
