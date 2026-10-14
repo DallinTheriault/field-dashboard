@@ -24,7 +24,7 @@ export async function GET(
   const { data: inv } = await supabase
     .from("invoices")
     .select(
-      "id, invoice_number, created_at, due_terms, line_items, subtotal_cents, tax_rate_pct, tax_cents, total_cents, customer_name, customer_email, customer_phone, stripe_hosted_invoice_url, jobs(address), billing_entities(name, license_number, address, phone, email, default_footer_text, payment_instructions, logo_path)",
+      "id, invoice_number, created_at, due_terms, line_items, subtotal_cents, tax_rate_pct, tax_cents, total_cents, customer_name, customer_company, customer_email, customer_phone, stripe_hosted_invoice_url, jobs(address), billing_entities(name, license_number, address, phone, email, default_footer_text, payment_instructions, logo_path)",
     )
     .eq("id", invoiceId)
     .maybeSingle();
@@ -77,6 +77,7 @@ export async function GET(
     },
     client: {
       name: inv.customer_name,
+      company: inv.customer_company,
       address: job?.address,
       phone: inv.customer_phone,
       email: inv.customer_email,

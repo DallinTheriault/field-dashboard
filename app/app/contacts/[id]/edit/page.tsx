@@ -52,6 +52,8 @@ export default async function ContactEditPage({
           name: contact.name ?? "",
           email: contact.email ?? "",
           address: contact.address ?? "",
+          company: contact.company ?? "",
+          is_property_manager: contact.is_property_manager ?? false,
           notes: contact.notes ?? "",
           assigned_user_id: contact.assigned_user_id ?? null,
         }}

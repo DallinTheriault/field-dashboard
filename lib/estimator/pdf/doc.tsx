@@ -32,6 +32,8 @@ export interface PdfEntity {
 
 export interface PdfClient {
   name: string;
+  /** Printed under the name when set (a property manager's company). */
+  company?: string | null;
   address?: string | null;
   phone?: string | null;
   email?: string | null;
@@ -167,6 +169,7 @@ function ClientBlock({ client, label }: { client: PdfClient; label: string }) {
     <View style={s.section}>
       <Text style={s.sectionLabel}>{label}</Text>
       <Text style={{ fontFamily: "Helvetica-Bold" }}>{client.name}</Text>
+      {client.company ? <Text>{client.company}</Text> : null}
       {client.address ? <Text style={{ color: MUTED }}>{client.address}</Text> : null}
       {client.phone ? <Text style={{ color: MUTED }}>{client.phone}</Text> : null}
       {client.email ? <Text style={{ color: MUTED }}>{client.email}</Text> : null}

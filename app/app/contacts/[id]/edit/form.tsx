@@ -15,6 +15,8 @@ type ContactInput = {
   name: string;
   email: string;
   address: string;
+  company: string;
+  is_property_manager: boolean;
   notes: string;
   assigned_user_id: string | null;
 };
@@ -34,6 +36,8 @@ export function ContactEditForm({
   const [name, setName] = useState(contact.name);
   const [email, setEmail] = useState(contact.email);
   const [address, setAddress] = useState(contact.address);
+  const [company, setCompany] = useState(contact.company);
+  const [isManager, setIsManager] = useState(contact.is_property_manager);
   const [notes, setNotes] = useState(contact.notes);
   const [tags, setTags] = useState<Tag[]>(initialTags);
   const [assignedUserId, setAssignedUserId] = useState<string | null>(
@@ -55,6 +59,8 @@ export function ContactEditForm({
         name: name || null,
         email: email || null,
         address: address || null,
+        company: company.trim() || null,
+        is_property_manager: isManager,
         notes: notes || null,
         assigned_user_id: assignedUserId,
         updated_at: new Date().toISOString(),
@@ -115,6 +121,26 @@ export function ContactEditForm({
           className="w-full"
         />
       </div>
+
+      <div className="field-group">
+        <label className="field-label">Company</label>
+        <input
+          value={company}
+          onChange={(e) => setCompany(e.target.value)}
+          placeholder="Printed under the name on invoices"
+          className="w-full"
+        />
+      </div>
+
+      <label className="flex items-center gap-2 text-sm text-bone-100 min-h-[44px]">
+        <input
+          type="checkbox"
+          checked={isManager}
+          onChange={(e) => setIsManager(e.target.checked)}
+          className="w-5 h-5"
+        />
+        Property manager (sends work orders; their jobs skip customer approval)
+      </label>
 
       <div className="field-group">
         <label className="field-label">Address</label>
