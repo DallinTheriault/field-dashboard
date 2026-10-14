@@ -23,6 +23,8 @@ GATEWAY_PORT=54321
 REST_PORT=54330
 AUTH_PORT=54340
 STORAGE_PORT=54350
+STRIPE_MOCK_PORT=12111
+STRIPE_SHIM_PORT=12112
 APP_PORT="${APP_PORT:-3000}"
 
 # Local-only password for the platform roles. Nothing here is reachable off-box:

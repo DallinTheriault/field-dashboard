@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Slice 2 end to end: rebuild at v094, add a task the old way, apply v095 on
-# top of it, then run the priced-task and scope-builder checks.
+# top of it, then run the priced-task and scope-builder checks. migrate.sh
+# applies every later migration too, so the checks follow the current rules.
 set -euo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"
 APPLY_THROUGH=94 "$HERE/../up.sh" --fresh

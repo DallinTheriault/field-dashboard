@@ -7,6 +7,7 @@ POSTGREST_VERSION=12.2.3
 AUTH_VERSION=2.197.0
 STORAGE_VERSION=1.81.4
 NODE24_VERSION=24.19.0 # Storage requires Node >= 24
+STRIPE_MOCK_VERSION=0.205.0
 
 mkdir -p "$BIN" "$FIELDSTACK/dl"
 
@@ -32,6 +33,12 @@ if [ ! -e "$FIELDSTACK/storage/dist/start/server.js" ]; then
     git clone --depth 1 --branch "v$STORAGE_VERSION" https://github.com/supabase/storage "$FIELDSTACK/storage"
   (cd "$FIELDSTACK/storage" && PATH="$(dirname "$NODE24"):$PATH" &&
     npx -y npm@11.12.1 ci && npx -y npm@11.12.1 run build)
+fi
+
+# Stripe's official mock API, so card-link code runs without a Stripe key.
+if [ ! -x "$BIN/stripe-mock" ]; then
+  mkdir -p "$FIELDSTACK/gopath"
+  GOPATH="$FIELDSTACK/gopath" GOBIN="$BIN" go install "github.com/stripe/stripe-mock@v$STRIPE_MOCK_VERSION"
 fi
 
 # Browser driver for scenarios/; Chromium itself comes from the machine

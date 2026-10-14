@@ -110,6 +110,10 @@ EOF
 spawn rest "$BIN/postgrest" "$FIELDSTACK/postgrest.conf"
 spawn auth "${AUTH_ENV[@]}" "$BIN/auth"
 start_storage
+if [ -x "$BIN/stripe-mock" ]; then
+  spawn stripe-mock "$BIN/stripe-mock" -http-port "$STRIPE_MOCK_PORT"
+  spawn stripe-shim node "$HERE/stripe-shim.mjs" "$STRIPE_SHIM_PORT" "$STRIPE_MOCK_PORT"
+fi
 spawn gateway node "$HERE/gateway.mjs" "$GATEWAY_PORT" "$REST_PORT" "$AUTH_PORT" "$STORAGE_PORT"
 
 wait_http "http://127.0.0.1:$REST_PORT/" postgrest
@@ -126,7 +130,9 @@ ENV_FILE="$REPO/.env.local"
 STACK_ENV="NEXT_PUBLIC_SUPABASE_URL=http://127.0.0.1:$GATEWAY_PORT
 NEXT_PUBLIC_SUPABASE_ANON_KEY=$ANON_KEY
 SUPABASE_SERVICE_ROLE_KEY=$SERVICE_KEY
-NEXT_PUBLIC_APP_URL=http://localhost:$APP_PORT"
+NEXT_PUBLIC_APP_URL=http://localhost:$APP_PORT
+ESTIMATOR_STRIPE_SECRET_KEY=sk_test_localstack
+ESTIMATOR_STRIPE_API_BASE=http://127.0.0.1:$STRIPE_SHIM_PORT"
 if [ ! -e "$ENV_FILE" ] || grep -q "^# local-stack" "$ENV_FILE"; then
   { echo "# local-stack: written by scripts/local-stack/up.sh; safe to delete"; echo "$STACK_ENV"; } >"$ENV_FILE"
   echo "wrote .env.local for the local stack"

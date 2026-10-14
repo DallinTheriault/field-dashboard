@@ -10,6 +10,8 @@ for testing migrations and the app without touching prod. Plain processes, no Do
 | PostgREST | 54330 | the REST API supabase-js calls |
 | Storage | 54350 | file backend under `$FIELDSTACK/storage-files` |
 | `gateway.mjs` | 54321 | one URL for all three, like Supabase's gateway |
+| stripe-mock | 12111 | Stripe's official mock API, answering from fixtures |
+| stripe shim | 12112 | In front of stripe-mock: a finalized invoice gets `open` and a hosted URL, as real Stripe returns. The app talks to this |
 
 ```sh
 scripts/local-stack/fetch.sh        # once: downloads the services into /opt/fieldstack
@@ -41,4 +43,5 @@ on :3000.
 Differences from Supabase that matter: the database is Postgres 16, not 17. Two
 `prod.sql` lines are skipped: the PG17-only `MAINTAIN` privilege and the
 `supabase_vault` extension, which nothing in `public` uses. Realtime, Edge Functions
-and email aren't run.
+and email aren't run. Stripe is the mock: it accepts real API calls but returns canned
+objects, so it proves the calls are well-formed, not that a payment happens.

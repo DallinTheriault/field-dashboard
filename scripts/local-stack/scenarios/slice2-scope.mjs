@@ -37,8 +37,10 @@ check("task from before v095: qty 1, no price, not billable",
 const job2 = (await owner.post("jobs", { client_id: 8, name: "API rules job", status: "lead", source: "manual" })).body[0];
 const line = (payload) => owner.post("tasks", { client_id: 8, job_id: job2.id, title: "rule probe", ...payload });
 
+// v096 (slice 3) dropped tasks_billable_priced: a billable line with no price is
+// allowed and "needs a price"; invoices refuse to claim or send it instead.
 r = await line({ billable: true });
-check("a billable line needs a price", r.status === 400 && /tasks_billable_priced/.test(r.body.message));
+check("a billable line may wait for a price (v096)", r.status === 201 && r.body[0].unit_price === null, JSON.stringify(r.body));
 r = await line({ qty: 0, unit: "each", unit_price: 5 });
 check("qty must be more than 0", r.status === 400 && /tasks_qty_check/.test(r.body.message));
 r = await line({ unit: "day" });
