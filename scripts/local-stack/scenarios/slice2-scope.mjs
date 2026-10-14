@@ -77,11 +77,25 @@ r = await owner.patch(`tasks?id=eq.${l1.id}`, { status: "done", note: "finished"
 check("…but can still be checked off and noted", r.status === 200 && r.body[0].status === "done");
 r = await owner.patch(`tasks?id=eq.${l1.id}`, { invoice_id: null });
 check("the browser can't release a line from its invoice", r.status === 403);
+r = await owner.del(`tasks?id=eq.${l1.id}`);
+check("a line on a sent invoice can't be deleted", r.status === 403 && /CAS-TEST-001, which went out/.test(r.body?.message), r.body?.message);
+r = await adminCall("DELETE", `tasks?id=eq.${l1.id}`);
+check("…not even by server code", r.status >= 400 && /went out/.test(r.body?.message), `status ${r.status}`);
+r = await owner.del(`jobs?id=eq.${job2.id}`);
+check("…nor by deleting its job", r.status >= 400 && /went out/.test(r.body?.message), r.body?.message);
 r = await owner.patch(`tasks?id=eq.${l2.id}`, { unit_price: 75 });
 check("a line on a draft invoice stays editable", r.status === 200 && Number(r.body[0].unit_price) === 75);
+const l3 = (await line({ title: "draft line to drop", unit: "each", unit_price: 20, billable: true })).body[0];
+await adminCall("PATCH", `tasks?id=eq.${l3.id}`, { invoice_id: draft.id });
+r = await owner.del(`tasks?id=eq.${l3.id}`);
+check("a line on a draft invoice can be deleted, releasing it", r.status === 200 && r.body.length === 1);
 await adminCall("PATCH", `invoices?id=eq.${sent.id}`, { status: "voided" });
 r = await owner.patch(`tasks?id=eq.${l1.id}`, { unit_price: 55 });
 check("voiding the invoice unlocks the price", r.status === 200 && Number(r.body[0].unit_price) === 55);
+const l4 = (await line({ title: "voided line to drop", unit: "each", unit_price: 5, billable: true })).body[0];
+await adminCall("PATCH", `tasks?id=eq.${l4.id}`, { invoice_id: sent.id });
+r = await owner.del(`tasks?id=eq.${l4.id}`);
+check("…and lets the line be deleted", r.status === 200 && r.body.length === 1);
 
 // --- Members ----------------------------------------------------------------------------
 r = await member.get(`tasks?job_id=eq.${job2.id}&select=id`);

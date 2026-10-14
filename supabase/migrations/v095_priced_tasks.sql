@@ -44,7 +44,11 @@ create index idx_tasks_service on public.tasks (client_id, service_id) where ser
 --   * only invoice code claims or releases a line (invoice_id); it marks its
 --     transaction with field.task_claim, which an API caller can't set
 --   * a line on an invoice that went out (sent, paid, overdue, or issued
---     through Stripe; not voided) keeps its price
+--     through Stripe; not voided) keeps its price and can't be deleted, by
+--     anyone. The fix for a sent invoice is void, edit, re-invoice. A draft's
+--     lines stay editable, and deleting one drops it from the draft.
+-- Deleting a job cascades to its tasks, so a job with lines on a sent
+-- invoice can't be deleted until that invoice is voided.
 create function public.tasks_guard_billing()
   returns trigger
   language plpgsql
@@ -53,7 +57,8 @@ as $$
 declare
   v_invoice text;
 begin
-  if auth.uid() is not null
+  if tg_op <> 'DELETE'
+     and auth.uid() is not null
      and current_setting('field.task_claim', true) is distinct from 'on'
      and (case when tg_op = 'INSERT' then new.invoice_id is not null
                else new.invoice_id is distinct from old.invoice_id end) then
@@ -61,20 +66,28 @@ begin
       using errcode = '42501';
   end if;
 
-  if tg_op = 'UPDATE' and old.invoice_id is not null
-     and (new.qty, new.unit, new.unit_price, new.billable, new.service_id)
-         is distinct from (old.qty, old.unit, old.unit_price, old.billable, old.service_id) then
+  if tg_op in ('UPDATE', 'DELETE') and old.invoice_id is not null then
     select coalesce(invoice_number, 'an invoice') into v_invoice
     from public.invoices
     where id = old.invoice_id
       and status <> 'voided'
       and (status <> 'draft' or stripe_invoice_id is not null);
     if found then
-      raise exception 'This line is on invoice %, which went out; its price is final.', v_invoice
-        using errcode = '42501';
+      if tg_op = 'DELETE' then
+        raise exception '"%" is on invoice %, which went out. Void the invoice to remove it.', old.title, v_invoice
+          using errcode = '42501';
+      end if;
+      if (new.qty, new.unit, new.unit_price, new.billable, new.service_id)
+         is distinct from (old.qty, old.unit, old.unit_price, old.billable, old.service_id) then
+        raise exception 'This line is on invoice %, which went out; its price is final.', v_invoice
+          using errcode = '42501';
+      end if;
     end if;
   end if;
 
+  if tg_op = 'DELETE' then
+    return old;
+  end if;
   return new;
 end;
 $$;
@@ -82,5 +95,5 @@ $$;
 revoke execute on function public.tasks_guard_billing() from public, anon, authenticated, service_role;
 
 create trigger tasks_guard_billing
-  before insert or update on public.tasks
+  before insert or update or delete on public.tasks
   for each row execute function public.tasks_guard_billing();
