@@ -54,7 +54,9 @@ export async function getInsightsData(
         .neq("assignment", "stock"),
       supabase
         .from("service_catalog")
-        .select("id, name, type, unit, labor_hours_per_unit, flat_labor_hours"),
+        .select("id, name, type, unit, labor_hours_per_unit, flat_labor_hours")
+        // Variance compares builder hours; PRICED rows have none to tune.
+        .in("type", ["MEASURED", "TASK"]),
       supabase
         .from("invoices")
         .select("job_id")

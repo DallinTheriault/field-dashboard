@@ -27,6 +27,8 @@ export async function getEstimatorBundle(
         .select(
           "id, name, type, unit, labor_hours_per_unit, flat_labor_hours, is_placeholder, active",
         )
+        // PRICED rows sell at a fixed price; the engine only prices from hours.
+        .in("type", ["MEASURED", "TASK"])
         .eq("active", true)
         .order("name"),
       supabase

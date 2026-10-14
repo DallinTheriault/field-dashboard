@@ -68,8 +68,8 @@ export default async function EstimatorSettingsPage() {
     {
       id: "catalog",
       icon: Hammer,
-      title: "Service catalog",
-      desc: "Measured work (per sqft/lnft) and task work (flat hours). Consistent prices come from here.",
+      title: "Price book",
+      desc: "What each kind of work sells for. Editing a price never changes a job or estimate already written.",
       body: <CatalogManager clientId={clientId} />,
     },
     {

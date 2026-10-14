@@ -36,6 +36,8 @@ const DEFAULTS: Settings = {
   rounding_increment: 5,
 };
 
+export const PRICING_SAVED_EVENT = "field:pricing-settings-saved";
+
 const usd = new Intl.NumberFormat("en-US", {
   style: "currency",
   currency: "USD",
@@ -56,6 +58,8 @@ export function PricingSection({ clientId }: { clientId: number }) {
   const [err, setErr] = useState<string | null>(null);
   const [newName, setNewName] = useState("");
   const [newAmount, setNewAmount] = useState("");
+  // Blank is meaningful (no rate set), so it's kept as typed, not as a number.
+  const [hourlyRate, setHourlyRate] = useState("");
 
   useEffect(() => {
     (async () => {
@@ -63,7 +67,7 @@ export function PricingSection({ clientId }: { clientId: number }) {
         supabase
           .from("pricing_settings")
           .select(
-            "desired_annual_owner_pay, hours_worked_per_week, utilization_pct, margin_pct, material_markup_pct, minimum_job_charge, rounding_increment",
+            "desired_annual_owner_pay, hours_worked_per_week, utilization_pct, margin_pct, material_markup_pct, minimum_job_charge, rounding_increment, default_hourly_rate",
           )
           .maybeSingle(),
         supabase
@@ -81,6 +85,7 @@ export function PricingSection({ clientId }: { clientId: number }) {
           minimum_job_charge: Number(s.minimum_job_charge),
           rounding_increment: Number(s.rounding_increment),
         });
+        setHourlyRate(s.default_hourly_rate === null ? "" : String(s.default_hourly_rate));
       }
       setItems(
         (o ?? []).map((i) => ({ ...i, monthly_amount: Number(i.monthly_amount) })),
@@ -115,14 +120,24 @@ export function PricingSection({ clientId }: { clientId: number }) {
   }
 
   async function saveSettings() {
-    setSaving(true);
     setErr(null);
     setSaved(false);
+    const hourly = hourlyRate.trim() === "" ? null : Number(hourlyRate);
+    if (hourly !== null && !(Number.isFinite(hourly) && hourly >= 0)) {
+      setErr("Default hourly rate must be a number, 0 or more.");
+      return;
+    }
+    setSaving(true);
     const { error } = await supabase
       .from("pricing_settings")
-      .upsert({ client_id: clientId, ...form }, { onConflict: "client_id" });
+      .upsert(
+        { client_id: clientId, ...form, default_hourly_rate: hourly },
+        { onConflict: "client_id" },
+      );
     if (error) setErr(error.message);
     else {
+      // The price book on this page shows the hourly rate and suggestions.
+      window.dispatchEvent(new Event(PRICING_SAVED_EVENT));
       setSaved(true);
       setTimeout(() => setSaved(false), 2000);
     }
@@ -268,6 +283,20 @@ export function PricingSection({ clientId }: { clientId: number }) {
             <option value={1}>Up to the next $1</option>
             <option value={5}>Up to the next $5</option>
           </select>
+        </label>
+        <label className="field-group">
+          <span className="field-label">Default hourly rate</span>
+          <input
+            inputMode="decimal"
+            value={hourlyRate}
+            onChange={(e) => setHourlyRate(e.target.value)}
+            placeholder={sellRate > 0 ? sellRate.toFixed(2) : "0.00"}
+            className="w-full"
+          />
+          <span className="field-hint">
+            Price of &ldquo;Labor, hourly&rdquo; on job lines. Blank leaves it
+            unpriced; the placeholder is your sell rate.
+          </span>
         </label>
       </div>
 
