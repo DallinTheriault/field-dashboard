@@ -7,6 +7,15 @@
  * fall back to the full image (legacy receipts have no thumb at all).
  */
 
+/**
+ * True when a stored path is in the tenant's own folder. Paths come from
+ * database rows a user can write, and the admin storage client ignores
+ * storage policies, so every admin read or delete must check this first.
+ */
+export function inTenantFolder(clientId: number | string, path: string): boolean {
+  return path.startsWith(`${clientId}/`) && !path.includes("..");
+}
+
 /** "8/purchase-3-abc.jpg" → "8/purchase-3-abc-thumb.jpg" */
 export function thumbPathFor(path: string): string {
   const dot = path.lastIndexOf(".");

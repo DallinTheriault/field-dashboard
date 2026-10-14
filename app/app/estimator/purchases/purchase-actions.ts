@@ -14,7 +14,7 @@ import {
 } from "@/lib/estimator/expense-roles";
 import { getCurrentUserRole } from "@/lib/permissions/current-role";
 import { requireMember } from "@/lib/estimator/auth";
-import { allStoragePathsFor } from "@/lib/estimator/receipt-paths";
+import { allStoragePathsFor, inTenantFolder } from "@/lib/estimator/receipt-paths";
 import { refreshDraftExtras } from "../job-invoice-actions";
 
 /**
@@ -352,7 +352,7 @@ export async function deletePurchase(purchaseId: number): Promise<Result> {
   const supabase = await createClient();
   const { data: purchase } = await supabase
     .from("purchases")
-    .select("id, receipt_path, receipt_paths")
+    .select("id, client_id, receipt_path, receipt_paths")
     .eq("id", purchaseId)
     .maybeSingle();
   if (!purchase) return { ok: false, error: "Purchase not found." };
@@ -382,7 +382,7 @@ export async function deletePurchase(purchaseId: number): Promise<Result> {
   const paths = allStoragePathsFor({
     receipt_path: purchase.receipt_path as string | null,
     receipt_paths: purchase.receipt_paths as string[] | null,
-  });
+  }).filter((p) => inTenantFolder(purchase.client_id as number, p));
   if (paths.length > 0) {
     await createAdminClient().storage.from("receipts").remove(paths);
   }

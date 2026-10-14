@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { inTenantFolder } from "@/lib/estimator/receipt-paths";
 
 const MAX_BYTES = 8 * 1024 * 1024; // 8 MB — phone photos of receipts
 const ALLOWED_MIME = new Set([
@@ -108,7 +109,7 @@ export async function GET(
   if (auth.status !== 200) {
     return NextResponse.json({ error: auth.error }, { status: auth.status });
   }
-  if (!auth.expense.receipt_path) {
+  if (!auth.expense.receipt_path || !inTenantFolder(auth.clientId, auth.expense.receipt_path)) {
     return NextResponse.json({ error: "No receipt attached" }, { status: 404 });
   }
 
@@ -133,7 +134,7 @@ export async function DELETE(
   }
 
   const admin = createAdminClient();
-  if (auth.expense.receipt_path) {
+  if (auth.expense.receipt_path && inTenantFolder(auth.clientId, auth.expense.receipt_path)) {
     await admin.storage.from("receipts").remove([auth.expense.receipt_path]);
   }
   const { error } = await admin

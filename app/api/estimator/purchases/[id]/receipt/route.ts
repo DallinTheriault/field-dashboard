@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { inTenantFolder } from "@/lib/estimator/receipt-paths";
 
 const MAX_BYTES = 8 * 1024 * 1024;
 const ALLOWED_MIME = new Set([
@@ -112,7 +113,7 @@ export async function GET(
   ];
   const idx = Number(new URL(request.url).searchParams.get("i") ?? "0");
   const path = paths[Number.isInteger(idx) && idx >= 0 ? idx : 0];
-  if (!path) {
+  if (!path || !inTenantFolder(auth.clientId, path)) {
     return NextResponse.json({ error: "No receipt attached" }, { status: 404 });
   }
 

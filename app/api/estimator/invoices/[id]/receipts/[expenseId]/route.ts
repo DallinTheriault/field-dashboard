@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { inTenantFolder } from "@/lib/estimator/receipt-paths";
 import { requireWriter } from "@/lib/estimator/auth";
 import { receiptFilename, receiptPathsFor } from "@/lib/invoices/receipts";
 
@@ -44,7 +45,7 @@ export async function GET(
   const path = paths[index];
   if (!path) return NextResponse.json({ error: "No receipt photo" }, { status: 404 });
   // The download bypasses storage policies, so the path must be this tenant's.
-  if (!path.startsWith(`${item.client_id}/`)) return NextResponse.json({ error: "Not found" }, { status: 404 });
+  if (!inTenantFolder(item.client_id, path)) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
   const { data: blob, error } = await createAdminClient().storage.from("receipts").download(path);
   if (error || !blob) return NextResponse.json({ error: error?.message ?? "Download failed" }, { status: 500 });

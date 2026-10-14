@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import Anthropic from "@anthropic-ai/sdk";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { inTenantFolder } from "@/lib/estimator/receipt-paths";
 import {
   parseScanResponse,
   SCAN_IMAGE_TYPES,
@@ -89,7 +90,7 @@ export async function POST(
     );
   }
 
-  const paths = (purchase.receipt_paths as string[] | null) ?? [];
+  const paths = ((purchase.receipt_paths as string[] | null) ?? []).filter((p) => inTenantFolder(clientId, p));
   if (paths.length === 0) {
     return NextResponse.json({ error: "No receipt photos to scan." }, { status: 400 });
   }

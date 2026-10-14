@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { allStoragePathsFor, isThumbPath, thumbPathFor } from "./receipt-paths";
+import { allStoragePathsFor, inTenantFolder, isThumbPath, thumbPathFor } from "./receipt-paths";
 
 describe("thumbPathFor", () => {
   it("inserts -thumb before the extension", () => {
@@ -57,5 +57,14 @@ describe("allStoragePathsFor — regression: deleting a purchase must not orphan
   it("handles a purchase with no photos at all", () => {
     expect(allStoragePathsFor({ receipt_paths: null, receipt_path: null })).toEqual([]);
     expect(allStoragePathsFor({})).toEqual([]);
+  });
+});
+
+describe("inTenantFolder", () => {
+  it("accepts only the tenant's own folder", () => {
+    expect(inTenantFolder(8, "8/purchase-3-abc.jpg")).toBe(true);
+    expect(inTenantFolder(8, "1/expense-4-1700.jpg")).toBe(false);
+    expect(inTenantFolder(8, "80/purchase-3-abc.jpg")).toBe(false);
+    expect(inTenantFolder(1, "1/../8/purchase-3-abc.jpg")).toBe(false);
   });
 });
