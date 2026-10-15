@@ -4,7 +4,7 @@ import { summarizePnl } from "./expenses";
 describe("summarizePnl (unified expenses)", () => {
   it("income − all expense lines = net; job-assigned tracked", () => {
     const s = summarizePnl({
-      paidInvoiceCents: [154000, 17696], // $1,540 + $176.96
+      paymentCents: [154000, 17696], // $1,540 + $176.96
       expenses: [
         { category: "Vehicle & fuel", amount: 62.5 },
         { category: "Tools & equipment", amount: 129.99 }, // Stock
@@ -25,7 +25,7 @@ describe("summarizePnl (unified expenses)", () => {
   });
 
   it("empty year is all zeros", () => {
-    const s = summarizePnl({ paidInvoiceCents: [], expenses: [] });
+    const s = summarizePnl({ paymentCents: [], expenses: [] });
     expect(s).toMatchObject({ income: 0, totalExpenses: 0, jobAssigned: 0, net: 0 });
     expect(s.byCategory).toEqual([]);
   });

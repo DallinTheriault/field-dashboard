@@ -48,13 +48,11 @@ export default async function ExpensesPage({
   const year = /^\d{4}$/.test(yParam ?? "") ? Number(yParam) : currentYear;
 
   const supabase = await createClient();
-  // Timestamp rows are fetched with a padded window, then bucketed by
-  // tenant-timezone year, so New Year's Eve payments land in the right year.
-  const windowStart = `${year - 1}-12-30`;
-  const windowEnd = `${year + 1}-01-02`;
+  // Every row here is dated with a plain calendar date (payments by the day
+  // received), so the year boundary needs no timezone math.
   const [
     { data: expenseRows },
-    { data: invoiceRows },
+    { data: paymentRows },
     { data: mileageRows },
     { data: rateRows },
   ] = await Promise.all([
@@ -67,13 +65,13 @@ export default async function ExpensesPage({
       .lte("expense_date", `${year}-12-31`)
       .order("expense_date", { ascending: false })
       .order("id", { ascending: false }),
+    // Income is payments by the day the money came in: a December part
+    // payment is December income even if the rest arrives in January.
     supabase
-      .from("invoices")
-      .select("total_cents, paid_at")
-      .eq("status", "paid")
-      .not("invoice_number", "is", null)
-      .gte("paid_at", windowStart)
-      .lte("paid_at", windowEnd),
+      .from("payments")
+      .select("amount_cents")
+      .gte("received_on", `${year}-01-01`)
+      .lte("received_on", `${year}-12-31`),
     // Mileage is stated separately and NEVER summed into the P&L (§6.3):
     // standard mileage and actual vehicle costs are alternative methods.
     supabase
@@ -106,13 +104,11 @@ export default async function ExpensesPage({
       purchaseHasReceipt: Boolean(purchase?.receipt_path),
     };
   });
-  const paidInvoiceCents = (invoiceRows ?? [])
-    .filter((i) => i.paid_at && dayKeyInTz(i.paid_at, tz).startsWith(String(year)))
-    .map((i) => Number(i.total_cents));
+  const paymentCents = (paymentRows ?? []).map((p) => Number(p.amount_cents));
 
   // NOTE: mileage is deliberately absent from summarizePnl — it must never
   // enter income, totalExpenses, net, or byCategory.
-  const pnl = summarizePnl({ paidInvoiceCents, expenses });
+  const pnl = summarizePnl({ paymentCents, expenses });
 
   const mileage = summarizeMileage(
     (mileageRows ?? []).map((m) => ({

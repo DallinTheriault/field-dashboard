@@ -31,11 +31,12 @@ export type PnlSummary = {
 };
 
 export function summarizePnl(input: {
-  paidInvoiceCents: number[];
+  /** Payments received in the period (cash basis: income is the day it came in). */
+  paymentCents: number[];
   expenses: Array<{ category: string; amount: number; job_id?: number | null }>;
 }): PnlSummary {
   const income = round2(
-    input.paidInvoiceCents.reduce((s, c) => s + c, 0) / 100,
+    input.paymentCents.reduce((s, c) => s + c, 0) / 100,
   );
   const totalExpenses = round2(
     input.expenses.reduce((s, e) => s + e.amount, 0),

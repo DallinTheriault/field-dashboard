@@ -247,6 +247,21 @@ const bNumber = (await invRow(invB)).invoice_number;
 check("the P&L export dates the draft's income by its payment", csv.split("\n").some((l) => l.includes(bNumber) && l.includes("2026-10-01")),
   csv.split("\n").filter((l) => /CAS-/.test(l)).join(" ## ").slice(0, 300));
 
+// Cash basis: a December part payment is December income; the rest is January's.
+const invY = await invoiceFor([await line("Year-end job", 150)]);
+await owner.patch(`invoices?id=eq.${invY}`, { status: "sent" });
+await pay(owner, invY, "2025-12-20", 10000, "check", { reference: "dec" });
+await pay(owner, invY, "2026-01-05", 5000, "check", { reference: "jan" });
+const yNumber = (await invRow(invY)).invoice_number;
+const csvFor = async (y) => (await (await page.request.get(`${APP}/api/estimator/expenses/csv?y=${y}`)).text()).split("\n").map((l) => l.trim()).filter((l) => l.includes(yNumber));
+const [c25, c26] = [await csvFor(2025), await csvFor(2026)];
+check("income comes from payments by date received, split across the year end",
+  c25.length === 1 && c25[0].startsWith("2025-12-20") && c25[0].endsWith(",100") &&
+  c26.length === 1 && c26[0].startsWith("2026-01-05") && c26[0].endsWith(",50"), [...c25, ...c26].join(" ## "));
+await page.goto(`${APP}/app/estimator/expenses?y=2025`);
+await page.waitForLoadState("networkidle");
+check("the 2025 P&L counts the December part payment as income", /\$100\.00/.test(await page.locator("main").innerText()));
+
 // Letterheads: one active means no "Bill as"; two means a choice.
 await page.goto(`${APP}/app/jobs/${job.id}/invoice`);
 await page.waitForLoadState("networkidle");

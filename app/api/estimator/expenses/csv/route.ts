@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { dayKeyInTz, getTenantTimezone } from "@/lib/dates";
+import { METHOD_LABELS, type PaymentMethod } from "@/lib/invoices/payments";
 import {
   ALTERNATIVE_METHODS_NOTE,
   buildRateMap,
@@ -33,22 +34,20 @@ export async function GET(request: Request) {
     ? Number(yParam)
     : Number(dayKeyInTz(new Date(), tz).slice(0, 4));
 
-  const windowStart = `${year - 1}-12-30`;
-  const windowEnd = `${year + 1}-01-02`;
-  const [{ data: expenses }, { data: invoices }, { data: mileage }, { data: rates }] =
+  const [{ data: expenses }, { data: payments }, { data: mileage }, { data: rates }] =
     await Promise.all([
     supabase
       .from("expenses")
       .select("expense_date, category, description, amount, qty, assignment, jobs(name), purchases(vendor)")
       .gte("expense_date", `${year}-01-01`)
       .lte("expense_date", `${year}-12-31`),
+    // Income: each payment on the day it was received (cash basis).
     supabase
-      .from("invoices")
-      .select("invoice_number, customer_name, total_cents, paid_at")
-      .eq("status", "paid")
-      .not("invoice_number", "is", null)
-      .gte("paid_at", windowStart)
-      .lte("paid_at", windowEnd),
+      .from("payments")
+      .select("received_on, amount_cents, method, reference, invoices(invoice_number, customer_name)")
+      .gte("received_on", `${year}-01-01`)
+      .lte("received_on", `${year}-12-31`)
+      .order("received_on"),
     // Mileage gets its OWN block below — never interleaved with expenses and
     // never added into NET PROFIT (§6.3).
     supabase
@@ -63,15 +62,16 @@ export async function GET(request: Request) {
   type Row = [string, string, string, string, string, number];
   const rows: Row[] = [];
 
-  for (const i of invoices ?? []) {
-    if (!i.paid_at || !dayKeyInTz(i.paid_at, tz).startsWith(String(year))) continue;
+  for (const p of payments ?? []) {
+    const inv = p.invoices as unknown as { invoice_number: string | null; customer_name: string } | null;
+    const how = METHOD_LABELS[p.method as PaymentMethod] ?? p.method;
     rows.push([
-      dayKeyInTz(i.paid_at, tz),
+      String(p.received_on),
       "income",
-      "Invoice",
+      "Payment",
       "",
-      `${i.invoice_number} — ${i.customer_name}`,
-      Number(i.total_cents) / 100,
+      `${inv?.invoice_number ?? "Invoice"} — ${inv?.customer_name ?? ""} (${how}${p.reference ? ` #${p.reference}` : ""})`,
+      Number(p.amount_cents) / 100,
     ]);
   }
   for (const e of expenses ?? []) {
