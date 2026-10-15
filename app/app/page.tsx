@@ -6,7 +6,8 @@ import { dayKeyInTz, getTenantTimezone } from "@/lib/dates";
 import { getCurrentUserRole } from "@/lib/permissions/current-role";
 import { canViewSettings } from "@/lib/permissions/roles";
 import { getTenantFeatureFlags } from "@/lib/features/flags";
-import { JOB_LOCATION_SELECT, jobAddress, toJobPick } from "@/lib/jobs/address";
+import { JOB_LOCATION_SELECT, jobAddress, toJobPick, withBilling } from "@/lib/jobs/address";
+import { BILLING_COLS, billingByJob } from "@/lib/jobs/billing";
 import { readyToInvoice } from "@/lib/home/ready-to-invoice";
 import { balanceDueCents, daysBetween } from "@/lib/invoices/payments";
 import { AddJobButton } from "./jobs/_components/add-job-button";
@@ -29,7 +30,7 @@ export default async function HomePage() {
   const supabase = await createClient();
   const money = flags.estimator && session !== null && canViewSettings(session.role);
 
-  const [openRes, pickRes, tasksRes, extrasRes, completedRes, unpaidRes] = await Promise.all([
+  const [openRes, pickRes, billingRes, unpaidRes] = await Promise.all([
     supabase
       .from("jobs")
       .select(`id, name, status, start_datetime, ${JOB_LOCATION_SELECT}`)
@@ -46,17 +47,9 @@ export default async function HomePage() {
       .neq("status", "cancelled")
       .order("created_at", { ascending: false })
       .limit(200),
-    money
-      ? supabase.from("tasks").select("job_id, qty, unit_price").eq("status", "done").eq("billable", true)
-          .not("unit_price", "is", null).is("invoice_id", null)
-      : Promise.resolve({ data: [] }),
-    money
-      ? supabase.from("expenses").select("job_id, amount").eq("assignment", "job_extra")
-          .is("invoiced_on", null).not("job_id", "is", null)
-      : Promise.resolve({ data: [] }),
-    money
-      ? supabase.from("jobs").select("id").eq("status", "completed").is("archived_at", null)
-      : Promise.resolve({ data: [] }),
+    // Billing state per job (v099): which jobs are ready to invoice, and the
+    // picker's labels.
+    money ? supabase.from("job_billing").select(BILLING_COLS) : Promise.resolve({ data: [] }),
     money
       ? supabase.from("invoices")
           .select("id, invoice_number, customer_name, customer_company, total_cents, sent_at, created_at, jobs(address), payments(amount_cents)")
@@ -68,28 +61,36 @@ export default async function HomePage() {
   const open = (openRes.data ?? []) as unknown as Array<Parameters<typeof jobAddress>[0] & {
     id: number; name: string | null; status: string; start_datetime: string | null;
   }>;
-  const pickJobs = ((pickRes.data ?? []) as unknown as Parameters<typeof toJobPick>[0][]).map(toJobPick);
+  const billing = billingByJob(billingRes.data as Array<Record<string, unknown>> | null);
+  const pickJobs = withBilling(
+    ((pickRes.data ?? []) as unknown as Parameters<typeof toJobPick>[0][]).map(toJobPick),
+    billing,
+  );
 
-  // Ready to invoice.
-  const tasks = (tasksRes.data ?? []) as Array<{ job_id: number; qty: number; unit_price: number }>;
-  const extras = (extrasRes.data ?? []) as Array<{ job_id: number; amount: number }>;
-  const completedIds = ((completedRes.data ?? []) as Array<{ id: number }>).map((j) => j.id);
-  const candidateIds = [...new Set([...tasks.map((t) => t.job_id), ...extras.map((e) => e.job_id), ...completedIds])];
-  const [{ data: candInvoices }, { data: candJobs }] = candidateIds.length
+  // Ready to invoice: the jobs whose badge says so, with what's waiting.
+  const readyIds = [...billing].filter(([, b]) => b.state === "ready").map(([id]) => id);
+  const [{ data: candJobs }, { data: tasks }, { data: extras }, { data: candInvoices }] = readyIds.length
     ? await Promise.all([
-        supabase.from("invoices").select("id, job_id, status, stripe_invoice_id, invoice_number").in("job_id", candidateIds),
-        supabase.from("jobs").select(`id, name, status, updated_at, ${JOB_LOCATION_SELECT}`).in("id", candidateIds),
+        supabase.from("jobs").select(`id, name, status, updated_at, ${JOB_LOCATION_SELECT}`).in("id", readyIds)
+          .is("archived_at", null),
+        supabase.from("tasks").select("job_id, qty, unit_price").in("job_id", readyIds)
+          .eq("status", "done").eq("billable", true).is("invoice_id", null),
+        supabase.from("expenses").select("job_id, amount").in("job_id", readyIds)
+          .eq("assignment", "job_extra").is("invoiced_on", null),
+        supabase.from("invoices").select("id, job_id, status, stripe_invoice_id, invoice_number").in("job_id", readyIds),
       ])
-    : [{ data: [] }, { data: [] }];
-  const jobById = new Map(((candJobs ?? []) as unknown as Array<Parameters<typeof jobAddress>[0] & { id: number; name: string | null; updated_at: string }>).map((j) => [j.id, j]));
+    : [{ data: [] }, { data: [] }, { data: [] }, { data: [] }];
+  const readyJobs = ((candJobs ?? []) as unknown as Array<Parameters<typeof jobAddress>[0] & {
+    id: number; name: string | null; status: string; updated_at: string;
+  }>).sort((a, b) => (a.updated_at ?? "").localeCompare(b.updated_at ?? ""));
+  const jobById = new Map(readyJobs.map((j) => [j.id, j]));
   const ready = readyToInvoice({
-    tasks,
-    extras,
-    completedJobIds: completedIds,
+    jobIds: readyJobs.map((j) => j.id),
+    tasks: (tasks ?? []) as Parameters<typeof readyToInvoice>[0]["tasks"],
+    extras: (extras ?? []) as Parameters<typeof readyToInvoice>[0]["extras"],
+    completedJobIds: readyJobs.filter((j) => j.status === "completed").map((j) => j.id),
     invoices: (candInvoices ?? []) as Parameters<typeof readyToInvoice>[0]["invoices"],
-  })
-    .filter((r) => jobById.has(r.jobId))
-    .sort((a, b) => (jobById.get(a.jobId)!.updated_at ?? "").localeCompare(jobById.get(b.jobId)!.updated_at ?? ""));
+  });
 
   // Owed, oldest first.
   const today = dayKeyInTz(new Date(), tz);
@@ -136,6 +137,7 @@ export default async function HomePage() {
             const j = jobById.get(r.jobId)!;
             const what = [
               r.lineCount > 0 && `${r.lineCount} line${r.lineCount === 1 ? "" : "s"} ready`,
+              r.needsPrice > 0 && `${r.needsPrice} need${r.needsPrice === 1 ? "s" : ""} a price`,
               r.draftNumber ? `draft ${r.draftNumber} not sent` : r.nothingSent && "completed, nothing sent",
             ].filter(Boolean).join(" · ");
             return (

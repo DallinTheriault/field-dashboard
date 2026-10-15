@@ -12,9 +12,13 @@ import {
   Pencil,
   Phone,
   Calculator,
+  CircleDollarSign,
   Receipt,
+  Undo2,
   type LucideIcon,
 } from "lucide-react";
+import { undoPaidOutside } from "./billing-actions";
+import { PaidOutsideDialog } from "./paid-outside";
 
 type Entry = {
   key: string;
@@ -43,6 +47,7 @@ export function JobOptionsMenu({
   address,
   showNewEstimate,
   showCreateInvoice,
+  paidOutside = null,
 }: {
   jobId: number;
   phone: string | null;
@@ -51,9 +56,12 @@ export function JobOptionsMenu({
   address: string | null;
   showNewEstimate: boolean;
   showCreateInvoice: boolean;
+  /** Owner only: offer to mark the job paid outside Field, or undo that. */
+  paidOutside?: "mark" | "undo" | null;
 }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
+  const [markOpen, setMarkOpen] = useState(false);
   const [doneKey, setDoneKey] = useState<string | null>(null);
   const boxRef = useRef<HTMLDivElement>(null);
 
@@ -132,6 +140,25 @@ export function JobOptionsMenu({
       href: `/app/jobs/${jobId}/invoice`,
     });
   }
+  if (paidOutside === "mark") {
+    entries.push({
+      key: "paid-outside",
+      label: "Mark paid outside Field",
+      icon: CircleDollarSign,
+      onSelect: () => setMarkOpen(true),
+    });
+  }
+  if (paidOutside === "undo") {
+    entries.push({
+      key: "undo-paid-outside",
+      label: "Undo paid outside Field",
+      icon: Undo2,
+      onSelect: async () => {
+        const r = await undoPaidOutside(jobId);
+        if (!r.ok) alert(r.error);
+      },
+    });
+  }
   if (showNewEstimate) {
     entries.push({
       key: "new-estimate",
@@ -149,6 +176,7 @@ export function JobOptionsMenu({
 
   return (
     <div ref={boxRef} className="relative shrink-0">
+      {markOpen && <PaidOutsideDialog jobId={jobId} onClose={() => setMarkOpen(false)} />}
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}

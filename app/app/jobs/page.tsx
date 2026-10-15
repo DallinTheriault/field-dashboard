@@ -10,6 +10,10 @@ import { Download } from "lucide-react";
 import { getTenantTimezone } from "@/lib/dates";
 import { getCurrentUserRole } from "@/lib/permissions/current-role";
 import { JOB_LOCATION_SELECT, jobAddress } from "@/lib/jobs/address";
+import { canViewSettings } from "@/lib/permissions/roles";
+import { getTenantFeatureFlags } from "@/lib/features/flags";
+import { BILLING_COLS, UNPAID, billingByJob, type JobBilling } from "@/lib/jobs/billing";
+import { BillingChip } from "@/components/ui/billing-chip";
 
 function fmtDate(d: string | null, tz: string): string {
   if (!d) return "—";
@@ -23,18 +27,25 @@ function fmtDate(d: string | null, tz: string): string {
 export default async function JobsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ status?: string; tag?: string }>;
+  searchParams: Promise<{ status?: string; tag?: string; billing?: string }>;
 }) {
   const supabase = await createClient();
-  const { status, tag: tagIdParam } = await searchParams;
+  const { status, tag: tagIdParam, billing: billingParam } = await searchParams;
 
   // Identify tenant for tag list — the request-cached role lookup shares
   // its auth + membership round-trips with the layout and other pages.
-  const [tz, session] = await Promise.all([
+  const [tz, session, flags] = await Promise.all([
     getTenantTimezone(),
     getCurrentUserRole(),
+    getTenantFeatureFlags(),
   ]);
   const clientId = session?.clientId ?? null;
+  // Billing state (v099) is money: owners and managers, estimator on.
+  const money = flags.estimator && session !== null && canViewSettings(session.role);
+  const billingFilter = money && (billingParam === "unpaid" || billingParam === "paid") ? billingParam : null;
+  const billing: Map<number, JobBilling> = money
+    ? billingByJob((await supabase.from("job_billing").select(BILLING_COLS)).data as Array<Record<string, unknown>> | null)
+    : new Map();
 
   let baseQuery = supabase
     .from("jobs")
@@ -43,6 +54,11 @@ export default async function JobsPage({
     .order("created_at", { ascending: false });
 
   if (status) baseQuery = baseQuery.eq("status", status);
+  if (billingFilter) {
+    const want = billingFilter === "paid" ? ["paid"] : UNPAID;
+    const ids = [...billing].filter(([, b]) => b.state !== null && want.includes(b.state)).map(([id]) => id);
+    baseQuery = ids.length ? baseQuery.in("id", ids) : baseQuery.eq("id", -1);
+  }
 
   // Tag filtering: pass `tag` as the tag NAME from the URL, find its ID,
   // then query job_tags for jobs with that tag.
@@ -90,13 +106,43 @@ export default async function JobsPage({
               ? `Tagged: ${tagIdParam}`
               : status
                 ? status.charAt(0).toUpperCase() + status.slice(1)
-                : "All jobs"}
+                : billingFilter === "unpaid"
+                  ? "Unpaid jobs"
+                  : billingFilter === "paid"
+                    ? "Paid jobs"
+                    : "All jobs"}
           </h1>
           <p className="text-sm text-bone-300 mt-1">
             {rows.length} {rows.length === 1 ? "job" : "jobs"}
           </p>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
+          {money && (
+            <nav aria-label="Billing filter" className="flex items-center rounded-sm border border-line overflow-hidden">
+              {([
+                [null, "All"],
+                ["unpaid", "Unpaid"],
+                ["paid", "Paid"],
+              ] as const).map(([value, label]) => {
+                const q = new URLSearchParams();
+                if (status) q.set("status", status);
+                if (tagIdParam) q.set("tag", tagIdParam);
+                if (value) q.set("billing", value);
+                const href = q.size ? `/app/jobs?${q}` : "/app/jobs";
+                const on = billingFilter === value;
+                return (
+                  <Link
+                    key={label}
+                    href={href}
+                    aria-current={on ? "page" : undefined}
+                    className={`px-3 min-h-[36px] inline-flex items-center text-xs ${on ? "bg-field-500/15 text-field-400" : "text-bone-300 hover:bg-ink-3"}`}
+                  >
+                    {label}
+                  </Link>
+                );
+              })}
+            </nav>
+          )}
           {allTags.length > 0 && (
             <details className="relative">
               <summary className="btn-secondary text-xs h-9 cursor-pointer list-none">
@@ -133,7 +179,7 @@ export default async function JobsPage({
               </div>
             </details>
           )}
-          {(status || tagIdParam) && (
+          {(status || tagIdParam || billingFilter) && (
             <Link href="/app/jobs" className="btn-ghost text-xs h-9">
               Clear filter
             </Link>
@@ -169,6 +215,7 @@ export default async function JobsPage({
                 key={j.id}
                 job={j}
                 tags={tagsByJob.get(j.id) ?? []}
+                billing={billing.get(j.id)?.state ?? null}
               />
             ))}
           </div>
@@ -209,7 +256,10 @@ export default async function JobsPage({
                           {fmtDate(j.start_datetime, tz)}
                         </td>
                         <td>
-                          <StatusChip status={j.status} />
+                          <span className="inline-flex flex-wrap items-center gap-1.5">
+                            <StatusChip status={j.status} />
+                            <BillingChip state={billing.get(j.id)?.state} />
+                          </span>
                         </td>
                         <td className="num text-xs text-bone-400 text-right">
                           {fmtDate(j.created_at, tz)}

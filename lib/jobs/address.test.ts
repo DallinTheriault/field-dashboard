@@ -49,6 +49,13 @@ describe("jobContactName", () => {
 });
 
 describe("jobPickLabel", () => {
+  it("ends with the billing state when there is one", () => {
+    const base = { id: 1, name: "Pat", jobNumber: null, address: "1 Main St", status: "completed" };
+    expect(jobPickLabel({ ...base, billing: "ready" })).toBe("1 Main St · Pat · completed · ready to invoice");
+    expect(jobPickLabel({ ...base, billing: "part_paid" })).toBe("1 Main St · Pat · completed · part paid");
+    expect(jobPickLabel({ ...base, billing: null })).toBe("1 Main St · Pat · completed");
+  });
+
   it("orders address + unit, job number, contact, status", () => {
     const pick = toJobPick({
       id: 212,

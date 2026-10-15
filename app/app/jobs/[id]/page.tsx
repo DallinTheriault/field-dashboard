@@ -29,6 +29,9 @@ import { getJobTags, listTagsForClient } from "@/lib/tags/server";
 import { getTenantTimezone } from "@/lib/dates";
 import { getTenantFeatureFlags } from "@/lib/features/flags";
 import { extraAmounts } from "@/lib/estimator/expenses";
+import { BILLING_COLS, toJobBilling } from "@/lib/jobs/billing";
+import { BillingChip } from "@/components/ui/billing-chip";
+import { PaidOutsideNotice } from "./paid-outside";
 
 function fmtDate(d: string | null, tz: string): string {
   if (!d) return "—";
@@ -103,6 +106,7 @@ export default async function JobDetailPage({
     { data: mileageRows },
     { data: pricingSettings },
     { data: jobProperty },
+    { data: billingRow },
   ] = await Promise.all([
     getTeamMembers(job.client_id),
     getActivityTimeline("job", Number(job.id)),
@@ -169,7 +173,13 @@ export default async function JobDetailPage({
           .eq("id", job.property_id)
           .maybeSingle()
       : Promise.resolve({ data: null }),
+    // Billing state (v099): owners and managers, like the rest of the money.
+    estimatorOn && canSeeInternals
+      ? supabase.from("job_billing").select(BILLING_COLS).eq("job_id", job.id).maybeSingle()
+      : Promise.resolve({ data: null }),
   ]);
+  const billing = billingRow ? toJobBilling(billingRow as Record<string, unknown>) : null;
+  const isOwner = session?.role === "owner";
 
   // Trips logged against this job — a read-only signal (§6.2). Deliberately
   // NOT part of job costing math this pass.
@@ -297,6 +307,7 @@ export default async function JobDetailPage({
         <Briefcase size={13} className="text-field-500 shrink-0" />
         <span className="label-eyebrow">{job.job_number ?? `Job #${job.id}`}</span>
         <InlineStatusEdit jobId={job.id} currentStatus={job.status ?? "lead"} />
+        <BillingChip state={billing?.state} />
         <AssignmentChip member={assignedMember} />
       </div>
 
@@ -357,9 +368,26 @@ export default async function JobDetailPage({
             address={propertyAddress ?? job.address ?? null}
             showNewEstimate={estimatorOn}
             showCreateInvoice={estimatorOn && canSeeInternals}
+            paidOutside={
+              !isOwner || !billing
+                ? null
+                : billing.paidOutsideAt
+                  ? "undo"
+                  : (billing.state === "ready" || billing.state === "part_paid") && billing.owedCents === 0
+                    ? "mark"
+                    : null
+            }
           />
         </div>
       </div>
+      {billing?.paidOutsideAt && (
+        <PaidOutsideNotice
+          jobId={Number(job.id)}
+          when={new Date(billing.paidOutsideAt).toLocaleDateString("en-US", { timeZone: tz, month: "short", day: "numeric", year: "numeric" })}
+          note={billing.paidOutsideNote}
+          canUndo={isOwner}
+        />
+      )}
 
       {/* Scope first: it's what gets built on the walkthrough, and it's the
           job's price. */}

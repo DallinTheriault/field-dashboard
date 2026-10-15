@@ -9,7 +9,8 @@ import { FeatureDisabledPanel } from "@/components/ui/feature-disabled-panel";
 import { PurchasesClient, type ExpenseItemRow } from "./purchases-client";
 import { ReceiptsView, type ReceiptRow } from "./receipts-view";
 import { mintReceiptThumbUrls } from "@/lib/estimator/receipt-urls";
-import { JOB_LOCATION_SELECT, toJobPick } from "@/lib/jobs/address";
+import { JOB_LOCATION_SELECT, toJobPick, withBilling } from "@/lib/jobs/address";
+import { BILLING_COLS, billingByJob } from "@/lib/jobs/billing";
 
 /**
  * Expenses — the single intake / list / assignment surface (ruling Q2).
@@ -27,7 +28,7 @@ export default async function ExpenseIntakePage() {
   if (!flags.estimator) return <FeatureDisabledPanel featureName="Estimator" />;
 
   const supabase = await createClient();
-  const [{ data: itemRows }, { data: jobRows }, { data: purchaseRows }] = await Promise.all([
+  const [{ data: itemRows }, { data: jobRows }, { data: purchaseRows }, { data: billingRows }] = await Promise.all([
     supabase
       .from("expenses")
       .select(
@@ -57,6 +58,8 @@ export default async function ExpenseIntakePage() {
       )
       .order("id", { ascending: false })
       .limit(50),
+    // Billing state for the job pickers (v099).
+    supabase.from("job_billing").select(BILLING_COLS),
   ]);
 
   const items: ExpenseItemRow[] = (itemRows ?? []).map((e) => {
@@ -96,7 +99,7 @@ export default async function ExpenseIntakePage() {
     };
   });
 
-  const jobs = (jobRows ?? []).map(toJobPick);
+  const jobs = withBilling((jobRows ?? []).map(toJobPick), billingByJob(billingRows as Array<Record<string, unknown>> | null));
 
   const itemCountOf = (p: NonNullable<typeof purchaseRows>[number]) =>
     ((p.expenses as unknown as Array<{ count: number }> | null)?.[0]?.count) ?? 0;

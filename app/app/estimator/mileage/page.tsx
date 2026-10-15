@@ -8,7 +8,8 @@ import { getTenantFeatureFlags } from "@/lib/features/flags";
 import { FeatureDisabledPanel } from "@/components/ui/feature-disabled-panel";
 import { dayKeyInTz, getTenantTimezone } from "@/lib/dates";
 import { buildRateMap, summarizeMileage } from "@/lib/estimator/mileage";
-import { JOB_LOCATION_SELECT, toJobPick } from "@/lib/jobs/address";
+import { JOB_LOCATION_SELECT, toJobPick, withBilling } from "@/lib/jobs/address";
+import { BILLING_COLS, billingByJob } from "@/lib/jobs/billing";
 import { MileageClient, type TripRow } from "./mileage-client";
 
 /**
@@ -35,7 +36,7 @@ export default async function MileagePage({
   const year = /^\d{4}$/.test(yParam ?? "") ? Number(yParam) : currentYear;
 
   const supabase = await createClient();
-  const [{ data: tripRows }, { data: rateRows }, { data: settings }, { data: jobRows }] =
+  const [{ data: tripRows }, { data: rateRows }, { data: settings }, { data: jobRows }, { data: billingRows }] =
     await Promise.all([
       supabase
         .from("mileage_entries")
@@ -53,6 +54,7 @@ export default async function MileagePage({
         .neq("status", "cancelled")
         .order("created_at", { ascending: false })
         .limit(100),
+      supabase.from("job_billing").select(BILLING_COLS),
     ]);
 
   const trips: TripRow[] = (tripRows ?? []).map((t) => {
@@ -116,7 +118,7 @@ export default async function MileagePage({
         year={year}
         trips={trips}
         total={total}
-        jobs={(jobRows ?? []).map(toJobPick)}
+        jobs={withBilling((jobRows ?? []).map(toJobPick), billingByJob(billingRows as Array<Record<string, unknown>> | null))}
         baseAddress={(settings?.mileage_base_address as string | null) ?? null}
         rateForYear={rates.get(year) ?? null}
         todayISO={dayKeyInTz(new Date(), tz)}

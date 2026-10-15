@@ -6,6 +6,8 @@
  * the property, so it is read only for legacy jobs that have no property.
  */
 
+import { BILLING_LABEL, type BillingState, type JobBilling } from "@/lib/jobs/billing";
+
 /**
  * PostgREST select fragment for everything the helpers below read. jobs has
  * two FKs to contacts (contact_id and bill_to_contact_id), so the contact
@@ -62,6 +64,8 @@ export type JobPick = {
   jobNumber: string | null;
   address: string | null;
   status: string | null;
+  /** Billing state (owners/managers only; v099). */
+  billing?: BillingState | null;
 };
 
 export function toJobPick(
@@ -100,5 +104,11 @@ export function jobPickLabel(j: JobPick): string {
   if (j.jobNumber) parts.push(j.jobNumber);
   parts.push(j.name);
   if (j.status) parts.push(JOB_STATUS_SHORT[j.status] ?? j.status);
+  if (j.billing) parts.push(BILLING_LABEL[j.billing].toLowerCase());
   return parts.join(" · ");
+}
+
+/** Picks with each job's billing state attached. */
+export function withBilling(picks: JobPick[], billing: Map<number, JobBilling>): JobPick[] {
+  return picks.map((p) => ({ ...p, billing: billing.get(p.id)?.state ?? null }));
 }

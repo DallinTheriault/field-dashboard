@@ -150,4 +150,13 @@ else
   echo "$STACK_ENV" | sed -E 's/(KEY=).{12}.*/\1…/'
 fi
 
+# A running `next dev` reloads .env.local after it's rewritten and briefly
+# answers 404; wait for it so scenarios don't race the reload.
+if curl -s -o /dev/null "http://localhost:$APP_PORT/" 2>/dev/null; then
+  for _ in $(seq 1 45); do
+    [ "$(curl -s -o /dev/null -w '%{http_code}' "http://localhost:$APP_PORT/login")" = 200 ] && break
+    sleep 2
+  done
+fi
+
 echo "stack up: gateway http://127.0.0.1:$GATEWAY_PORT, postgres 127.0.0.1:$PG_PORT; logs in $LOGS"

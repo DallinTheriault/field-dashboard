@@ -2,6 +2,8 @@ import Link from "next/link";
 import { Phone, MapPin, CalendarDays, Briefcase } from "lucide-react";
 import { StatusChip } from "@/components/ui/status-chip";
 import { TagChipList } from "@/components/tags/tag-chip";
+import { BillingChip } from "@/components/ui/billing-chip";
+import type { BillingState } from "@/lib/jobs/billing";
 import type { Tag } from "@/lib/tags/types";
 
 type JobCardData = {
@@ -34,9 +36,11 @@ function fmtDate(iso: string | null): string {
 export function MobileJobCard({
   job,
   tags = [],
+  billing = null,
 }: {
   job: JobCardData;
   tags?: Tag[];
+  billing?: BillingState | null;
 }) {
   return (
     <Link
@@ -89,6 +93,7 @@ export function MobileJobCard({
       )}
 
       <div className="flex items-center gap-3 text-2xs text-bone-400 mt-1.5">
+        <BillingChip state={billing} />
         {job.start_datetime && (
           <span className="inline-flex items-center gap-1">
             <CalendarDays size={10} />
