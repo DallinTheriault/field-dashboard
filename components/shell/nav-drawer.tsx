@@ -6,12 +6,9 @@ import { usePathname } from "next/navigation";
 import {
   X,
   LayoutDashboard,
-  Phone,
   Briefcase,
   Users,
-  MessageSquare,
   CalendarDays,
-  CreditCard,
   Settings,
   ShieldCheck,
   LogOut,
@@ -30,14 +27,11 @@ import type { FeatureFlags } from "./sidebar";
 
 const ALL_NAV = [
   { href: "/app", label: "Overview", icon: LayoutDashboard, flag: null as keyof FeatureFlags | null },
-  { href: "/app/calls", label: "Calls", icon: Phone, flag: "voice" as const },
   { href: "/app/jobs", label: "Jobs", icon: Briefcase, flag: null },
   { href: "/app/contacts", label: "Contacts", icon: Users, flag: null },
-  { href: "/app/messages", label: "Messages", icon: MessageSquare, flag: "sms" as const },
   { href: "/app/calendar", label: "Calendar", icon: CalendarDays, flag: "calendar" as const },
   { href: "/app/estimator/invoices", label: "Invoices", icon: Receipt, flag: "estimator" as const },
   { href: "/app/estimator", label: "Business", icon: Calculator, flag: "estimator" as const },
-  { href: "/app/billing", label: "Billing", icon: CreditCard, flag: "billing" as const },
   { href: "/app/settings", label: "Settings", icon: Settings, flag: null },
 ] as const;
 

@@ -44,7 +44,7 @@ function propLabel(p: PropertyHit): string {
 
 const NEW_PROPERTY = "__new__";
 
-export function AddJobButton() {
+export function AddJobButton({ variant = "button" }: { variant?: "button" | "tile" } = {}) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -167,14 +167,17 @@ export function AddJobButton() {
 
   return (
     <>
-      <button
-        type="button"
-        onClick={() => setOpen(true)}
-        className="btn-primary text-sm h-9"
-      >
-        <Plus size={14} />
-        Add job
-      </button>
+      {variant === "tile" ? (
+        <button type="button" onClick={() => setOpen(true)} className="home-tile">
+          <Plus size={26} />
+          <span>New job</span>
+        </button>
+      ) : (
+        <button type="button" onClick={() => setOpen(true)} className="btn-primary text-sm h-9">
+          <Plus size={14} />
+          Add job
+        </button>
+      )}
 
       {open && (
         <>

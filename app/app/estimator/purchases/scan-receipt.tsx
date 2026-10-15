@@ -94,10 +94,13 @@ export function ScanReceipt({
   clientId,
   jobs = [],
   role = "owner",
+  variant = "panel",
 }: {
   clientId: number;
   jobs?: JobOption[];
   role?: Role;
+  /** "tile": one big Home button that opens the camera; the review opens as a full-screen sheet. */
+  variant?: "panel" | "tile";
 }) {
   const router = useRouter();
   const supabase = createClient();
@@ -202,6 +205,75 @@ export function ScanReceipt({
     router.refresh();
   }
 
+  const inputs = (
+    <>
+      <input
+        ref={cameraRef}
+        type="file"
+        accept="image/*"
+        capture="environment"
+        className="hidden"
+        onChange={(e) => start(e.target.files)}
+      />
+      <input
+        ref={libraryRef}
+        type="file"
+        accept="image/*"
+        multiple
+        className="hidden"
+        onChange={(e) => start(e.target.files)}
+      />
+    </>
+  );
+  const review = (
+    <>
+      {phase === "working" && <div className="px-4 pb-3 text-2xs text-bone-400">{workingMsg}</div>}
+      {err && <div className="px-4 pb-3"><div className="form-error">{err}</div></div>}
+      {phase === "confirm" && purchaseId !== null && (
+        <ConfirmScan
+          purchaseId={purchaseId}
+          scan={scan}
+          parseFailed={parseFailed}
+          onDone={reset}
+          jobs={jobs}
+          role={role}
+        />
+      )}
+    </>
+  );
+
+  if (variant === "tile") {
+    return (
+      <>
+        {inputs}
+        <button
+          type="button"
+          onClick={() => cameraRef.current?.click()}
+          disabled={phase === "working"}
+          className="home-tile"
+        >
+          {phase === "working" ? <Loader2 size={26} className="animate-spin" /> : <Camera size={26} />}
+          <span>Scan receipt</span>
+        </button>
+        {(phase !== "idle" || err) && (
+          <div className="fixed inset-0 z-50 bg-ink-0 overflow-y-auto" role="dialog" aria-label="Scan a receipt">
+            <div className="max-w-2xl mx-auto py-3">
+              <div className="flex items-center px-4 min-h-[44px]">
+                <span className="text-sm font-semibold text-bone-100 flex-1">Scan a receipt</span>
+                {phase !== "working" && (
+                  <button type="button" onClick={() => { setErr(null); reset(); }} className="btn-ghost text-sm min-h-[44px]">
+                    Close
+                  </button>
+                )}
+              </div>
+              {review}
+            </div>
+          </div>
+        )}
+      </>
+    );
+  }
+
   return (
     <section className="panel">
       <div className="px-4 py-3 flex items-center gap-2 flex-wrap">
@@ -211,22 +283,7 @@ export function ScanReceipt({
           photo → items, you review before anything saves
         </span>
         <span className="ml-auto flex gap-2">
-          <input
-            ref={cameraRef}
-            type="file"
-            accept="image/*"
-            capture="environment"
-            className="hidden"
-            onChange={(e) => start(e.target.files)}
-          />
-          <input
-            ref={libraryRef}
-            type="file"
-            accept="image/*"
-            multiple
-            className="hidden"
-            onChange={(e) => start(e.target.files)}
-          />
+          {inputs}
           <button
             type="button"
             onClick={() => cameraRef.current?.click()}
@@ -251,21 +308,7 @@ export function ScanReceipt({
           </button>
         </span>
       </div>
-      {phase === "working" && (
-        <div className="px-4 pb-3 text-2xs text-bone-400">{workingMsg}</div>
-      )}
-      {err && <div className="px-4 pb-3"><div className="form-error">{err}</div></div>}
-
-      {phase === "confirm" && purchaseId !== null && (
-        <ConfirmScan
-          purchaseId={purchaseId}
-          scan={scan}
-          parseFailed={parseFailed}
-          onDone={reset}
-          jobs={jobs}
-          role={role}
-        />
-      )}
+      {review}
     </section>
   );
 }

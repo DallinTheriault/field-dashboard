@@ -4,13 +4,10 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
   LayoutDashboard,
-  Phone,
   Briefcase,
   CalendarDays,
-  MessageSquare,
   Users,
   Settings,
-  CreditCard,
   ShieldCheck,
   Calculator,
   Receipt,
@@ -23,34 +20,26 @@ import packageJson from "../../package.json";
 const APP_VERSION = `v${packageJson.version}`;
 
 export type FeatureFlags = {
-  voice: boolean;
-  sms: boolean;
   calendar: boolean;
-  billing: boolean;
   estimator: boolean;
 };
 
 const ALL_NAV = [
   { href: "/app", label: "Overview", icon: LayoutDashboard, flag: null as keyof FeatureFlags | null, soon: false },
-  { href: "/app/calls", label: "Calls", icon: Phone, flag: "voice" as const, soon: false },
   { href: "/app/jobs", label: "Jobs", icon: Briefcase, flag: null, soon: false },
   { href: "/app/contacts", label: "Contacts", icon: Users, flag: null, soon: false },
-  { href: "/app/messages", label: "Messages", icon: MessageSquare, flag: "sms" as const, soon: false },
   { href: "/app/calendar", label: "Calendar", icon: CalendarDays, flag: "calendar" as const, soon: false },
   { href: "/app/estimator/invoices", label: "Invoices", icon: Receipt, flag: "estimator" as const, soon: false },
   { href: "/app/estimator", label: "Business", icon: Calculator, flag: "estimator" as const, soon: false },
-  { href: "/app/billing", label: "Billing", icon: CreditCard, flag: "billing" as const, soon: false },
   { href: "/app/settings", label: "Settings", icon: Settings, flag: null, soon: false },
 ] as const;
 
 export function Sidebar({
   businessName,
-  planStatus,
   isAdmin = false,
   featureFlags,
 }: {
   businessName: string;
-  planStatus: "active" | "past_due" | "paused" | "cancelled" | "trialing" | "incomplete";
   isAdmin?: boolean;
   featureFlags: FeatureFlags;
 }) {
@@ -77,22 +66,6 @@ export function Sidebar({
         <div className="label-eyebrow">Business</div>
         <div className="mt-0.5 text-sm text-bone-100 font-medium truncate">
           {businessName}
-        </div>
-        <div className="mt-2 flex items-center gap-1.5">
-          <span
-            className={cn(
-              "w-1.5 h-1.5 rounded-full",
-              planStatus === "active" && "bg-status-completed",
-              planStatus === "trialing" && "bg-status-scheduled",
-              planStatus === "past_due" && "bg-status-danger animate-pulse",
-              planStatus === "paused" && "bg-bone-400",
-              planStatus === "cancelled" && "bg-bone-500",
-              planStatus === "incomplete" && "bg-status-lead",
-            )}
-          />
-          <span className="text-2xs uppercase tracking-wide text-bone-300 font-medium">
-            {planStatus.replace("_", " ")}
-          </span>
         </div>
       </div>
 

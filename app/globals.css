@@ -206,6 +206,16 @@
 }
 
 @layer components {
+  /* Home's big action buttons: one thumb-sized tap each. */
+  .home-tile {
+    @apply flex flex-col items-center justify-center gap-2 w-full min-h-[96px] px-2
+      rounded-md bg-ink-1 shadow-inset-line text-sm font-medium text-bone-50
+      hover:bg-ink-2 active:bg-ink-3 transition-colors disabled:opacity-60;
+  }
+  .home-tile svg {
+    @apply text-field-500;
+  }
+
   /* Panel — the base visual container. Inset hairline for depth. */
   .panel {
     @apply bg-ink-1 shadow-inset-line rounded-md;

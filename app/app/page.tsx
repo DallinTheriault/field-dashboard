@@ -1,348 +1,238 @@
 import Link from "next/link";
-import { ArrowRight, Phone, Calendar, TrendingUp, Clock } from "lucide-react";
+import { ArrowRight, Briefcase, Receipt, UserPlus, Wallet } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
-import { MetricCard } from "@/components/ui/metric-card";
 import { StatusChip } from "@/components/ui/status-chip";
-import { getTenantTimezone } from "@/lib/dates";
+import { dayKeyInTz, getTenantTimezone } from "@/lib/dates";
+import { getCurrentUserRole } from "@/lib/permissions/current-role";
+import { canViewSettings } from "@/lib/permissions/roles";
+import { getTenantFeatureFlags } from "@/lib/features/flags";
+import { JOB_LOCATION_SELECT, jobAddress, toJobPick } from "@/lib/jobs/address";
+import { readyToInvoice } from "@/lib/home/ready-to-invoice";
+import { balanceDueCents, daysBetween } from "@/lib/invoices/payments";
+import { AddJobButton } from "./jobs/_components/add-job-button";
+import { ScanReceipt } from "./estimator/purchases/scan-receipt";
 
-function fmtDate(d: string | null, tz: string): string {
-  if (!d) return "—";
-  return new Date(d).toLocaleDateString("en-US", { timeZone: tz,
-    month: "short",
-    day: "numeric",
-    hour: "numeric",
-    minute: "2-digit",
-  });
+const usd = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" });
+const CLOSED = '("completed","cancelled")';
+
+function fmtDay(d: string | null, tz: string): string | null {
+  if (!d) return null;
+  return new Date(d).toLocaleDateString("en-US", { timeZone: tz, weekday: "short", month: "short", day: "numeric" });
 }
 
-function fmtDuration(s: number | null): string {
-  if (!s || s < 1) return "—";
-  const total = Math.round(s);
-  if (total < 60) return `${total}s`;
-  const m = Math.floor(total / 60);
-  const r = total % 60;
-  return `${m}m ${r}s`;
-}
-
-function fmtPhone(p: string | null): string {
-  if (!p) return "—";
-  const d = p.replace(/\D/g, "");
-  if (d.length === 11 && d.startsWith("1")) {
-    return `(${d.slice(1, 4)}) ${d.slice(4, 7)}-${d.slice(7)}`;
-  }
-  if (d.length === 10) {
-    return `(${d.slice(0, 3)}) ${d.slice(3, 6)}-${d.slice(6)}`;
-  }
-  return p;
-}
-
-export default async function OverviewPage() {
-  const tz = await getTenantTimezone();
+/**
+ * Home: three things to start (a job, a receipt, a contact), then what needs
+ * doing: open jobs, jobs ready to invoice, and invoices still owed.
+ */
+export default async function HomePage() {
+  const [tz, session, flags] = await Promise.all([getTenantTimezone(), getCurrentUserRole(), getTenantFeatureFlags()]);
   const supabase = await createClient();
+  const money = flags.estimator && session !== null && canViewSettings(session.role);
 
-  const [jobsRes, callsRes, upcomingRes, leadsRes] = await Promise.all([
-    supabase.from("jobs").select("id, status, created_at").is("archived_at", null),
-    supabase
-      .from("call_summaries")
-      .select(
-        "id, caller_name, caller_phone, intent, outcome, duration_seconds, started_at",
-      )
-      .order("started_at", { ascending: false })
-      .limit(6),
+  const [openRes, pickRes, tasksRes, extrasRes, completedRes, unpaidRes] = await Promise.all([
     supabase
       .from("jobs")
-      .select("id, name, address, service, start_datetime, status")
+      .select(`id, name, status, start_datetime, ${JOB_LOCATION_SELECT}`)
       .is("archived_at", null)
-      .not("start_datetime", "is", null)
-      .gte("start_datetime", new Date().toISOString())
-      .not("status", "in", '("completed","cancelled")')
-      .order("start_datetime", { ascending: true })
-      .limit(5),
-    supabase
-      .from("jobs")
-      .select("id, name, phone, service, created_at")
-      .is("archived_at", null)
-      .eq("status", "lead")
+      .not("status", "in", CLOSED)
+      .order("start_datetime", { ascending: true, nullsFirst: false })
       .order("created_at", { ascending: false })
-      .limit(5),
+      .limit(8),
+    // Jobs a scanned receipt can be put on.
+    supabase
+      .from("jobs")
+      .select(`id, name, job_number, status, ${JOB_LOCATION_SELECT}`)
+      .is("archived_at", null)
+      .neq("status", "cancelled")
+      .order("created_at", { ascending: false })
+      .limit(200),
+    money
+      ? supabase.from("tasks").select("job_id, qty, unit_price").eq("status", "done").eq("billable", true)
+          .not("unit_price", "is", null).is("invoice_id", null)
+      : Promise.resolve({ data: [] }),
+    money
+      ? supabase.from("expenses").select("job_id, amount").eq("assignment", "job_extra")
+          .is("invoiced_on", null).not("job_id", "is", null)
+      : Promise.resolve({ data: [] }),
+    money
+      ? supabase.from("jobs").select("id").eq("status", "completed").is("archived_at", null)
+      : Promise.resolve({ data: [] }),
+    money
+      ? supabase.from("invoices")
+          .select("id, invoice_number, customer_name, customer_company, total_cents, sent_at, created_at, jobs(address), payments(amount_cents)")
+          .in("status", ["sent", "overdue"])
+          .not("invoice_number", "is", null)
+      : Promise.resolve({ data: [] }),
   ]);
 
-  const jobs = jobsRes.data ?? [];
-  const calls = callsRes.data ?? [];
-  const upcoming = upcomingRes.data ?? [];
-  const leads = leadsRes.data ?? [];
+  const open = (openRes.data ?? []) as unknown as Array<Parameters<typeof jobAddress>[0] & {
+    id: number; name: string | null; status: string; start_datetime: string | null;
+  }>;
+  const pickJobs = ((pickRes.data ?? []) as unknown as Parameters<typeof toJobPick>[0][]).map(toJobPick);
 
-  const now = new Date();
-  const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
-  const jobsThisWeek = jobs.filter(
-    (j) => j.created_at && new Date(j.created_at) > weekAgo,
-  ).length;
-  const callsThisWeek = calls.filter(
-    (c) => c.started_at && new Date(c.started_at) > weekAgo,
-  ).length;
+  // Ready to invoice.
+  const tasks = (tasksRes.data ?? []) as Array<{ job_id: number; qty: number; unit_price: number }>;
+  const extras = (extrasRes.data ?? []) as Array<{ job_id: number; amount: number }>;
+  const completedIds = ((completedRes.data ?? []) as Array<{ id: number }>).map((j) => j.id);
+  const candidateIds = [...new Set([...tasks.map((t) => t.job_id), ...extras.map((e) => e.job_id), ...completedIds])];
+  const [{ data: candInvoices }, { data: candJobs }] = candidateIds.length
+    ? await Promise.all([
+        supabase.from("invoices").select("id, job_id, status, stripe_invoice_id, invoice_number").in("job_id", candidateIds),
+        supabase.from("jobs").select(`id, name, status, updated_at, ${JOB_LOCATION_SELECT}`).in("id", candidateIds),
+      ])
+    : [{ data: [] }, { data: [] }];
+  const jobById = new Map(((candJobs ?? []) as unknown as Array<Parameters<typeof jobAddress>[0] & { id: number; name: string | null; updated_at: string }>).map((j) => [j.id, j]));
+  const ready = readyToInvoice({
+    tasks,
+    extras,
+    completedJobIds: completedIds,
+    invoices: (candInvoices ?? []) as Parameters<typeof readyToInvoice>[0]["invoices"],
+  })
+    .filter((r) => jobById.has(r.jobId))
+    .sort((a, b) => (jobById.get(a.jobId)!.updated_at ?? "").localeCompare(jobById.get(b.jobId)!.updated_at ?? ""));
 
-  const byStatus = {
-    lead: jobs.filter((j) => j.status === "lead").length,
-    scheduled: jobs.filter((j) => j.status === "scheduled").length,
-    completed: jobs.filter((j) => j.status === "completed").length,
-  };
-
-  // A lead "converted" once the customer committed — accepted or anything
-  // past it (won = commitment, independent of booking). Cancelled and
-  // still-open leads/estimates don't count as won.
-  const WON_STATUSES = new Set([
-    "accepted",
-    "scheduled",
-    "in_progress",
-    "completed",
-    "callback",
-    "callback_complete",
-  ]);
-  const wonJobs = jobs.filter((j) => WON_STATUSES.has(j.status ?? "")).length;
-  // Denominator excludes cancelled jobs — a dead lead shouldn't drag the rate.
-  const convertibleJobs = jobs.filter((j) => j.status !== "cancelled").length;
-  const conversionRate =
-    convertibleJobs > 0
-      ? Math.round((wonJobs / convertibleJobs) * 100)
-      : 0;
+  // Owed, oldest first.
+  const today = dayKeyInTz(new Date(), tz);
+  const unpaid = ((unpaidRes.data ?? []) as unknown as Array<{
+    id: number; invoice_number: string; customer_name: string | null; customer_company: string | null;
+    total_cents: number; sent_at: string | null; created_at: string;
+    jobs: { address: string | null } | null; payments: Array<{ amount_cents: number }>;
+  }>)
+    .map((i) => ({ ...i, balance: balanceDueCents(i.total_cents, i.payments), sentDay: dayKeyInTz(i.sent_at ?? i.created_at, tz) }))
+    .sort((a, b) => a.sentDay.localeCompare(b.sentDay));
+  const owed = unpaid.reduce((s, i) => s + i.balance, 0);
 
   return (
-    <div className="space-y-8">
-      <div className="flex items-end justify-between gap-4">
-        <div>
-          <div className="label-eyebrow mb-1">Overview</div>
-          <h1 className="text-2xl font-semibold text-bone-50 tracking-tight">
-            Welcome back
-          </h1>
-          <p className="text-sm text-bone-300 mt-1">
-            Here&apos;s what happened in the last 7 days.
-          </p>
-        </div>
-        <div className="hidden md:flex items-center gap-2 text-2xs text-bone-400 font-mono">
-          <span className="w-1.5 h-1.5 rounded-full bg-status-completed animate-pulse-ring" />
-          Live
-        </div>
-      </div>
-
-      {/* Metrics row — all clickable */}
-      <section className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        <Link href="/app/calls">
-          <MetricCard
-            label="Calls this week"
-            value={callsThisWeek}
-            sub={calls.length > 0 ? `${calls.length} total tracked` : "No calls yet"}
-            accent="field"
-            className="cursor-pointer"
-          />
-        </Link>
-        <Link href="/app/jobs?status=lead">
-          <MetricCard
-            label="New leads"
-            value={byStatus.lead}
-            sub={`${jobsThisWeek} created this week`}
-            accent="lead"
-            className="cursor-pointer"
-          />
-        </Link>
-        <Link href="/app/calendar">
-          <MetricCard
-            label="Upcoming"
-            value={upcoming.length}
-            sub="upcoming jobs"
-            accent="scheduled"
-            className="cursor-pointer"
-          />
-        </Link>
-        <Link href="/app/jobs">
-          <MetricCard
-            label="Conversion"
-            value={`${conversionRate}%`}
-            sub="leads booked or won"
-            accent="completed"
-            className="cursor-pointer"
-          />
+    <div className="max-w-3xl mx-auto space-y-6">
+      <section className="grid grid-cols-3 gap-3" aria-label="Start something">
+        <AddJobButton variant="tile" />
+        {flags.estimator && session?.clientId && flags.receiptAi ? (
+          <ScanReceipt variant="tile" clientId={session.clientId} jobs={pickJobs} role={session.role} />
+        ) : (
+          <Link href="/app/estimator/purchases" className="home-tile">
+            <Receipt size={26} />
+            <span>Add receipt</span>
+          </Link>
+        )}
+        <Link href="/app/contacts/new" className="home-tile">
+          <UserPlus size={26} />
+          <span>New contact</span>
         </Link>
       </section>
 
-      <div className="grid grid-cols-1 lg:grid-cols-5 gap-5">
-        {/* Recent calls */}
-        <section className="lg:col-span-3 panel">
-          <div className="flex items-center justify-between px-4 h-11 border-b border-line">
-            <div className="flex items-center gap-2">
-              <Phone size={13} strokeWidth={2} className="text-field-500" />
-              <h2 className="text-sm font-semibold text-bone-100">Recent calls</h2>
-            </div>
-            <Link
-              href="/app/calls"
-              className="text-2xs text-bone-400 hover:text-bone-50 flex items-center gap-1"
-            >
-              All calls <ArrowRight size={11} />
-            </Link>
-          </div>
+      <HomeList title="Open jobs" icon={Briefcase} href="/app/jobs" linkLabel="All jobs" testId="open-jobs"
+        empty="No open jobs. Tap New job to add one.">
+        {open.map((j) => (
+          <Row key={j.id} href={`/app/jobs/${j.id}`} testValue={j.name ?? ""}
+            title={j.name || "—"} sub={jobAddress(j)} right={<StatusChip status={j.status} />}
+            note={fmtDay(j.start_datetime, tz)} />
+        ))}
+      </HomeList>
 
-          {calls.length === 0 ? (
-            <EmptyState
-              icon={Phone}
-              title="No calls yet"
-              body="Call activity will show here as your assistant handles inbound calls."
-            />
-          ) : (
-            <ul className="divide-y divide-line-subtle">
-              {calls.map((c) => (
-                <li key={c.id}>
-                  <Link
-                    href={`/app/calls/${c.id}`}
-                    className="px-4 py-3 flex items-center gap-3 hover:bg-ink-2 transition-colors"
-                  >
-                    <div className="w-8 h-8 rounded-full bg-ink-3 flex items-center justify-center shrink-0 border border-line-strong">
-                      <Phone size={13} className="text-bone-300" />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-baseline gap-2">
-                        <span className="text-sm font-medium text-bone-100 truncate">
-                          {c.caller_name || "Unknown caller"}
-                        </span>
-                        <span className="text-2xs font-mono text-bone-400 truncate">
-                          {fmtPhone(c.caller_phone)}
-                        </span>
-                      </div>
-                      <div className="text-2xs text-bone-400 mt-0.5 truncate">
-                        {c.intent ? c.intent.replace("_", " ") : "—"}
-                        {c.outcome && ` • ${c.outcome.replace(/_/g, " ")}`}
-                      </div>
-                    </div>
-                    <div className="text-right shrink-0">
-                      <div className="num text-xs text-bone-100">
-                        {fmtDuration(c.duration_seconds)}
-                      </div>
-                      <div className="text-2xs text-bone-400 mt-0.5">
-                        {fmtDate(c.started_at, tz)}
-                      </div>
-                    </div>
-                  </Link>
-                </li>
-              ))}
-            </ul>
-          )}
-        </section>
+      {money && (
+        <HomeList title="Ready to invoice" icon={Receipt} testId="ready-to-invoice"
+          empty="Nothing waiting: every finished job has gone out.">
+          {ready.map((r) => {
+            const j = jobById.get(r.jobId)!;
+            const what = [
+              r.lineCount > 0 && `${r.lineCount} line${r.lineCount === 1 ? "" : "s"} ready`,
+              r.draftNumber ? `draft ${r.draftNumber} not sent` : r.nothingSent && "completed, nothing sent",
+            ].filter(Boolean).join(" · ");
+            return (
+              <Row key={r.jobId} testValue={j.name ?? ""}
+                href={r.draftId ? `/app/estimator/invoices/${r.draftId}` : `/app/jobs/${r.jobId}/invoice`}
+                title={j.name || "—"} sub={jobAddress(j)} note={what}
+                right={r.readyCents > 0 ? <span className="num text-sm text-bone-50">{usd.format(r.readyCents / 100)}</span> : null} />
+            );
+          })}
+        </HomeList>
+      )}
 
-        <div className="lg:col-span-2 space-y-5">
-          {/* Upcoming */}
-          <section className="panel">
-            <div className="flex items-center justify-between px-4 h-11 border-b border-line">
-              <div className="flex items-center gap-2">
-                <Calendar size={13} strokeWidth={2} className="text-status-scheduled" />
-                <h2 className="text-sm font-semibold text-bone-100">Upcoming</h2>
-              </div>
-              <Link
-                href="/app/calendar"
-                className="text-2xs text-bone-400 hover:text-bone-50 flex items-center gap-1"
-              >
-                Calendar <ArrowRight size={11} />
-              </Link>
-            </div>
-            {upcoming.length === 0 ? (
-              <EmptyState
-                icon={Calendar}
-                title="Nothing upcoming"
-                body="Estimates with proposed times and confirmed bookings will appear here."
-              />
-            ) : (
-              <ul className="divide-y divide-line-subtle">
-                {upcoming.map((u) => (
-                  <li key={u.id}>
-                    <Link
-                      href={`/app/jobs/${u.id}`}
-                      prefetch={false}
-                      className="block px-4 py-3 hover:bg-ink-2 transition-colors"
-                    >
-                      <div className="flex items-baseline justify-between gap-2">
-                        <span className="text-sm font-medium text-bone-100 truncate">
-                          {u.name || "—"}
-                        </span>
-                        <StatusChip status={u.status} />
-                      </div>
-                      <div className="text-2xs text-bone-400 mt-0.5 truncate">
-                        {u.service || "—"} · {u.address || "—"}
-                      </div>
-                      <div className="num text-2xs text-field-500 mt-1">
-                        {fmtDate(u.start_datetime, tz)}
-                      </div>
-                    </Link>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </section>
-
-          {/* Fresh leads */}
-          <section className="panel">
-            <div className="flex items-center justify-between px-4 h-11 border-b border-line">
-              <div className="flex items-center gap-2">
-                <TrendingUp size={13} strokeWidth={2} className="text-status-lead" />
-                <h2 className="text-sm font-semibold text-bone-100">Fresh leads</h2>
-              </div>
-              <Link
-                href="/app/jobs?status=lead"
-                className="text-2xs text-bone-400 hover:text-bone-50 flex items-center gap-1"
-              >
-                All leads <ArrowRight size={11} />
-              </Link>
-            </div>
-            {leads.length === 0 ? (
-              <EmptyState
-                icon={Clock}
-                title="No new leads"
-                body="New leads from calls and web forms will show up here."
-              />
-            ) : (
-              <ul className="divide-y divide-line-subtle">
-                {leads.map((l) => (
-                  <li key={l.id}>
-                    <Link
-                      href={`/app/jobs/${l.id}`}
-                      prefetch={false}
-                      className="block px-4 py-3 hover:bg-ink-2 transition-colors"
-                    >
-                      <div className="flex items-baseline justify-between gap-2">
-                        <span className="text-sm font-medium text-bone-100 truncate">
-                          {l.name || "—"}
-                        </span>
-                        <span className="num text-2xs text-bone-400 shrink-0">
-                          {fmtPhone(l.phone)}
-                        </span>
-                      </div>
-                      <div className="text-2xs text-bone-400 mt-0.5 truncate">
-                        {l.service || "—"}
-                      </div>
-                    </Link>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </section>
-        </div>
-      </div>
+      {money && (
+        <HomeList title="Unpaid invoices" icon={Wallet} href="/app/estimator/invoices" linkLabel="All unpaid" testId="unpaid"
+          headerRight={owed > 0 ? <span className="text-sm text-bone-300">Owed <span className="num text-bone-50">{usd.format(owed / 100)}</span></span> : null}
+          empty="Nothing owed right now.">
+          {unpaid.slice(0, 6).map((i) => {
+            const days = daysBetween(i.sentDay, today);
+            return (
+              <Row key={i.id} href={`/app/estimator/invoices/${i.id}`} testValue={i.invoice_number}
+                title={[i.customer_name, i.customer_company && `(${i.customer_company})`].filter(Boolean).join(" ") || "—"}
+                sub={i.jobs?.address ?? null}
+                note={`${i.invoice_number} · ${days === 0 ? "sent today" : `${days} day${days === 1 ? "" : "s"}`}`}
+                right={<span className="num text-sm text-bone-50">{usd.format(i.balance / 100)}</span>} />
+            );
+          })}
+        </HomeList>
+      )}
     </div>
   );
 }
 
-function EmptyState({
-  icon: Icon,
+function HomeList({
   title,
-  body,
+  icon: Icon,
+  href,
+  linkLabel,
+  headerRight,
+  empty,
+  testId,
+  children,
 }: {
-  icon: typeof Phone;
   title: string;
-  body: string;
+  icon: typeof Briefcase;
+  href?: string;
+  linkLabel?: string;
+  headerRight?: React.ReactNode;
+  empty: string;
+  testId: string;
+  children: React.ReactNode[];
 }) {
   return (
-    <div className="px-6 py-10 text-center">
-      <div className="w-10 h-10 mx-auto rounded-full bg-ink-2 border border-line-strong flex items-center justify-center mb-3">
-        <Icon size={16} className="text-bone-400" />
+    <section className="panel" data-testid={testId}>
+      <div className="flex items-center gap-2 px-4 min-h-[44px] border-b border-line">
+        <Icon size={14} className="text-field-500" />
+        <h2 className="text-sm font-semibold text-bone-100 flex-1">{title}</h2>
+        {headerRight}
+        {href && (
+          <Link href={href} className="text-2xs text-bone-400 hover:text-bone-50 inline-flex items-center gap-1 min-h-[44px]">
+            {linkLabel} <ArrowRight size={11} />
+          </Link>
+        )}
       </div>
-      <div className="text-sm font-medium text-bone-100">{title}</div>
-      <p className="text-xs text-bone-400 mt-1 max-w-[32ch] mx-auto">{body}</p>
-    </div>
+      {children.length === 0 ? (
+        <p className="px-4 py-6 text-sm text-bone-400 text-center">{empty}</p>
+      ) : (
+        <ul className="divide-y divide-line-subtle">{children}</ul>
+      )}
+    </section>
+  );
+}
+
+function Row({
+  href,
+  title,
+  sub,
+  note,
+  right,
+  testValue,
+}: {
+  href: string;
+  title: string;
+  sub: string | null;
+  note?: string | null;
+  right?: React.ReactNode;
+  testValue: string;
+}) {
+  return (
+    <li data-row={testValue}>
+      <Link href={href} prefetch={false} className="flex items-start gap-3 px-4 py-3 min-h-[44px] hover:bg-ink-2 transition-colors">
+        <div className="flex-1 min-w-0">
+          <div className="text-sm font-medium text-bone-100 break-words">{title}</div>
+          {sub && <div className="text-2xs text-bone-400 break-words">{sub}</div>}
+          {note && <div className="text-2xs text-bone-500 mt-0.5">{note}</div>}
+        </div>
+        {right && <div className="shrink-0 text-right">{right}</div>}
+      </Link>
+    </li>
   );
 }
