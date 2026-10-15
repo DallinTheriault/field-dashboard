@@ -10,6 +10,8 @@ const users = [
   { email: "owner@cascade.test" },
   { email: "member@cascade.test", clientId: 8, role: "member" },
   { email: "owner@other.test" },
+  // Platform admin (ADMIN_EMAILS in the stack's .env.local), for /admin checks.
+  { email: "admin@other.test", clientId: 9, role: "manager" },
 ];
 
 const headers = { apikey: key, authorization: `Bearer ${key}`, "content-type": "application/json" };
