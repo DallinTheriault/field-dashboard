@@ -329,7 +329,7 @@ r = await other.get(`invoices?select=id,client_id`);
 check("another tenant sees none of Cascade's invoices", r.status === 200 && r.body.every((x) => x.client_id === 9));
 const pdf = await page.request.get(`${APP}/api/estimator/invoices/${inv1}/pdf`);
 check("a voided invoice's PDF still downloads", pdf.status() === 200 && pdf.headers()["content-type"] === "application/pdf");
-await page.goto(`${APP}/app/estimator/invoices`);
+await page.goto(`${APP}/app/estimator/invoices?tab=voided`);
 await page.waitForLoadState("networkidle");
 check("the invoice list shows the void as Void, not Draft", (await page.getByText("Void", { exact: true }).count()) >= 1);
 
