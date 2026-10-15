@@ -46,16 +46,6 @@ export function canEditBranding(role: Role): boolean {
   return role === "owner" || role === "manager";
 }
 
-/** Can this user manage SMS reply templates? */
-export function canManageSmsTemplates(role: Role): boolean {
-  return role === "owner" || role === "manager";
-}
-
-/** Can this user view billing? */
-export function canViewBilling(role: Role): boolean {
-  return role === "owner";
-}
-
 /** Can this user view the Team page? Members can VIEW (read-only). */
 export function canViewTeam(_role: Role): boolean {
   return true;
@@ -114,28 +104,6 @@ export function canRemoveRole(actor: Role, targetRole: Role): boolean {
   return false;
 }
 
-/* ---------- SMS / messaging ---------- */
-
-/** Can view SMS thread list and individual threads. All roles read. */
-export function canViewSms(_role: Role): boolean {
-  return true;
-}
-
-/**
- * Can compose and send outbound SMS replies (free-text or template).
- * Members are read-only — they can see threads (e.g. to look up a garage
- * code a customer texted earlier) but cannot reply on the business's
- * behalf. Per v0.5.11 product decision.
- */
-export function canSendSms(role: Role): boolean {
-  return role === "owner" || role === "manager";
-}
-
-/** Can schedule outbound SMS for later send. Same as canSendSms. */
-export function canScheduleSms(role: Role): boolean {
-  return canSendSms(role);
-}
-
 /* ---------- Jobs / contacts ---------- */
 
 /** All roles can view jobs. */
@@ -157,13 +125,4 @@ export function canViewContacts(_role: Role): boolean {
 /** Members can edit contacts (correcting phone, name, etc. from the field). */
 export function canEditContacts(_role: Role): boolean {
   return true;
-}
-
-/* ---------- Compliance ---------- */
-
-/** SMS Compliance audit log is operator-only — admins see it via /admin.
- *  Owners can also see their tenant's compliance state. Managers/members
- *  don't have a need-to-know. */
-export function canViewCompliance(role: Role): boolean {
-  return role === "owner";
 }

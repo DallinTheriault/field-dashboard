@@ -46,14 +46,13 @@ function LoginForm() {
         <div className="relative flex flex-col justify-between p-10 w-full">
           <Logo />
           <div>
-            <div className="label-eyebrow text-field-500 mb-3">AI Voice Receptionist</div>
+            <div className="label-eyebrow text-field-500 mb-3">Jobs · Invoices · Receipts</div>
             <h2 className="text-3xl font-semibold text-bone-50 tracking-tight leading-[1.15] max-w-sm">
-              Every call answered. Every lead captured. Every booking on your
-              calendar.
+              Price the job, do the work, get paid.
             </h2>
             <p className="text-sm text-bone-300 mt-4 max-w-sm">
-              Field answers your business phone like a trained receptionist — so you
-              never lose a customer to voicemail.
+              Field keeps your jobs, receipts and invoices on your phone, so the
+              books are done when the job is.
             </p>
           </div>
           <div className="text-2xs text-bone-400 font-mono">

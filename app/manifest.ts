@@ -11,7 +11,7 @@ export default function manifest(): MetadataRoute.Manifest {
   return {
     name: "Field",
     short_name: "Field",
-    description: "AI Voice Receptionist",
+    description: "Jobs, invoices and receipts",
     start_url: "/app",
     display: "standalone",
     background_color: "#1A1E1D",

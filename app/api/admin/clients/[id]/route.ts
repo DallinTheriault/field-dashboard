@@ -9,9 +9,25 @@ import { createClient as createServerClient } from "@/lib/supabase/server";
  * here because this route uses the service-role client (bypasses RLS) and
  * we don't want to rely solely on the admin layout for protection.
  *
- * Pass `regenerate_prompt: true` in the body to also call the
- * `save_rendered_system_prompt(client_id)` RPC after the update lands.
+ * Only the platform-managed fields below are written; anything else in the
+ * body is ignored.
  */
+const ALLOWED_FIELDS = new Set([
+  "business_name",
+  "business_short_name",
+  "owner_first_name",
+  "business_phone",
+  "business_website",
+  "owner_email",
+  "owner_phone",
+  "timezone_label",
+  "calendar_id",
+  "is_active",
+  "is_test",
+  "feature_calendar_enabled",
+  "feature_estimator_enabled",
+  "feature_receipt_ai_enabled",
+]);
 export async function PATCH(
   request: Request,
   context: { params: Promise<{ id: string }> },
@@ -57,17 +73,12 @@ export async function PATCH(
     );
   }
 
-  const regenerate = Boolean(body.regenerate_prompt);
-  // Strip control flag before passing to the DB.
-  delete body.regenerate_prompt;
-  // Never let the client overwrite the id.
-  delete body.id;
-
   const admin = createAdminClient();
 
   // Coerce booleans/strings — supabase-js handles types, but trim strings.
   const update: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(body)) {
+    if (!ALLOWED_FIELDS.has(key)) continue;
     if (typeof value === "string") {
       update[key] = value.trim() === "" ? null : value.trim();
     } else {
@@ -86,36 +97,6 @@ export async function PATCH(
       { success: false, error: `Update failed: ${updateError.message}` },
       { status: 500 },
     );
-  }
-
-  if (regenerate) {
-    const { error: rpcError } = await admin.rpc("save_rendered_system_prompt", {
-      p_client_id: clientId,
-    });
-    // The RPC may use a different param name in production. Try a fallback.
-    if (rpcError && /could not find function|argument/i.test(rpcError.message)) {
-      const { error: rpcError2 } = await admin.rpc(
-        "save_rendered_system_prompt",
-        { client_id: clientId },
-      );
-      if (rpcError2) {
-        return NextResponse.json(
-          {
-            success: false,
-            error: `Save succeeded, but prompt regeneration failed: ${rpcError2.message}`,
-          },
-          { status: 500 },
-        );
-      }
-    } else if (rpcError) {
-      return NextResponse.json(
-        {
-          success: false,
-          error: `Save succeeded, but prompt regeneration failed: ${rpcError.message}`,
-        },
-        { status: 500 },
-      );
-    }
   }
 
   return NextResponse.json({ success: true });

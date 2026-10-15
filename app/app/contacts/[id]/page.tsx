@@ -5,7 +5,6 @@ import {
   Mail,
   Phone,
   MapPin,
-  MessageSquare,
   Briefcase,
   Pencil,
   Activity,
@@ -60,8 +59,6 @@ function fmtDateShort(d: string | null, tz: string): string {
 const TABS = [
   { key: "activity", label: "Activity", icon: Activity },
   { key: "jobs", label: "Jobs", icon: Briefcase },
-  { key: "calls", label: "Calls", icon: Phone },
-  { key: "messages", label: "Voicemails", icon: MessageSquare },
 ] as const;
 
 type TabKey = (typeof TABS)[number]["key"];
@@ -89,8 +86,6 @@ export default async function ContactDetailPage({
 
   const [
     { data: jobs },
-    { data: calls },
-    { data: messages },
     { data: propertiesData },
     teamMembers,
     events,
@@ -102,16 +97,6 @@ export default async function ContactDetailPage({
       .select("id, name, address, service, status, quoted_price, start_datetime, created_at")
       .eq("contact_id", contact.id)
       .is("archived_at", null)
-      .order("created_at", { ascending: false }),
-    supabase
-      .from("call_summaries")
-      .select("id, caller_name, intent, outcome, duration_seconds, started_at")
-      .eq("contact_id", contact.id)
-      .order("started_at", { ascending: false }),
-    supabase
-      .from("messages")
-      .select("id, message_body, read_at, responded_at, created_at")
-      .eq("contact_id", contact.id)
       .order("created_at", { ascending: false }),
     supabase
       .from("properties")
@@ -195,7 +180,6 @@ export default async function ContactDetailPage({
           </a>
           <TextAndCopyButtons
             phone={callbackPhone}
-            contactId={contact.id}
             displayPhone={fmtPhone(callbackPhone)}
           />
           {contact.email && (
@@ -244,8 +228,6 @@ export default async function ContactDetailPage({
                 const counts: Record<TabKey, number> = {
                   activity: events.length,
                   jobs: jobs?.length ?? 0,
-                  calls: calls?.length ?? 0,
-                  messages: messages?.length ?? 0,
                 };
                 return (
                   <Link
@@ -277,12 +259,6 @@ export default async function ContactDetailPage({
             )}
             {activeTab === "jobs" && (
               <JobsTab jobs={jobs ?? []} tz={tz} />
-            )}
-            {activeTab === "calls" && (
-              <CallsTab calls={calls ?? []} tz={tz} />
-            )}
-            {activeTab === "messages" && (
-              <MessagesTab messages={messages ?? []} tz={tz} />
             )}
           </div>
         </div>
@@ -421,139 +397,6 @@ function JobsTab({
               <span>{fmtDateShort(j.start_datetime, tz)}</span>
               <span>{fmtDollar(j.quoted_price)}</span>
             </div>
-          </Link>
-        </li>
-      ))}
-    </ul>
-  );
-}
-
-function CallsTab({
-  calls,
-  tz,
-}: {
-  calls: Array<{
-    id: string;
-    caller_name: string | null;
-    intent: string | null;
-    outcome: string | null;
-    duration_seconds: number | null;
-    started_at: string;
-  }>;
-  tz: string;
-}) {
-  function fmtDuration(s: number | null): string {
-    if (!s || s < 1) return "—";
-    const total = Math.round(s);
-    if (total < 60) return `${total}s`;
-    const m = Math.floor(total / 60);
-    const r = total % 60;
-    return `${m}m ${r}s`;
-  }
-
-  if (calls.length === 0) {
-    return (
-      <div className="px-6 py-12 text-center">
-        <Phone
-          size={18}
-          className="mx-auto text-bone-400 mb-2"
-          strokeWidth={1.6}
-        />
-        <p className="text-sm text-bone-100 font-medium">No calls</p>
-        <p className="text-xs text-bone-400 mt-1">
-          Calls linked to this contact will appear here.
-        </p>
-      </div>
-    );
-  }
-
-  return (
-    <ul className="divide-y divide-line-subtle">
-      {calls.map((c) => (
-        <li key={c.id}>
-          <Link
-            href={`/app/calls/${c.id}`}
-            className="block px-4 py-3 hover:bg-ink-2 transition-colors"
-          >
-            <div className="flex items-baseline justify-between gap-3">
-              <div className="text-sm text-bone-100 capitalize truncate">
-                {c.intent?.replace(/_/g, " ") || "Call"}
-                {c.outcome && (
-                  <span className="text-bone-400">
-                    {" · "}
-                    {c.outcome.replace(/_/g, " ")}
-                  </span>
-                )}
-              </div>
-              <span className="num text-2xs text-bone-400 shrink-0">
-                {fmtDuration(c.duration_seconds)}
-              </span>
-            </div>
-            <div className="text-2xs text-bone-400 mt-0.5 num">
-              {fmtDateShort(c.started_at, tz)}
-            </div>
-          </Link>
-        </li>
-      ))}
-    </ul>
-  );
-}
-
-function MessagesTab({
-  messages,
-  tz,
-}: {
-  messages: Array<{
-    id: number;
-    message_body: string | null;
-    read_at: string | null;
-    responded_at: string | null;
-    created_at: string;
-  }>;
-  tz: string;
-}) {
-  if (messages.length === 0) {
-    return (
-      <div className="px-6 py-12 text-center">
-        <MessageSquare
-          size={18}
-          className="mx-auto text-bone-400 mb-2"
-          strokeWidth={1.6}
-        />
-        <p className="text-sm text-bone-100 font-medium">No voicemails</p>
-        <p className="text-xs text-bone-400 mt-1">
-          Voicemails from this contact will appear here.
-        </p>
-      </div>
-    );
-  }
-
-  return (
-    <ul className="divide-y divide-line-subtle">
-      {messages.map((m) => (
-        <li key={m.id}>
-          <Link
-            href={`/app/messages/${m.id}`}
-            className="block px-4 py-3 hover:bg-ink-2 transition-colors"
-          >
-            <div className="flex items-baseline justify-between gap-3">
-              <div className="flex items-center gap-2 min-w-0">
-                {!m.read_at && (
-                  <span className="w-1.5 h-1.5 rounded-full bg-field-500 shrink-0" />
-                )}
-                <p className="text-xs text-bone-100 line-clamp-2 flex-1">
-                  {m.message_body || "—"}
-                </p>
-              </div>
-              <span className="num text-2xs text-bone-400 shrink-0">
-                {fmtDateShort(m.created_at, tz)}
-              </span>
-            </div>
-            {m.responded_at && (
-              <div className="text-2xs text-status-completed mt-1">
-                ● Responded
-              </div>
-            )}
           </Link>
         </li>
       ))}

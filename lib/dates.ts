@@ -7,7 +7,7 @@ import { getTenantContext } from "@/lib/supabase/request-cache";
  * naive toLocaleString()/toDateString() calls silently produced UTC dates
  * and times (a 7:00 PM Mountain job displayed as July 8, 1:00 AM). Every
  * server-rendered timestamp must format through the tenant's IANA timezone
- * (Clients.timezone — the same value the AI receptionist books against).
+ * (Clients.timezone).
  *
  * Client components ("use client") are unaffected: the browser's timezone
  * is the right one there.

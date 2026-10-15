@@ -16,27 +16,16 @@ type Notification = {
   created_at: string;
 };
 
+// What Field itself still notifies about. The receptionist's call and text
+// notifications stay in the table but aren't shown (their pages are gone).
 const KIND_COLOR: Record<string, string> = {
-  estimate_saved: "text-status-estimated",
-  booking_saved: "text-status-scheduled",
-  booking_rescheduled: "text-status-progress",
-  booking_cancelled: "text-status-cancelled",
-  message_left: "text-field-500",
-  callback_received: "text-status-danger",
   invoice_paid: "text-status-completed",
-  sms_received: "text-field-500",
 };
 
 const KIND_LABEL: Record<string, string> = {
-  estimate_saved: "Estimate",
-  booking_saved: "Booking",
-  booking_rescheduled: "Reschedule",
-  booking_cancelled: "Cancel",
-  message_left: "Voicemail",
-  callback_received: "Callback",
   invoice_paid: "Invoice",
-  sms_received: "Text",
 };
+const SHOWN_KINDS = Object.keys(KIND_LABEL);
 
 function timeAgo(iso: string): string {
   const seconds = Math.floor((Date.now() - new Date(iso).getTime()) / 1000);
@@ -61,6 +50,7 @@ export function NotificationDropdown() {
       const { data } = await supabase
         .from("notifications")
         .select("id, kind, title, body, link_url, read_at, created_at")
+        .in("kind", SHOWN_KINDS)
         .order("created_at", { ascending: false })
         .limit(15);
       setItems(data ?? []);

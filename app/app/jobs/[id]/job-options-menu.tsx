@@ -15,7 +15,6 @@ import {
   Receipt,
   type LucideIcon,
 } from "lucide-react";
-import { openSmsThread } from "@/lib/sms/open-thread-action";
 
 type Entry = {
   key: string;
@@ -42,7 +41,6 @@ export function JobOptionsMenu({
   displayPhone,
   email,
   address,
-  contactId,
   showNewEstimate,
   showCreateInvoice,
 }: {
@@ -51,7 +49,6 @@ export function JobOptionsMenu({
   displayPhone: string;
   email: string | null;
   address: string | null;
-  contactId: number | null;
   showNewEstimate: boolean;
   showCreateInvoice: boolean;
 }) {
@@ -96,12 +93,7 @@ export function JobOptionsMenu({
   if (phone) {
     entries.push(
       { key: "call", label: "Call", icon: Phone, href: `tel:${phone}` },
-      {
-        key: "text",
-        label: "Text",
-        icon: MessageSquare,
-        onSelect: () => openSmsThread(phone, contactId),
-      },
+      { key: "text", label: "Text", icon: MessageSquare, href: `sms:${phone}` },
       {
         key: "copy-phone",
         label: "Copy phone",

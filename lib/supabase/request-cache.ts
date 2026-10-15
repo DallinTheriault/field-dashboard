@@ -40,10 +40,7 @@ export type TenantContext = {
   brand_logo_url: string | null;
   brand_primary_color: string | null;
   timezone: string | null;
-  feature_sms_enabled: boolean | null;
-  feature_voice_enabled: boolean | null;
   feature_calendar_enabled: boolean | null;
-  feature_billing_enabled: boolean | null;
   feature_estimator_enabled: boolean | null;
   feature_receipt_ai_enabled: boolean | null;
 };
@@ -59,7 +56,7 @@ export const getTenantContext = cache(async (): Promise<TenantContext | null> =>
   const { data } = await supabase
     .from("Clients")
     .select(
-      "id, business_name, business_short_name, is_active, brand_logo_url, brand_primary_color, timezone, feature_sms_enabled, feature_voice_enabled, feature_calendar_enabled, feature_billing_enabled, feature_estimator_enabled, feature_receipt_ai_enabled",
+      "id, business_name, business_short_name, is_active, brand_logo_url, brand_primary_color, timezone, feature_calendar_enabled, feature_estimator_enabled, feature_receipt_ai_enabled",
     )
     .order("id")
     .limit(1);

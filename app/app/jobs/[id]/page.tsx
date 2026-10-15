@@ -354,7 +354,6 @@ export default async function JobDetailPage({
             displayPhone={fmtPhone(job.phone)}
             email={job.email ?? null}
             address={propertyAddress ?? job.address ?? null}
-            contactId={job.contact_id ?? null}
             showNewEstimate={estimatorOn}
             showCreateInvoice={estimatorOn && canSeeInternals}
           />

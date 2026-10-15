@@ -76,12 +76,6 @@ export default async function AdminLayout({
             >
               Home
             </Link>
-            <Link
-              href="/admin/payment-links"
-              className="text-xs text-bone-300 hover:text-bone-50 px-2 py-1 rounded-xs"
-            >
-              Payment links
-            </Link>
           </nav>
           <div className="ml-auto flex items-center gap-3">
             <span className="text-2xs text-bone-400 hidden sm:inline">{user.email}</span>

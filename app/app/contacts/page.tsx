@@ -131,7 +131,7 @@ export default async function ContactsPage({
           <p className="text-xs text-bone-400">
             {q
               ? "Try clearing your filter."
-              : "Contacts populate automatically as your assistant captures calls."}
+              : "Contacts you add, or create with a new job, will appear here."}
           </p>
         </div>
       ) : (

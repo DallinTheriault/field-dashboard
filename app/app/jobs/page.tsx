@@ -154,8 +154,7 @@ export default async function JobsPage({
         <div className="panel px-6 py-14 text-center">
           <p className="text-sm text-bone-100 font-medium mb-1">No jobs yet</p>
           <p className="text-xs text-bone-400 mb-4">
-            As your assistant captures calls, jobs will appear here. Or add one
-            manually now.
+            Add your first job to start pricing work and invoicing it.
           </p>
           <div className="inline-flex">
             <AddJobButton />

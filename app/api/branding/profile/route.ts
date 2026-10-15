@@ -14,12 +14,6 @@ const ALLOWED_FIELDS = new Set([
   "owner_email",
   "owner_phone",
   "business_website",
-  "business_hours",
-  "service_area",
-  "pricing_block",
-  "scope_values",
-  "service_constraints",
-  "escalation_phone",
 ]);
 
 const MAX_LEN = 2000;

@@ -1,5 +1,4 @@
 import { redirect } from "next/navigation";
-import { createClient } from "@/lib/supabase/server";
 import { getAuthUser, getTenantContext } from "@/lib/supabase/request-cache";
 import { Sidebar } from "@/components/shell/sidebar";
 import { Topbar } from "@/components/shell/topbar";
@@ -12,24 +11,16 @@ export default async function AppLayout({
 }: {
   children: React.ReactNode;
 }) {
-  const supabase = await createClient();
 
   // Shared per-request auth lookup — pages and permission helpers reuse
   // this same round-trip instead of repeating it.
   const user = await getAuthUser();
   if (!user) redirect("/login");
 
-  // Parallel fetch — tenant context + subscriptions independently. The
-  // context is the request-shared Clients row (branding, timezone, flags),
-  // so pages calling getTenantTimezone()/getTenantFeatureFlags() reuse
-  // this same round-trip instead of re-querying Clients.
-  const [client, { data: sub }] = await Promise.all([
-    getTenantContext(),
-    // We don't yet know client.id, but subscriptions is RLS-scoped so this
-    // returns the caller's tenant subscription regardless. Wait — RLS uses
-    // client_id IN (SELECT current_user_client_ids()), so this works.
-    supabase.from("subscriptions").select("status, client_id").limit(1),
-  ]);
+  // The request-shared Clients row (branding, timezone, flags): pages
+  // calling getTenantTimezone()/getTenantFeatureFlags() reuse this same
+  // round-trip instead of re-querying Clients.
+  const client = await getTenantContext();
 
   if (!client) {
     return (
@@ -69,16 +60,6 @@ export default async function AppLayout({
     );
   }
 
-  // sub was fetched in parallel with clients above; just normalize the type
-  const subRow = (sub as Array<{ status?: string }> | null)?.[0];
-  const planStatus = (subRow?.status ?? "incomplete") as
-    | "active"
-    | "past_due"
-    | "paused"
-    | "cancelled"
-    | "trialing"
-    | "incomplete";
-
   const adminEmails = (process.env.ADMIN_EMAILS ?? "")
     .split(",")
     .map((e) => e.trim().toLowerCase())
@@ -91,10 +72,7 @@ export default async function AppLayout({
   const tenantAccentRgb = hexToRgbTriplet(client.brand_primary_color);
 
   const featureFlags = {
-    voice: client.feature_voice_enabled ?? true,
-    sms: client.feature_sms_enabled ?? true,
     calendar: client.feature_calendar_enabled ?? false,
-    billing: client.feature_billing_enabled ?? true,
     estimator: client.feature_estimator_enabled ?? false,
   };
 
@@ -109,7 +87,6 @@ export default async function AppLayout({
     >
       <Sidebar
         businessName={client.business_name ?? "—"}
-        planStatus={planStatus}
         isAdmin={isAdmin}
         featureFlags={featureFlags}
       />

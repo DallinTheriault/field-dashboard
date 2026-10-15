@@ -1,33 +1,16 @@
-import Link from "next/link";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
-import {
-  Building2,
-  Palette,
-  CalendarDays,
-  FileText,
-  Volume2,
-  ChevronRight,
-  MessageSquareText,
-  ScanLine,
-  Users,
-} from "lucide-react";
+import { Building2, Palette, CalendarDays, ScanLine, Users } from "lucide-react";
 import { LogoUploader } from "./logo-uploader";
-import { VoicePicker } from "./voice-picker";
 import { BusinessProfileForm } from "./profile-form";
 import { ColorPicker } from "./color-picker";
-import { ReplyTemplatesManager } from "./reply-templates-manager";
 import { TeamManager } from "./team-manager";
 import { MyProfileForm } from "./my-profile-form";
-import { NotificationPrefsForm } from "./notification-prefs-form";
 import { ReceiptAiStatus } from "./receipt-ai-toggle";
 import { getCurrentUserRole } from "@/lib/permissions/current-role";
 import {
   canViewSettings,
-  canEditBusinessProfile,
-  canEditBranding,
-  canManageSmsTemplates,
   type Role,
   isValidRole,
 } from "@/lib/permissions/roles";
@@ -49,7 +32,7 @@ export default async function SettingsPage() {
   const { data: clients } = await supabase
     .from("Clients")
     .select(
-      "id, business_name, business_short_name, owner_first_name, owner_email, owner_phone, twilio_number, timezone, services, brand_logo_url, brand_primary_color, vapi_voice_id, calendar_id, business_website, business_hours, service_area, pricing_block, scope_values, service_constraints, escalation_phone, notify_email, notify_dashboard_ping, notify_sms, feature_receipt_ai_enabled",
+      "id, business_name, business_short_name, owner_first_name, owner_email, owner_phone, timezone, brand_logo_url, brand_primary_color, calendar_id, business_website, feature_receipt_ai_enabled",
     )
     .limit(1);
 
@@ -155,7 +138,7 @@ export default async function SettingsPage() {
         Business settings
       </h1>
       <p className="text-sm text-bone-300 mt-1 mb-8">
-        Configure how your assistant identifies and represents your business.
+        Your business details, team, branding and connections.
       </p>
 
       <div className="space-y-3 max-w-3xl">
@@ -164,18 +147,6 @@ export default async function SettingsPage() {
           initialDisplayName={currentUserDisplayName}
           email={currentUserEmail}
         />
-
-        {/* Notifications — owner-level prefs for new lead alerts */}
-        {client && (
-          <NotificationPrefsForm
-            clientId={client.id}
-            initial={{
-              notify_email: client.notify_email ?? true,
-              notify_dashboard_ping: client.notify_dashboard_ping ?? true,
-              notify_sms: client.notify_sms ?? false,
-            }}
-          />
-        )}
 
         {/* Team — top of page since it's account-level, not business-level */}
         {client && teamMembers.length > 0 && (
@@ -200,11 +171,6 @@ export default async function SettingsPage() {
           subtitle="Operator-managed. Reach out if anything's wrong."
         >
           <FieldRow label="Business name" value={client?.business_name ?? "—"} />
-          <FieldRow
-            label="Twilio number"
-            value={client?.twilio_number ?? "—"}
-            mono
-          />
           <FieldRow label="Timezone" value={client?.timezone ?? "—"} />
         </Section>
 
@@ -212,7 +178,7 @@ export default async function SettingsPage() {
         <Section
           icon={Building2}
           title="Business profile"
-          subtitle="Hours, area, owner contact, pricing, scope"
+          subtitle="Owner contact and website"
         >
           <BusinessProfileForm
             initial={{
@@ -221,12 +187,6 @@ export default async function SettingsPage() {
               owner_email: client?.owner_email ?? "",
               owner_phone: client?.owner_phone ?? "",
               business_website: client?.business_website ?? "",
-              business_hours: client?.business_hours ?? "",
-              service_area: client?.service_area ?? "",
-              pricing_block: client?.pricing_block ?? "",
-              scope_values: client?.scope_values ?? "",
-              service_constraints: client?.service_constraints ?? "",
-              escalation_phone: client?.escalation_phone ?? "",
             }}
           />
         </Section>
@@ -236,17 +196,6 @@ export default async function SettingsPage() {
           <div className="px-4 py-4 grid grid-cols-1 md:grid-cols-2 gap-6">
             <LogoUploader initialUrl={client?.brand_logo_url ?? null} />
             <ColorPicker initial={client?.brand_primary_color ?? null} />
-          </div>
-        </Section>
-
-        {/* Voice */}
-        <Section
-          icon={Volume2}
-          title="Assistant voice"
-          subtitle="ElevenLabs voice for your assistant"
-        >
-          <div className="px-4 py-4">
-            <VoicePicker initialVoiceId={client?.vapi_voice_id ?? null} />
           </div>
         </Section>
 
@@ -312,37 +261,6 @@ export default async function SettingsPage() {
           </div>
         </Section>
 
-        {/* Prompt */}
-        <Section
-          icon={FileText}
-          title="Voice assistant prompt"
-          subtitle="Personality and tool-routing logic"
-        >
-          <div className="px-4 py-3.5">
-            <p className="text-xs text-bone-400 mb-3 max-w-md">
-              The system prompt that defines how your assistant talks, what it
-              captures, and when it uses each tool.
-            </p>
-            <Link
-              href="/app/settings/prompt"
-              className="btn-secondary text-xs h-8 inline-flex"
-            >
-              View prompt
-              <ChevronRight size={12} />
-            </Link>
-          </div>
-        </Section>
-
-        {/* SMS Reply Templates */}
-        {client && (
-          <Section
-            icon={MessageSquareText}
-            title="SMS reply templates"
-            subtitle="Saved replies you can insert into the SMS reply box with one tap"
-          >
-            <ReplyTemplatesManager clientId={client.id} />
-          </Section>
-        )}
       </div>
     </div>
   );

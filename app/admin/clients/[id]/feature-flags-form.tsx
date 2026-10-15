@@ -5,10 +5,7 @@ import { useRouter } from "next/navigation";
 import { Loader2, ToggleRight } from "lucide-react";
 
 type Flags = {
-  feature_sms_enabled: boolean;
-  feature_voice_enabled: boolean;
   feature_calendar_enabled: boolean;
-  feature_billing_enabled: boolean;
   feature_estimator_enabled: boolean;
   feature_receipt_ai_enabled: boolean;
 };
@@ -72,24 +69,9 @@ export function AdminFeatureFlagsForm({
     desc: string;
   }> = [
     {
-      key: "feature_voice_enabled",
-      label: "Voice receptionist",
-      desc: "Inbound calls, VAPI assistant, call summaries.",
-    },
-    {
-      key: "feature_sms_enabled",
-      label: "SMS",
-      desc: "Two-way text conversations with customers.",
-    },
-    {
       key: "feature_calendar_enabled",
       label: "Calendar integration",
       desc: "Google Calendar sync for bookings (per-tenant calendar_id).",
-    },
-    {
-      key: "feature_billing_enabled",
-      label: "Billing page",
-      desc: "Show Stripe billing UI. Hide for tenants on custom contracts.",
     },
     {
       key: "feature_estimator_enabled",

@@ -10,12 +10,6 @@ type Profile = {
   owner_email: string;
   owner_phone: string;
   business_website: string;
-  business_hours: string;
-  service_area: string;
-  pricing_block: string;
-  scope_values: string;
-  service_constraints: string;
-  escalation_phone: string;
 };
 
 export function BusinessProfileForm({ initial }: { initial: Profile }) {
@@ -64,17 +58,11 @@ export function BusinessProfileForm({ initial }: { initial: Profile }) {
     return (
       <div>
         <dl className="divide-y divide-line-subtle">
-          <Row label="Short name (TTS)" value={initial.business_short_name} />
+          <Row label="Short name" value={initial.business_short_name} />
           <Row label="Owner first name" value={initial.owner_first_name} />
           <Row label="Owner email" value={initial.owner_email} />
           <Row label="Owner phone" value={initial.owner_phone} mono />
           <Row label="Website" value={initial.business_website} />
-          <Row label="Hours" value={initial.business_hours} />
-          <Row label="Service area" value={initial.service_area} />
-          <Row label="Pricing block" value={initial.pricing_block} multiline />
-          <Row label="Scope values" value={initial.scope_values} />
-          <Row label="Service constraints" value={initial.service_constraints} multiline />
-          <Row label="Escalation phone" value={initial.escalation_phone} mono />
         </dl>
         <div className="px-4 py-3 flex items-center gap-3">
           <button
@@ -99,13 +87,13 @@ export function BusinessProfileForm({ initial }: { initial: Profile }) {
   return (
     <form onSubmit={handleSave} className="px-4 py-4 space-y-3">
       <Row2>
-        <FormField label="Short name (TTS-friendly)" hint="What the assistant says aloud">
+        <FormField label="Short name" hint="Shown at the top of the app">
           <input
             value={form.business_short_name}
             onChange={(e) => update("business_short_name", e.target.value)}
           />
         </FormField>
-        <FormField label="Owner first name" hint="Used in overflow greeting">
+        <FormField label="Owner first name">
           <input
             value={form.owner_first_name}
             onChange={(e) => update("owner_first_name", e.target.value)}
@@ -139,55 +127,6 @@ export function BusinessProfileForm({ initial }: { initial: Profile }) {
         />
       </FormField>
 
-      <Row2>
-        <FormField label="Business hours">
-          <input
-            value={form.business_hours}
-            onChange={(e) => update("business_hours", e.target.value)}
-            placeholder="Mon-Fri 8AM-6PM"
-          />
-        </FormField>
-        <FormField label="Service area">
-          <input
-            value={form.service_area}
-            onChange={(e) => update("service_area", e.target.value)}
-          />
-        </FormField>
-      </Row2>
-
-      <FormField label="Pricing block" hint="What the assistant says about price">
-        <textarea
-          rows={3}
-          value={form.pricing_block}
-          onChange={(e) => update("pricing_block", e.target.value)}
-        />
-      </FormField>
-
-      <FormField label="Scope values" hint="Comma-separated. Stored on jobs.scope.">
-        <input
-          value={form.scope_values}
-          onChange={(e) => update("scope_values", e.target.value)}
-          placeholder="studio, 1br, 2br, 3br+"
-        />
-      </FormField>
-
-      <FormField label="Service constraints" hint="What you don't do">
-        <textarea
-          rows={2}
-          value={form.service_constraints}
-          onChange={(e) => update("service_constraints", e.target.value)}
-        />
-      </FormField>
-
-      <FormField label="Escalation phone" hint="Where complex/hostile callers transfer">
-        <input
-          type="tel"
-          value={form.escalation_phone}
-          onChange={(e) => update("escalation_phone", e.target.value)}
-          className="font-mono"
-        />
-      </FormField>
-
       {error && (
         <div className="flex items-start gap-1.5 text-2xs text-status-danger">
           <AlertCircle size={11} className="shrink-0 mt-0.5" />
@@ -214,10 +153,6 @@ export function BusinessProfileForm({ initial }: { initial: Profile }) {
         >
           Cancel
         </button>
-        <p className="text-2xs text-bone-400 ml-auto leading-tight">
-          Some changes (pricing, scope) won&rsquo;t reach the assistant until your
-          operator regenerates the prompt.
-        </p>
       </div>
     </form>
   );

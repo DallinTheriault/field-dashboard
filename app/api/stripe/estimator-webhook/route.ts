@@ -7,9 +7,8 @@ import { getEstimatorStripe } from "@/lib/estimator/stripe";
 /**
  * Stripe webhook for ESTIMATOR customer invoices: invoice.paid records a card
  * payment (dated by Stripe's paid time in the tenant's timezone) and the
- * database marks the invoice paid (payments_apply), then a bell notification. Deliberately a SEPARATE endpoint from the n8n
- * WF-Billing subscription webhook — that flow is untouched. Configure a
- * dedicated webhook endpoint in the tenant's Stripe dashboard pointing at
+ * database marks the invoice paid (payments_apply), then a bell notification.
+ * Configure a dedicated webhook endpoint in the tenant's Stripe dashboard pointing at
  * this route on the dashboard domain (app.getfield.co) with the
  * `invoice.paid` event, and put its signing secret in
  * ESTIMATOR_STRIPE_WEBHOOK_SECRET.

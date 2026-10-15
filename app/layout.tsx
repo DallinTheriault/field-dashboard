@@ -32,7 +32,7 @@ const mono = JetBrains_Mono({
 
 export const metadata: Metadata = {
   title: { default: "Field", template: "%s · Field" },
-  description: "AI Voice Receptionist",
+  description: "Jobs, invoices and receipts",
   icons: {
     icon: [
       { url: `/favicon.svg${V}`, type: "image/svg+xml" },

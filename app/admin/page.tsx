@@ -1,18 +1,12 @@
 import Link from "next/link";
-import { Link2, Users, FileText, ChevronRight } from "lucide-react";
+import { Users, FileText, ChevronRight } from "lucide-react";
 
 const TILES = [
-  {
-    href: "/admin/payment-links",
-    icon: Link2,
-    title: "Payment links",
-    body: "Generate Stripe payment links for new customer setups. Sets client_reference_id automatically.",
-  },
   {
     href: "/admin/clients",
     icon: Users,
     title: "Clients",
-    body: "All tenants on the platform, with subscription state and quick links.",
+    body: "All tenants on the platform, with their feature flags and details.",
   },
   {
     href: "/admin/invoices",
