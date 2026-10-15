@@ -75,7 +75,7 @@ export function CreateInvoiceForm({
         {busy ? <Loader2 size={13} className="animate-spin" /> : <Receipt size={13} />}
         Create draft
       </button>
-      {entityId === null && <p className="text-2xs text-status-lead">Add a billing entity in Estimator settings first.</p>}
+      {entityId === null && <p className="text-2xs text-status-lead">Add a billing entity in Business › Pricing first.</p>}
     </section>
   );
 }

@@ -157,7 +157,7 @@ export default async function JobDetailPage({
     estimatorOn && canSeeInternals
       ? supabase
           .from("pricing_settings")
-          .select("mileage_base_address, default_hourly_rate, material_markup_pct")
+          .select("mileage_base_address, default_hourly_rate, skilled_hourly_rate, material_markup_pct")
           .maybeSingle()
       : Promise.resolve({ data: null }),
     // Not role-gated: the property address is customer info shown to every
@@ -274,10 +274,11 @@ export default async function JobDetailPage({
       linkedLines: linkCounts.get(t.id) ?? 0,
     };
   });
-  const hourlyRate =
-    pricingSettings?.default_hourly_rate === null || pricingSettings?.default_hourly_rate === undefined
-      ? null
-      : Number(pricingSettings.default_hourly_rate);
+  const rateOf = (v: unknown) => (v === null || v === undefined ? null : Number(v));
+  const rates = {
+    general: rateOf(pricingSettings?.default_hourly_rate),
+    skilled: rateOf(pricingSettings?.skilled_hourly_rate),
+  };
 
   return (
     <div>
@@ -368,7 +369,7 @@ export default async function JobDetailPage({
         lines={jobLines}
         canWrite={canSeeInternals}
         pricing={estimatorOn}
-        hourlyRate={hourlyRate}
+        rates={rates}
       />
 
       {/* Job-level expense capture — all roles (members included). Shows no

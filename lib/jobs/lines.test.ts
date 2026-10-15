@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   LABOR_HOURLY,
+  SKILLED_HOURLY,
   customLine,
   formatQty,
   jobTotal,
@@ -73,22 +74,30 @@ describe("formatQty", () => {
 });
 
 describe("picker", () => {
+  const cat = { labor_hours_per_unit: null, flat_labor_hours: null, typical_hours: null, rate_type: "general" as const };
   const rows = [
-    { id: 1, name: "Walls - 2 coats", type: "MEASURED" as const, unit: "sqft" as const, unit_price: null },
-    { id: 2, name: "Toilet swap", type: "TASK" as const, unit: null, unit_price: 180 },
-    { id: 3, name: "Patch drywall, small", type: "PRICED" as const, unit: "each" as const, unit_price: 95 },
-    { id: 4, name: "Door rehang", type: "PRICED" as const, unit: "each" as const, unit_price: 140 },
+    { ...cat, id: 1, name: "Walls - 2 coats", type: "MEASURED" as const, unit: "sqft" as const, unit_price: null, labor_hours_per_unit: 0.01 },
+    { ...cat, id: 2, name: "Toilet swap", type: "TASK" as const, unit: null, unit_price: 180, flat_labor_hours: 1.5 },
+    { ...cat, id: 3, name: "Patch drywall, small", type: "PRICED" as const, unit: "each" as const, unit_price: 95 },
+    { ...cat, id: 4, name: "Door rehang", type: "PRICED" as const, unit: "each" as const, unit_price: null, typical_hours: 2, rate_type: "skilled" as const },
   ];
-  const entries = pickerEntries(rows, 85);
+  const entries = pickerEntries(rows, { general: 85, skilled: 125 });
 
-  it("leads with the built-in hourly line at the default rate", () => {
+  it("leads with the two built-in hourly lines at their rates", () => {
     expect(entries[0]).toEqual({ id: null, name: LABOR_HOURLY, unit: "hour", unit_price: 85 });
+    expect(entries[1]).toEqual({ id: null, name: SKILLED_HOURLY, unit: "hour", unit_price: 125 });
     expect(entries.find((e) => e.id === 2)?.unit).toBe("each");
+  });
+
+  it("prices rows at their own price, else hours × their rate", () => {
+    expect(entries.find((e) => e.id === 2)?.unit_price).toBe(180);
+    expect(entries.find((e) => e.id === 4)?.unit_price).toBe(250);
+    expect(entries.find((e) => e.id === 1)?.unit_price).toBe(0.85);
   });
 
   it("matches every typed word and puts recent entries first", () => {
     expect(rankEntries(entries, "patch sm", []).map((e) => e.id)).toEqual([3]);
-    expect(rankEntries(entries, "", [4, 2]).map((e) => e.id)).toEqual([4, 2, null, 3, 1]);
+    expect(rankEntries(entries, "", [4, 2]).map((e) => e.id ?? e.name)).toEqual([4, 2, LABOR_HOURLY, 3, SKILLED_HOURLY, 1]);
   });
 
   it("derives recent ids newest first, once each", () => {

@@ -3,8 +3,6 @@
 import { APP, PHONE, check, launch, login } from "./browser.mjs";
 import { adminGet, session } from "./api.mjs";
 
-// Cascade: 60000/yr, 20 hr/wk at 90%, 40% margin, no overhead → $106.84/hr.
-const SELL_RATE = 60000 / 12 / ((20 * 52) / 12 * 0.9) / 0.6;
 const money = (n) => `$${n.toFixed(2)}`;
 
 // --- Database rules, through the API as real users ----------------------------
@@ -44,41 +42,57 @@ const browser = await launch();
 const page = await login(browser, "owner@cascade.test", PHONE);
 await page.goto(`${APP}/app/estimator/settings`);
 const book = page.locator("#catalog");
-await book.getByText("Labor, hourly").waitFor();
-check("Labor, hourly is built in and needs a price",
-  (await book.locator("li", { hasText: "Labor, hourly" }).innerText()).toLowerCase().includes("needs a price"));
+await book.getByText("Labor, hourly", { exact: true }).waitFor();
+check("Labor, hourly and Skilled labor, hourly are built in and need a price until the rates are set",
+  (await book.locator("li", { hasText: /^Labor, hourly/ }).innerText()).toLowerCase().includes("needs a price") &&
+  (await book.locator("li", { hasText: "Skilled labor, hourly" }).innerText()).toLowerCase().includes("needs a price"));
 
 await book.getByRole("button", { name: "Add item" }).click();
 await book.getByLabel("Name", { exact: true }).fill("Patch drywall");
-await book.getByLabel("Typical hours per each (optional)").fill("2");
+await book.getByLabel("Typical hours each").fill("2");
 await book.getByRole("button", { name: "Save item" }).click();
 const patchRow = book.locator("li", { hasText: "Patch drywall" });
 await patchRow.waitFor();
-const suggested = Math.round(2 * SELL_RATE * 100) / 100;
 let text = (await patchRow.innerText()).toLowerCase();
-check("new item shows needs a price with the suggestion",
-  text.includes("needs a price") && text.includes(`suggest ${money(suggested)}/each`), text.replace(/\n/g, " | "));
+check("new item with hours but no rate set needs a price", text.includes("needs a price"), text.replace(/\n/g, " | "));
+
+const pricing = page.locator("#pricing");
+await pricing.getByLabel("General hourly rate").fill("95");
+await pricing.getByLabel("Skilled hourly rate").fill("125");
+await pricing.getByRole("button", { name: "Save rates" }).click();
+await book.locator("li", { hasText: /^Labor, hourly/ }).getByText("$95.00").waitFor();
+await book.locator("li", { hasText: "Skilled labor, hourly" }).getByText("$125.00").waitFor();
+await patchRow.getByText("$190.00").waitFor();
+check("rates show on both built-in lines, and the item becomes 2 hr × $95 = $190.00, without a reload", true);
 
 await book.getByRole("button", { name: /^Patch drywall/ }).click();
-await book.getByRole("button", { name: "Use it" }).click();
+await book.getByLabel("Skilled").check();
+check("the editor shows the price as hours × rate",
+  /\$250\.00 each\s*= 2 hr × \$125\.00\/hr skilled/.test(await book.getByTestId("draft-price").innerText()),
+  await book.getByTestId("draft-price").innerText());
 await book.getByRole("button", { name: "Save item" }).click();
-await patchRow.getByText(money(suggested)).waitFor();
-check("suggested price applied", true, money(suggested));
+await patchRow.getByText("$250.00").waitFor();
+const [patchDb] = await adminGet("service_catalog?name=eq.Patch%20drywall&client_id=eq.8&select=rate_type,unit_price,typical_hours");
+check("switching it to skilled prices it 2 hr × $125 and stores no price of its own",
+  patchDb.rate_type === "skilled" && patchDb.unit_price === null && Number(patchDb.typical_hours) === 2, JSON.stringify(patchDb));
 
 await book.getByRole("button", { name: /^Toilet swap/ }).click();
-await book.getByLabel("Price per each").fill("180");
+await book.getByRole("button", { name: "Set my own price" }).click();
+await book.getByLabel("Your price per each").fill("180");
 await book.getByRole("button", { name: "Save item" }).click();
 const toiletRow = book.locator("li", { hasText: "Toilet swap" });
 await toiletRow.getByText("$180.00").waitFor();
 const [toilet] = await adminGet("service_catalog?name=eq.Toilet%20swap&client_id=eq.8&select=type,unit,flat_labor_hours,unit_price");
-check("builder row keeps its hours when priced",
+check("own price on an old-builder row keeps its hours",
   toilet.type === "TASK" && Number(toilet.flat_labor_hours) === 1.5 && Number(toilet.unit_price) === 180, JSON.stringify(toilet));
+check("the list says which price is your own", (await toiletRow.innerText()).includes("your own price"));
 
-const pricing = page.locator("#pricing");
-await pricing.getByLabel("Default hourly rate").fill("95");
-await pricing.getByRole("button", { name: "Save pricing settings" }).click();
-await book.locator("li", { hasText: "Labor, hourly" }).getByText("$95.00").waitFor();
-check("hourly rate shows on Labor, hourly without a reload", true);
+await book.getByRole("button", { name: /^Toilet swap/ }).click();
+await book.getByRole("button", { name: "Use hours × rate" }).click();
+await book.getByRole("button", { name: "Save item" }).click();
+await toiletRow.getByText("$142.50").waitFor();
+check("Use hours × rate goes back to 1.5 hr × $95 = $142.50",
+  (await adminGet("service_catalog?name=eq.Toilet%20swap&client_id=eq.8&select=unit_price"))[0].unit_price === null);
 
 const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
 check("no sideways scroll at 390 px", overflow <= 0, `${overflow}px`);

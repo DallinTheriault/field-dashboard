@@ -133,7 +133,7 @@ export async function createInvoiceFromJob(
           active,
         );
   if (!entityId) {
-    return { ok: false, error: "Add a billing entity in Estimator settings before invoicing." };
+    return { ok: false, error: "Add a billing entity in Business › Pricing before invoicing." };
   }
 
   // Bill-to: the job's explicit bill-to, else its contact, else the

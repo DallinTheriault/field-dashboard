@@ -1,4 +1,14 @@
-import { priceBookUnit, type CatalogType, type PriceBookUnit } from "@/lib/estimator/price-book";
+import {
+  LABOR_HOURLY,
+  SKILLED_HOURLY,
+  catalogUnitPrice,
+  priceBookUnit,
+  type CatalogRow,
+  type PriceBookUnit,
+  type Rates,
+} from "@/lib/estimator/price-book";
+
+export { LABOR_HOURLY, SKILLED_HOURLY };
 
 /**
  * Job lines are the job's tasks with a price (v095). Pure helpers shared by
@@ -74,23 +84,22 @@ export function formatQty(qty: number, unit: LineUnit | null): string {
 // --- Picking from the price book -----------------------------------------------
 
 export type PriceBookEntry = {
-  /** null for the built-in "Labor, hourly". */
+  /** null for the built-in hourly lines. */
   id: number | null;
   name: string;
   unit: LineUnit;
   unit_price: number | null;
 };
 
-export const LABOR_HOURLY = "Labor, hourly";
-
-/** The picker's list: the built-in hourly line plus active price-book rows. */
-export function pickerEntries(
-  rows: Array<{ id: number; name: string; type: CatalogType; unit: LineUnit | null; unit_price: number | null }>,
-  hourlyRate: number | null,
-): PriceBookEntry[] {
+/**
+ * The picker's list: the two built-in hourly lines plus active price-book
+ * rows, each at its own price or its hours × its rate.
+ */
+export function pickerEntries(rows: Array<CatalogRow & { id: number; name: string }>, rates: Rates): PriceBookEntry[] {
   return [
-    { id: null, name: LABOR_HOURLY, unit: "hour" as const, unit_price: hourlyRate },
-    ...rows.map((r) => ({ id: r.id, name: r.name, unit: priceBookUnit(r), unit_price: r.unit_price })),
+    { id: null, name: LABOR_HOURLY, unit: "hour" as const, unit_price: rates.general },
+    { id: null, name: SKILLED_HOURLY, unit: "hour" as const, unit_price: rates.skilled },
+    ...rows.map((r) => ({ id: r.id, name: r.name, unit: priceBookUnit(r), unit_price: catalogUnitPrice(r, rates) })),
   ];
 }
 

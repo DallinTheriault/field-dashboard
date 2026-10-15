@@ -20,11 +20,10 @@ import { ModifiersManager } from "./modifiers-manager";
 import { ZonesManager } from "./zones-manager";
 
 /**
- * Estimator settings — the "Settings layer" of the two-layer design.
- * Everything here is edited rarely and deliberately; the estimate builder
- * (job layer) only consumes these values. Pricing internals live on this
- * page, so it is owner/manager-only (members are bounced), mirroring the
- * user_can_write_client RLS gate on the underlying tables.
+ * Pricing: your rates, billing entities, the price book, and the old
+ * estimate builder's materials, modifiers and zones. Owner/manager-only
+ * (members are bounced), mirroring the user_can_write_client RLS gate on the
+ * underlying tables.
  */
 export default async function EstimatorSettingsPage() {
   const [session, flags] = await Promise.all([
@@ -54,8 +53,8 @@ export default async function EstimatorSettingsPage() {
     {
       id: "pricing",
       icon: Banknote,
-      title: "Pay, hours & margin",
-      desc: "What this business should pay you, and the rates derived from it.",
+      title: "Your rates",
+      desc: "What you charge per hour, your smallest job, and markup on materials.",
       body: <PricingSection clientId={clientId} />,
     },
     {
@@ -69,28 +68,28 @@ export default async function EstimatorSettingsPage() {
       id: "catalog",
       icon: Hammer,
       title: "Price book",
-      desc: "What each kind of work sells for. Editing a price never changes a job or estimate already written.",
+      desc: "Work you sell often. Its price is typical hours × your rate, unless you set your own. Changing a price never changes a job, estimate or invoice already written.",
       body: <CatalogManager clientId={clientId} />,
     },
     {
       id: "materials",
       icon: Package,
       title: "Materials",
-      desc: "Prices and coverage for what you buy. Quantities always round up to purchasable units.",
+      desc: "Old estimate builder only: prices and coverage for what you buy. Quantities round up to what you can buy.",
       body: <MaterialsManager clientId={clientId} />,
     },
     {
       id: "modifiers",
       icon: Percent,
       title: "Prep modifiers",
-      desc: "Multipliers applied to labor hours only — never to materials.",
+      desc: "Old estimate builder only: extra labor hours for harder jobs (never materials).",
       body: <ModifiersManager clientId={clientId} />,
     },
     {
       id: "zones",
       icon: MapPin,
       title: "Travel zones",
-      desc: "Flat fee added to job cost by distance. One zone per estimate.",
+      desc: "Old estimate builder only: a flat fee by distance, one per estimate.",
       body: <ZonesManager clientId={clientId} />,
     },
   ];
@@ -99,11 +98,11 @@ export default async function EstimatorSettingsPage() {
     <div className="max-w-3xl mx-auto px-4 py-6 space-y-6">
       <header>
         <h1 className="text-xl font-semibold text-bone-50">
-          Estimator settings
+          Pricing
         </h1>
         <p className="text-sm text-bone-400 mt-1">
-          Edited rarely, deliberately. Saved estimates never change when these
-          do — only new estimates (or an explicit reprice) pick up new values.
+          Changing these never changes a job line, estimate or invoice already
+          written. New lines pick up new prices.
         </p>
       </header>
 

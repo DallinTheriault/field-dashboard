@@ -1,388 +1,125 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import { Loader2, Plus, Trash2 } from "lucide-react";
+import { useEffect, useState } from "react";
+import { Loader2 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
-import {
-  effectiveSellRate,
-  loadedLaborRate,
-  monthlyBillableHours,
-} from "@/lib/estimator/rates";
-
-type Settings = {
-  desired_annual_owner_pay: number;
-  hours_worked_per_week: number;
-  utilization_pct: number;
-  margin_pct: number;
-  material_markup_pct: number;
-  minimum_job_charge: number;
-  rounding_increment: number;
-};
-
-type OverheadItem = {
-  id: number;
-  name: string;
-  monthly_amount: number;
-  active: boolean;
-};
-
-const DEFAULTS: Settings = {
-  desired_annual_owner_pay: 0,
-  hours_worked_per_week: 40,
-  utilization_pct: 0.55,
-  margin_pct: 0.4,
-  material_markup_pct: 0,
-  minimum_job_charge: 150,
-  rounding_increment: 5,
-};
 
 export const PRICING_SAVED_EVENT = "field:pricing-settings-saved";
 
-const usd = new Intl.NumberFormat("en-US", {
-  style: "currency",
-  currency: "USD",
-});
+type Form = { general: string; skilled: string; minimum: string; markup: string };
+
+/** Blank is allowed for the rates (not set: lines need a price). */
+function money(v: string, label: string, blank: "null" | "zero"): number | null | string {
+  if (v.trim() === "") return blank === "null" ? null : 0;
+  const n = Number(v.replace(/[$,\s]/g, ""));
+  return Number.isFinite(n) && n >= 0 ? n : `${label} must be a number, 0 or more.`;
+}
 
 /**
- * Pay/hours/margin settings + overhead worksheet in one component so the
- * derived rates (the whole point of this screen) recompute live as either
- * side changes. Same math the estimate builder uses (lib/estimator/rates).
+ * Your rates: the four numbers pricing runs on. Saving writes only these
+ * columns; the old calculator's columns (owner pay, hours, utilization,
+ * margin, rounding, overhead) are kept for the old estimate builder.
  */
 export function PricingSection({ clientId }: { clientId: number }) {
   const supabase = createClient();
   const [loading, setLoading] = useState(true);
-  const [form, setForm] = useState<Settings>(DEFAULTS);
-  const [items, setItems] = useState<OverheadItem[]>([]);
+  const [form, setForm] = useState<Form>({ general: "", skilled: "", minimum: "150", markup: "0" });
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [err, setErr] = useState<string | null>(null);
-  const [newName, setNewName] = useState("");
-  const [newAmount, setNewAmount] = useState("");
-  // Blank is meaningful (no rate set), so it's kept as typed, not as a number.
-  const [hourlyRate, setHourlyRate] = useState("");
 
   useEffect(() => {
     (async () => {
-      const [{ data: s }, { data: o }] = await Promise.all([
-        supabase
-          .from("pricing_settings")
-          .select(
-            "desired_annual_owner_pay, hours_worked_per_week, utilization_pct, margin_pct, material_markup_pct, minimum_job_charge, rounding_increment, default_hourly_rate",
-          )
-          .maybeSingle(),
-        supabase
-          .from("overhead_items")
-          .select("id, name, monthly_amount, active")
-          .order("created_at", { ascending: true }),
-      ]);
+      const { data: s } = await supabase
+        .from("pricing_settings")
+        .select("default_hourly_rate, skilled_hourly_rate, minimum_job_charge, material_markup_pct")
+        .maybeSingle();
       if (s) {
+        const str = (v: unknown) => (v === null || v === undefined ? "" : String(Number(v)));
         setForm({
-          desired_annual_owner_pay: Number(s.desired_annual_owner_pay),
-          hours_worked_per_week: Number(s.hours_worked_per_week),
-          utilization_pct: Number(s.utilization_pct),
-          margin_pct: Number(s.margin_pct),
-          material_markup_pct: Number(s.material_markup_pct),
-          minimum_job_charge: Number(s.minimum_job_charge),
-          rounding_increment: Number(s.rounding_increment),
+          general: str(s.default_hourly_rate),
+          skilled: str(s.skilled_hourly_rate),
+          minimum: str(s.minimum_job_charge),
+          // Stored as a fraction (0.2); shown as a percent (20).
+          markup: String(Math.round(Number(s.material_markup_pct) * 10000) / 100),
         });
-        setHourlyRate(s.default_hourly_rate === null ? "" : String(s.default_hourly_rate));
       }
-      setItems(
-        (o ?? []).map((i) => ({ ...i, monthly_amount: Number(i.monthly_amount) })),
-      );
       setLoading(false);
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const monthlyOverhead = useMemo(
-    () =>
-      items
-        .filter((i) => i.active)
-        .reduce((s, i) => s + (i.monthly_amount || 0), 0),
-    [items],
-  );
-
-  const mbh = monthlyBillableHours(
-    form.hours_worked_per_week,
-    form.utilization_pct,
-  );
-  const rate = loadedLaborRate(
-    form.desired_annual_owner_pay,
-    monthlyOverhead,
-    mbh,
-  );
-  const sellRate = effectiveSellRate(rate, form.margin_pct);
-
-  function num(v: string): number {
-    const n = parseFloat(v);
-    return Number.isFinite(n) ? n : 0;
-  }
-
-  async function saveSettings() {
+  async function save() {
     setErr(null);
     setSaved(false);
-    const hourly = hourlyRate.trim() === "" ? null : Number(hourlyRate);
-    if (hourly !== null && !(Number.isFinite(hourly) && hourly >= 0)) {
-      setErr("Default hourly rate must be a number, 0 or more.");
-      return;
-    }
+    const general = money(form.general, "General rate", "null");
+    const skilled = money(form.skilled, "Skilled rate", "null");
+    const minimum = money(form.minimum, "Minimum job charge", "zero");
+    const markup = money(form.markup.replace("%", ""), "Material markup", "zero");
+    const bad = [general, skilled, minimum, markup].find((v) => typeof v === "string");
+    if (bad) return setErr(bad as string);
     setSaving(true);
-    const { error } = await supabase
-      .from("pricing_settings")
-      .upsert(
-        { client_id: clientId, ...form, default_hourly_rate: hourly },
-        { onConflict: "client_id" },
-      );
-    if (error) setErr(error.message);
-    else {
-      // The price book on this page shows the hourly rate and suggestions.
-      window.dispatchEvent(new Event(PRICING_SAVED_EVENT));
-      setSaved(true);
-      setTimeout(() => setSaved(false), 2000);
-    }
+    const { error } = await supabase.from("pricing_settings").upsert(
+      {
+        client_id: clientId,
+        default_hourly_rate: general,
+        skilled_hourly_rate: skilled,
+        minimum_job_charge: minimum,
+        material_markup_pct: Math.round(((markup as number) / 100) * 1e6) / 1e6,
+      },
+      { onConflict: "client_id" },
+    );
     setSaving(false);
-  }
-
-  async function addItem() {
-    const name = newName.trim();
-    const amount = num(newAmount);
-    if (!name || amount < 0) return;
-    const { data, error } = await supabase
-      .from("overhead_items")
-      .insert({ client_id: clientId, name, monthly_amount: amount })
-      .select("id, name, monthly_amount, active")
-      .single();
-    if (error) {
-      setErr(error.message);
-      return;
-    }
-    setItems([...items, { ...data, monthly_amount: Number(data.monthly_amount) }]);
-    setNewName("");
-    setNewAmount("");
-  }
-
-  async function toggleItem(it: OverheadItem) {
-    const { error } = await supabase
-      .from("overhead_items")
-      .update({ active: !it.active })
-      .eq("id", it.id);
-    if (!error) {
-      setItems(items.map((i) => (i.id === it.id ? { ...i, active: !i.active } : i)));
-    }
-  }
-
-  async function removeItem(id: number) {
-    if (!confirm("Remove this overhead item?")) return;
-    const { error } = await supabase.from("overhead_items").delete().eq("id", id);
-    if (!error) setItems(items.filter((i) => i.id !== id));
+    if (error) return setErr(error.message);
+    // The price book on this page prices rows from these rates.
+    window.dispatchEvent(new Event(PRICING_SAVED_EVENT));
+    setSaved(true);
+    setTimeout(() => setSaved(false), 2000);
   }
 
   if (loading) {
     return <div className="px-4 py-4 text-2xs text-bone-400">Loading…</div>;
   }
 
+  const field = (key: keyof Form, label: string, hint: string, prefix: string, suffix: string) => (
+    <label className="field-group">
+      <span className="field-label">{label}</span>
+      <span className="flex items-center gap-1.5">
+        {prefix && <span className="text-bone-400 text-sm">{prefix}</span>}
+        <input
+          inputMode="decimal"
+          value={form[key]}
+          onChange={(e) => setForm({ ...form, [key]: e.target.value })}
+          className="w-full min-h-[44px]"
+          aria-label={label}
+        />
+        {suffix && <span className="text-bone-400 text-sm whitespace-nowrap">{suffix}</span>}
+      </span>
+      <span className="field-hint">{hint}</span>
+    </label>
+  );
+
   return (
-    <div className="px-4 py-4 space-y-5">
-      {/* Derived rates — live gut-check */}
-      <div className="grid grid-cols-3 gap-2">
-        {[
-          { label: "Billable hrs / mo", value: mbh.toFixed(1) },
-          { label: "Loaded rate", value: `${usd.format(rate)}/hr` },
-          { label: "Effective sell rate", value: `${usd.format(sellRate)}/hr` },
-        ].map((m) => (
-          <div key={m.label} className="bg-ink-2 rounded-sm px-3 py-2.5 shadow-inset-line">
-            <div className="label-eyebrow">{m.label}</div>
-            <div className="num text-base text-bone-50 mt-0.5">{m.value}</div>
-          </div>
-        ))}
-      </div>
-      <p className="text-2xs text-bone-400 -mt-2">
-        Sell rate = loaded rate ÷ (1 − margin). Gut-check it against market
-        $/hr — if it looks wrong, the inputs below are wrong.
-      </p>
-
-      {/* Pay & hours */}
-      <div className="grid grid-cols-2 gap-3">
-        <label className="field-group">
-          <span className="field-label">What this business pays you / yr</span>
-          <input
-            inputMode="decimal"
-            value={form.desired_annual_owner_pay || ""}
-            onChange={(e) =>
-              setForm({ ...form, desired_annual_owner_pay: num(e.target.value) })
-            }
-            placeholder="60000"
-            className="w-full"
-          />
-        </label>
-        <label className="field-group">
-          <span className="field-label">Hours worked / week</span>
-          <input
-            inputMode="decimal"
-            value={form.hours_worked_per_week || ""}
-            onChange={(e) =>
-              setForm({ ...form, hours_worked_per_week: num(e.target.value) })
-            }
-            className="w-full"
-          />
-          <span className="field-hint">
-            Hours you actually put into this business — part-time is fine.
-          </span>
-        </label>
-        <label className="field-group">
-          <span className="field-label">Utilization %</span>
-          <input
-            inputMode="decimal"
-            value={Math.round(form.utilization_pct * 100) || ""}
-            onChange={(e) =>
-              setForm({ ...form, utilization_pct: num(e.target.value) / 100 })
-            }
-            className="w-full"
-          />
-          <span className="field-hint">
-            Share of worked hours that are billable. Solo operators typically
-            bill 50–65% — the rest is driving, quoting, admin.
-          </span>
-        </label>
-        <label className="field-group">
-          <span className="field-label">Margin %</span>
-          <input
-            inputMode="decimal"
-            value={Math.round(form.margin_pct * 100) || ""}
-            onChange={(e) =>
-              setForm({ ...form, margin_pct: num(e.target.value) / 100 })
-            }
-            className="w-full"
-          />
-        </label>
-        <label className="field-group">
-          <span className="field-label">Minimum job charge</span>
-          <input
-            inputMode="decimal"
-            value={form.minimum_job_charge || ""}
-            onChange={(e) =>
-              setForm({ ...form, minimum_job_charge: num(e.target.value) })
-            }
-            className="w-full"
-          />
-        </label>
-        <label className="field-group">
-          <span className="field-label">Round customer total</span>
-          {/* Existing behavior rounds UP to the increment (never down), so
-              the labels say so — "nearest" would misdescribe the math.
-              0 = exact: the total invoices to the cent. */}
-          <select
-            value={form.rounding_increment}
-            onChange={(e) =>
-              setForm({ ...form, rounding_increment: Number(e.target.value) })
-            }
-            className="w-full"
-          >
-            <option value={0}>Nothing — exact to the cent</option>
-            <option value={1}>Up to the next $1</option>
-            <option value={5}>Up to the next $5</option>
-          </select>
-        </label>
-        <label className="field-group">
-          <span className="field-label">Default hourly rate</span>
-          <input
-            inputMode="decimal"
-            value={hourlyRate}
-            onChange={(e) => setHourlyRate(e.target.value)}
-            placeholder={sellRate > 0 ? sellRate.toFixed(2) : "0.00"}
-            className="w-full"
-          />
-          <span className="field-hint">
-            Price of &ldquo;Labor, hourly&rdquo; on job lines. Blank leaves it
-            unpriced; the placeholder is your sell rate.
-          </span>
-        </label>
-      </div>
-
-      {/* Overhead worksheet */}
-      <div>
-        <div className="flex items-baseline justify-between mb-2">
-          <span className="field-label">Monthly overhead</span>
-          <span className="num text-sm text-bone-100">
-            {usd.format(monthlyOverhead)}/mo
-          </span>
-        </div>
-        <ul className="space-y-1.5 mb-2">
-          {items.map((it) => (
-            <li key={it.id} className="flex items-center gap-2">
-              <input
-                type="checkbox"
-                checked={it.active}
-                onChange={() => toggleItem(it)}
-                className="w-4 h-4 shrink-0"
-                title={it.active ? "Counted in overhead" : "Excluded"}
-              />
-              <span
-                className={`flex-1 text-sm truncate ${
-                  it.active ? "text-bone-100" : "text-bone-500 line-through"
-                }`}
-              >
-                {it.name}
-              </span>
-              <span className="num text-sm text-bone-300">
-                {usd.format(it.monthly_amount)}
-              </span>
-              <button
-                type="button"
-                onClick={() => removeItem(it.id)}
-                className="text-bone-500 hover:text-status-danger p-1"
-                aria-label={`Remove ${it.name}`}
-              >
-                <Trash2 size={13} />
-              </button>
-            </li>
-          ))}
-          {items.length === 0 && (
-            <li className="text-2xs text-bone-400">
-              Insurance, fuel baseline, software, tool fund, license renewal
-              (÷12)… everything it costs monthly just to be in business.
-            </li>
-          )}
-        </ul>
-        <div className="flex gap-2">
-          <input
-            value={newName}
-            onChange={(e) => setNewName(e.target.value)}
-            placeholder="Item (e.g. Liability insurance)"
-            className="flex-1 min-w-0"
-          />
-          <input
-            inputMode="decimal"
-            value={newAmount}
-            onChange={(e) => setNewAmount(e.target.value)}
-            placeholder="$/mo"
-            className="w-24"
-          />
-          <button type="button" onClick={addItem} className="btn-secondary shrink-0">
-            <Plus size={13} />
-            Add
-          </button>
-        </div>
+    <div className="px-4 py-4 space-y-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        {field("general", "General hourly rate", "“Labor, hourly” on job lines, and price book work set to general.", "$", "/ hr")}
+        {field("skilled", "Skilled hourly rate", "“Skilled labor, hourly” on job lines, and price book work set to skilled.", "$", "/ hr")}
+        {field("minimum", "Minimum job charge", "The least you charge for a job. An invoice under it gets a warning.", "$", "")}
+        {field("markup", "Material markup", "Added to a job’s materials when you tick “Bill marked up” on them. 0% bills them at cost.", "", "%")}
       </div>
 
       {err && <div className="form-error">{err}</div>}
 
       <div className="flex items-center justify-end gap-2 pt-2 border-t border-line-subtle">
         {saved && <span className="text-2xs text-field-500">Saved.</span>}
-        <button
-          type="button"
-          onClick={saveSettings}
-          disabled={saving}
-          className="btn-primary text-sm"
-        >
+        <button type="button" onClick={save} disabled={saving} className="btn-primary text-sm min-h-[44px]">
           {saving ? (
             <>
               <Loader2 size={13} className="animate-spin" />
               Saving…
             </>
           ) : (
-            "Save pricing settings"
+            "Save rates"
           )}
         </button>
       </div>

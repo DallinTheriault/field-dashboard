@@ -64,7 +64,7 @@ export async function GET(
 
   if (!entity) {
     return NextResponse.json(
-      { error: "This estimate has no billing entity — set one in Estimator settings and re-save." },
+      { error: "This estimate has no billing entity — set one in Business › Pricing and re-save." },
       { status: 422 },
     );
   }

@@ -4,24 +4,25 @@ import { useEffect, useState } from "react";
 import { Loader2, Plus, Trash2, X } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import {
-  effectiveSellRate,
-  loadedLaborRate,
-  monthlyBillableHours,
-} from "@/lib/estimator/rates";
-import {
   EMPTY_DRAFT,
+  LABOR_HOURLY,
   MEASURED_UNITS,
   PRICED_UNITS,
+  RATE_LABEL,
+  SKILLED_HOURLY,
+  catalogUnitPrice,
   draftToRow,
   hoursPerUnit,
   priceBookUnit,
+  priceFromHours,
   rowToDraft,
-  suggestedUnitPrice,
   unitForType,
   type CatalogRow,
   type CatalogType,
   type PriceBookDraft,
   type PriceBookUnit,
+  type RateType,
+  type Rates,
 } from "@/lib/estimator/price-book";
 import { PRICING_SAVED_EVENT } from "./pricing-section";
 
@@ -63,34 +64,47 @@ const rate = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD"
 const UNIT_LABEL: Record<PriceBookUnit, string> = {
   each: "each",
   hour: "hr",
-  sqft: "sqft",
-  lnft: "lnft",
+  sqft: "sq ft",
+  lnft: "ln ft",
+};
+
+const UNIT_NAME: Record<PriceBookUnit, string> = {
+  each: "Each (a set price per job or item)",
+  hour: "Hour",
+  sqft: "Square foot",
+  lnft: "Linear foot",
 };
 
 const TYPE_LABEL: Record<CatalogType, string> = {
-  PRICED: "Priced item",
-  MEASURED: "Builder: hours per unit",
-  TASK: "Builder: hours per task",
+  PRICED: "Job lines",
+  MEASURED: "Job lines and old estimates (measured)",
+  TASK: "Job lines and old estimates (per task)",
 };
+
+/** "3 hr each", "0.012 hr per sq ft". */
+function hoursPhrase(hours: number, unit: PriceBookUnit): string {
+  return `${hours} hr ${unit === "each" ? "each" : `per ${UNIT_LABEL[unit]}`}`;
+}
 
 function num(v: unknown): number | null {
   return v === null || v === undefined ? null : Number(v);
 }
 
 /**
- * The price book: what each kind of work sells for. Priced items carry a unit
- * price and optional typical hours (which only suggest a price). Rows the
- * estimate builder prices from hours (measured/task) stay editable here and
- * can carry a price too; their material links still feed the builder.
- * "Labor, hourly" is built in; its rate lives in pricing settings.
+ * The price book: work you sell often. Each row bills at the general or
+ * skilled rate: its price is its typical hours × that rate, unless you set
+ * your own. Rows the old estimate builder uses (measured/task) stay editable
+ * here; their hours and material links still feed it. "Labor, hourly" and
+ * "Skilled labor, hourly" are built in; their rates are under Your rates.
  */
 export function CatalogManager({ clientId }: { clientId: number }) {
   const supabase = createClient();
   const [services, setServices] = useState<Service[]>([]);
   const [links, setLinks] = useState<Link[]>([]);
   const [materials, setMaterials] = useState<MaterialOption[]>([]);
-  const [sellRate, setSellRate] = useState(0);
-  const [hourlyRate, setHourlyRate] = useState<number | null>(null);
+  const [rates, setRates] = useState<Rates>({ general: null, skilled: null });
+  // The price input shows once you choose your own price (or a row has one).
+  const [ownPrice, setOwnPrice] = useState(false);
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState<number | "new" | null>(null);
   const [draft, setDraft] = useState<PriceBookDraft>(EMPTY_DRAFT);
@@ -102,12 +116,12 @@ export function CatalogManager({ clientId }: { clientId: number }) {
   const [linkValue, setLinkValue] = useState("");
 
   async function load() {
-    const [{ data: s }, { data: l }, { data: m }, { data: p }, { data: o }] =
+    const [{ data: s }, { data: l }, { data: m }, { data: p }] =
       await Promise.all([
         supabase
           .from("service_catalog")
           .select(
-            "id, name, type, unit, unit_price, typical_hours, labor_hours_per_unit, flat_labor_hours, materials_note, notes, is_placeholder, active",
+            "id, name, type, unit, unit_price, typical_hours, labor_hours_per_unit, flat_labor_hours, rate_type, materials_note, notes, is_placeholder, active",
           )
           .order("active", { ascending: false })
           .order("name"),
@@ -121,11 +135,8 @@ export function CatalogManager({ clientId }: { clientId: number }) {
           .order("name"),
         supabase
           .from("pricing_settings")
-          .select(
-            "desired_annual_owner_pay, hours_worked_per_week, utilization_pct, margin_pct, default_hourly_rate",
-          )
+          .select("default_hourly_rate, skilled_hourly_rate")
           .maybeSingle(),
-        supabase.from("overhead_items").select("monthly_amount").eq("active", true),
       ]);
     setServices(
       (s ?? []).map((x) => ({
@@ -138,13 +149,7 @@ export function CatalogManager({ clientId }: { clientId: number }) {
     );
     setLinks(l ?? []);
     setMaterials(m ?? []);
-    if (p) {
-      const overhead = (o ?? []).reduce((sum, i) => sum + Number(i.monthly_amount || 0), 0);
-      const hours = monthlyBillableHours(Number(p.hours_worked_per_week), Number(p.utilization_pct));
-      const loaded = loadedLaborRate(Number(p.desired_annual_owner_pay), overhead, hours);
-      setSellRate(effectiveSellRate(loaded, Number(p.margin_pct)));
-      setHourlyRate(num(p.default_hourly_rate));
-    }
+    setRates({ general: num(p?.default_hourly_rate), skilled: num(p?.skilled_hourly_rate) });
     setLoading(false);
   }
 
@@ -159,12 +164,13 @@ export function CatalogManager({ clientId }: { clientId: number }) {
   function startEdit(s: Service) {
     setEditing(s.id);
     setDraft(rowToDraft(s));
+    setOwnPrice(s.unit_price !== null);
     setErr(null);
   }
 
   async function save() {
     setErr(null);
-    const result = draftToRow(draft);
+    const result = draftToRow(ownPrice ? draft : { ...draft, unitPrice: "" });
     if (!result.ok) return setErr(result.error);
     setSaving(true);
     const { error } =
@@ -182,7 +188,7 @@ export function CatalogManager({ clientId }: { clientId: number }) {
   }
 
   async function remove(s: Service) {
-    if (!confirm(`Delete "${s.name}"? Saved estimates and jobs keep their own copy.`)) return;
+    if (!confirm(`Delete "${s.name}"? Jobs, estimates and invoices that use it keep their own copy.`)) return;
     const { error } = await supabase.from("service_catalog").delete().eq("id", s.id);
     if (error) {
       await supabase.from("service_catalog").update({ active: false }).eq("id", s.id);
@@ -226,19 +232,14 @@ export function CatalogManager({ clientId }: { clientId: number }) {
   const editingService = services.find((s) => s.id === editing) ?? null;
   const editingBuilderRow = editingService !== null && editingService.type !== "PRICED";
   const editingLinks = links.filter((l) => l.service_id === editing);
-  const draftHours = draft.hours.trim() === "" ? null : Number(draft.hours);
-  const draftSuggested = suggestedUnitPrice(
-    draft.type === "PRICED" && draft.unit === "hour" ? 1 : draftHours,
-    sellRate,
-  );
+  const draftUnit = priceBookUnit(draft);
+  const draftHours =
+    draft.type === "PRICED" && draft.unit === "hour" ? 1 : draft.hours.trim() === "" ? null : Number(draft.hours);
+  const draftRate = rates[draft.rateType];
+  const fromHours = priceFromHours(draftHours, draftRate, draftUnit);
   const unitOptions = draft.type === "MEASURED" ? MEASURED_UNITS : PRICED_UNITS;
   const showHours = !(draft.type === "PRICED" && draft.unit === "hour");
-  const hoursLabel =
-    draft.type === "PRICED"
-      ? `Typical hours per ${UNIT_LABEL[draft.unit]} (optional)`
-      : draft.type === "MEASURED"
-        ? `Labor hours per ${UNIT_LABEL[draft.unit]}`
-        : "Labor hours per task";
+  const hoursLabel = `Typical hours ${draftUnit === "each" ? "each" : `per ${UNIT_LABEL[draftUnit]}`}`;
 
   const form = (
     <div className="bg-ink-2 border border-line rounded-sm p-3 space-y-3">
@@ -253,7 +254,7 @@ export function CatalogManager({ clientId }: { clientId: number }) {
           />
         </label>
         <label className="field-group col-span-2">
-          <span className="field-label">Kind</span>
+          <span className="field-label">Used on</span>
           <select
             value={draft.type}
             onChange={(e) => {
@@ -271,12 +272,12 @@ export function CatalogManager({ clientId }: { clientId: number }) {
         </label>
         {editingBuilderRow && draft.type === "PRICED" && (
           <p className="col-span-2 text-2xs text-status-lead">
-            The estimate builder stops offering this once it&apos;s a priced item.
+            Old estimates stop offering this once it&apos;s for job lines only.
           </p>
         )}
         {draft.type !== "TASK" && (
-          <label className="field-group">
-            <span className="field-label">Unit</span>
+          <label className="field-group col-span-2">
+            <span className="field-label">Charged by the</span>
             <select
               value={draft.unit}
               onChange={(e) => setDraft({ ...draft, unit: e.target.value as PriceBookUnit })}
@@ -284,22 +285,32 @@ export function CatalogManager({ clientId }: { clientId: number }) {
             >
               {unitOptions.map((u) => (
                 <option key={u} value={u}>
-                  {UNIT_LABEL[u]}
+                  {UNIT_NAME[u]}
                 </option>
               ))}
             </select>
           </label>
         )}
-        <label className="field-group">
-          <span className="field-label">Price per {UNIT_LABEL[priceBookUnit(draft)]}</span>
-          <input
-            inputMode="decimal"
-            value={draft.unitPrice}
-            onChange={(e) => setDraft({ ...draft, unitPrice: e.target.value })}
-            placeholder={draftSuggested === null ? "0.00" : String(draftSuggested)}
-            className="w-full"
-          />
-        </label>
+        <fieldset className="field-group col-span-2">
+          <legend className="field-label">Labor rate</legend>
+          <div className="flex flex-wrap gap-x-4">
+            {(["general", "skilled"] as RateType[]).map((t) => (
+              <label key={t} className="flex items-center gap-2 text-sm text-bone-100 min-h-[44px]">
+                <input
+                  type="radio"
+                  name="rate-type"
+                  checked={draft.rateType === t}
+                  onChange={() => setDraft({ ...draft, rateType: t })}
+                  className="w-4 h-4"
+                />
+                {RATE_LABEL[t]}
+                <span className="text-bone-400 num">
+                  {rates[t] === null ? "(not set)" : `${rate.format(rates[t]!)}/hr`}
+                </span>
+              </label>
+            ))}
+          </div>
+        </fieldset>
         {showHours && (
           <label className="field-group col-span-2">
             <span className="field-label">{hoursLabel}</span>
@@ -310,23 +321,63 @@ export function CatalogManager({ clientId }: { clientId: number }) {
               placeholder={draft.type === "MEASURED" ? "0.010" : "1.5"}
               className="w-full"
             />
+            {draft.type !== "PRICED" && (
+              <span className="field-hint">Old estimates use these hours too.</span>
+            )}
           </label>
         )}
-        {draftSuggested !== null && (
-          <div className="col-span-2 flex items-center gap-2 text-2xs text-bone-400">
-            <span className="flex-1">
-              Suggested {usd.format(draftSuggested)}: {showHours ? `${draftHours} hr × ` : ""}
-              {rate.format(sellRate)}/hr sell rate, labor only.
-            </span>
-            <button
-              type="button"
-              onClick={() => setDraft({ ...draft, unitPrice: String(draftSuggested) })}
-              className="btn-ghost text-xs min-h-[44px]"
-            >
-              Use it
-            </button>
+        <div className="col-span-2 space-y-2" data-testid="draft-price">
+          <div className="flex items-baseline gap-2 flex-wrap">
+            <span className="field-label">Price</span>
+            {ownPrice ? (
+              <span className="text-2xs text-bone-400">your own price</span>
+            ) : fromHours !== null ? (
+              <span className="text-sm text-bone-100 num">
+                {usd.format(fromHours)} {draftUnit === "each" ? "each" : `per ${UNIT_LABEL[draftUnit]}`}
+                <span className="text-2xs text-bone-400">
+                  {" "}
+                  = {showHours ? `${draftHours} hr × ` : ""}
+                  {rate.format(draftRate!)}/hr {RATE_LABEL[draft.rateType].toLowerCase()}
+                </span>
+              </span>
+            ) : (
+              <span className="text-2xs text-status-lead">
+                {draftRate === null
+                  ? `Set your ${RATE_LABEL[draft.rateType].toLowerCase()} rate, or set your own price.`
+                  : "Enter typical hours, or set your own price."}
+              </span>
+            )}
           </div>
-        )}
+          {ownPrice ? (
+            <div className="flex items-center gap-2">
+              <label className="field-group flex-1">
+                <span className="sr-only">Your price per {UNIT_LABEL[draftUnit]}</span>
+                <input
+                  inputMode="decimal"
+                  value={draft.unitPrice}
+                  onChange={(e) => setDraft({ ...draft, unitPrice: e.target.value })}
+                  placeholder={fromHours === null ? "0.00" : String(fromHours)}
+                  className="w-full min-h-[44px]"
+                  aria-label={`Your price per ${UNIT_LABEL[draftUnit]}`}
+                />
+              </label>
+              <button
+                type="button"
+                onClick={() => {
+                  setOwnPrice(false);
+                  setDraft({ ...draft, unitPrice: "" });
+                }}
+                className="btn-ghost text-xs min-h-[44px]"
+              >
+                Use hours × rate
+              </button>
+            </div>
+          ) : (
+            <button type="button" onClick={() => setOwnPrice(true)} className="btn-ghost text-xs min-h-[44px] -ml-2">
+              Set my own price
+            </button>
+          )}
+        </div>
         <label className="field-group col-span-2">
           <span className="field-label">Materials included</span>
           <input
@@ -351,12 +402,12 @@ export function CatalogManager({ clientId }: { clientId: number }) {
             onChange={(e) => setDraft({ ...draft, active: e.target.checked })}
             className="w-4 h-4"
           />
-          Active: offered when adding job lines
+          Show when adding job lines
         </label>
       </div>
       {editingService && editingBuilderRow && draft.type !== "PRICED" && (
         <div className="pt-2 border-t border-line-subtle space-y-2">
-          <div className="label-eyebrow">Linked materials (estimate builder)</div>
+          <div className="label-eyebrow">Materials (old estimates only)</div>
           <ul className="space-y-1">
             {editingLinks.map((l) => {
               const mat = materials.find((m) => m.id === l.material_id);
@@ -384,7 +435,7 @@ export function CatalogManager({ clientId }: { clientId: number }) {
               );
             })}
             {editingLinks.length === 0 && (
-              <li className="text-2xs text-bone-400">No materials linked — labor only.</li>
+              <li className="text-2xs text-bone-400">None. Old estimates price this as labor only.</li>
             )}
           </ul>
           <div className="flex flex-wrap gap-2">
@@ -455,37 +506,39 @@ export function CatalogManager({ clientId }: { clientId: number }) {
     </div>
   );
 
-  const hourlySuggested = suggestedUnitPrice(1, sellRate);
-
   return (
     <div className="px-4 py-4 space-y-3">
       <ul className="space-y-1.5">
-        <li className="bg-ink-2 rounded-sm shadow-inset-line flex items-center gap-2 px-3 py-2.5">
-          <div className="flex-1 min-w-0">
-            <div className="text-sm text-bone-100">Labor, hourly</div>
-            <div className="text-2xs text-bone-400">
-              Built in.{" "}
-              <a href="#pricing" className="underline hover:text-bone-100">
-                Set the rate in Pay, hours &amp; margin
-              </a>
+        {([
+          [LABOR_HOURLY, rates.general],
+          [SKILLED_HOURLY, rates.skilled],
+        ] as const).map(([name, r]) => (
+          <li key={name} className="bg-ink-2 rounded-sm shadow-inset-line flex items-center gap-2 px-3 py-2.5">
+            <div className="flex-1 min-w-0">
+              <div className="text-sm text-bone-100">{name}</div>
+              <div className="text-2xs text-bone-400">
+                Built in.{" "}
+                <a href="#pricing" className="underline hover:text-bone-100">
+                  Set the rate in Your rates
+                </a>
+              </div>
             </div>
-          </div>
-          <PriceTag price={hourlyRate} unit="hour" suggested={hourlySuggested} />
-        </li>
+            <PriceTag price={r} unit="hour" />
+          </li>
+        ))}
         {services.map((s) => {
           if (editing === s.id) return <li key={s.id}>{form}</li>;
           const linkCount = links.filter((l) => l.service_id === s.id).length;
           const hours = hoursPerUnit(s);
           const unit = priceBookUnit(s);
           const detail = [
-            s.type === "MEASURED"
-              ? `${hours} hr/${UNIT_LABEL[unit]} in the builder`
-              : s.type === "TASK"
-                ? `${hours} hr per task in the builder`
-                : s.typical_hours !== null
-                  ? `~${s.typical_hours} hr/${UNIT_LABEL[unit]}`
-                  : null,
-            linkCount > 0 ? `${linkCount} material link${linkCount > 1 ? "s" : ""}` : null,
+            s.unit_price !== null
+              ? "your own price"
+              : hours !== null && unit !== "hour"
+                ? `${hoursPhrase(hours, unit)} × ${RATE_LABEL[s.rate_type].toLowerCase()}`
+                : RATE_LABEL[s.rate_type].toLowerCase(),
+            s.type !== "PRICED" ? "also old estimates" : null,
+            linkCount > 0 ? `${linkCount} material${linkCount > 1 ? "s" : ""}` : null,
             s.materials_note,
           ]
             .filter(Boolean)
@@ -511,19 +564,15 @@ export function CatalogManager({ clientId }: { clientId: number }) {
                     <span className="block text-2xs text-bone-400 break-words">{detail}</span>
                   )}
                 </span>
-                <PriceTag
-                  price={s.unit_price}
-                  unit={unit}
-                  suggested={suggestedUnitPrice(hours, sellRate)}
-                />
+                <PriceTag price={catalogUnitPrice(s, rates)} unit={unit} />
               </button>
             </li>
           );
         })}
         {services.length === 0 && editing !== "new" && (
           <li className="text-2xs text-bone-400">
-            Nothing priced yet. Add the work you sell repeatedly — that&apos;s what
-            keeps prices consistent job to job.
+            Nothing here yet. Add work you sell often, or save an hourly job
+            line to the price book from the job.
           </li>
         )}
       </ul>
@@ -536,6 +585,7 @@ export function CatalogManager({ clientId }: { clientId: number }) {
           onClick={() => {
             setEditing("new");
             setDraft(EMPTY_DRAFT);
+            setOwnPrice(false);
             setErr(null);
           }}
           className="btn-secondary text-sm min-h-[44px]"
@@ -548,15 +598,7 @@ export function CatalogManager({ clientId }: { clientId: number }) {
   );
 }
 
-function PriceTag({
-  price,
-  unit,
-  suggested,
-}: {
-  price: number | null;
-  unit: PriceBookUnit;
-  suggested: number | null;
-}) {
+function PriceTag({ price, unit }: { price: number | null; unit: PriceBookUnit }) {
   if (price !== null) {
     return (
       <span className="num text-sm text-bone-100 shrink-0">
@@ -565,14 +607,5 @@ function PriceTag({
       </span>
     );
   }
-  return (
-    <span className="shrink-0 text-right">
-      <span className="chip border-status-lead/40 text-status-lead">needs a price</span>
-      {suggested !== null && (
-        <span className="block num text-2xs text-bone-400 mt-0.5">
-          suggest {usd.format(suggested)}/{UNIT_LABEL[unit]}
-        </span>
-      )}
-    </span>
-  );
+  return <span className="chip border-status-lead/40 text-status-lead shrink-0">needs a price</span>;
 }

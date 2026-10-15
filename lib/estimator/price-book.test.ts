@@ -1,11 +1,13 @@
 import { describe, expect, it } from "vitest";
 import {
   EMPTY_DRAFT,
+  catalogUnitPrice,
   draftToRow,
   hoursPerUnit,
   priceBookUnit,
+  priceFromHours,
+  rowFromHourlyLine,
   rowToDraft,
-  suggestedUnitPrice,
   unitForType,
   type CatalogRow,
 } from "./price-book";
@@ -17,6 +19,7 @@ const measured: CatalogRow = {
   flat_labor_hours: null,
   typical_hours: null,
   unit_price: null,
+  rate_type: "general",
 };
 const task: CatalogRow = {
   type: "TASK",
@@ -25,6 +28,7 @@ const task: CatalogRow = {
   flat_labor_hours: 1.5,
   typical_hours: null,
   unit_price: 120,
+  rate_type: "general",
 };
 const priced: CatalogRow = {
   type: "PRICED",
@@ -33,6 +37,7 @@ const priced: CatalogRow = {
   flat_labor_hours: null,
   typical_hours: 2,
   unit_price: 250,
+  rate_type: "skilled",
 };
 
 describe("priceBookUnit / hoursPerUnit", () => {
@@ -47,15 +52,46 @@ describe("priceBookUnit / hoursPerUnit", () => {
   });
 });
 
-describe("suggestedUnitPrice", () => {
-  it("is hours × sell rate, to the cent", () => {
-    expect(suggestedUnitPrice(1.5, 106.84)).toBe(160.26);
-    expect(suggestedUnitPrice(0.01, 92.59)).toBe(0.93);
+describe("priceFromHours / catalogUnitPrice", () => {
+  const rates = { general: 95, skilled: 125 };
+
+  it("is hours × rate: to the cent each, finer per sq ft", () => {
+    expect(priceFromHours(1.5, 95, "each")).toBe(142.5);
+    expect(priceFromHours(0.0125, 95, "sqft")).toBe(1.1875);
+    expect(priceFromHours(1 / 3, 95, "each")).toBe(31.67);
   });
 
-  it("is null without hours or a sell rate", () => {
-    expect(suggestedUnitPrice(null, 100)).toBeNull();
-    expect(suggestedUnitPrice(2, 0)).toBeNull();
+  it("is null without hours or a rate", () => {
+    expect(priceFromHours(null, 95, "each")).toBeNull();
+    expect(priceFromHours(2, null, "each")).toBeNull();
+    expect(priceFromHours(0, 95, "each")).toBeNull();
+  });
+
+  it("uses your own price when set, else hours × the row's rate", () => {
+    expect(catalogUnitPrice(priced, rates)).toBe(250);
+    expect(catalogUnitPrice({ ...priced, unit_price: null }, rates)).toBe(250); // 2 hr × $125 skilled
+    expect(catalogUnitPrice({ ...priced, unit_price: null, rate_type: "general" }, rates)).toBe(190);
+    expect(catalogUnitPrice({ ...task, unit_price: null }, rates)).toBe(142.5);
+    expect(catalogUnitPrice(measured, rates)).toBe(0.95);
+    expect(catalogUnitPrice({ ...priced, unit: "hour", typical_hours: null, unit_price: null }, rates)).toBe(125);
+    expect(catalogUnitPrice({ ...priced, unit_price: null }, { general: 95, skilled: null })).toBeNull();
+  });
+});
+
+describe("rowFromHourlyLine", () => {
+  it("saves job-lines-only work sold each, priced from hours", () => {
+    const r = rowFromHourlyLine({ name: "Patch drywall", hours: "3", rateType: "skilled" });
+    expect(r.ok && r.row).toMatchObject({
+      name: "Patch drywall", type: "PRICED", unit: "each", typical_hours: 3, rate_type: "skilled", unit_price: null, active: true,
+    });
+  });
+
+  it("needs a real name and hours", () => {
+    expect(rowFromHourlyLine({ name: "Labor, hourly", hours: "3", rateType: "general" }).ok).toBe(false);
+    expect(rowFromHourlyLine({ name: "skilled labor, HOURLY", hours: "3", rateType: "general" }).ok).toBe(false);
+    expect(rowFromHourlyLine({ name: "  ", hours: "3", rateType: "general" }).ok).toBe(false);
+    expect(rowFromHourlyLine({ name: "Patch", hours: "", rateType: "general" }).ok).toBe(false);
+    expect(rowFromHourlyLine({ name: "Patch", hours: "0", rateType: "general" }).ok).toBe(false);
   });
 });
 
@@ -69,6 +105,7 @@ describe("draftToRow", () => {
         type: "PRICED",
         unit: "each",
         unit_price: null,
+        rate_type: "general",
         labor_hours_per_unit: null,
         flat_labor_hours: null,
         typical_hours: null,

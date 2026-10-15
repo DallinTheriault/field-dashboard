@@ -64,8 +64,8 @@ export default async function EstimatorHome() {
     {
       href: "/app/estimator/settings",
       icon: Settings2,
-      label: "Settings",
-      blurb: "Rates, margin, catalog, letterheads.",
+      label: "Pricing",
+      blurb: "Your rates, price book, letterheads.",
     },
   ];
 

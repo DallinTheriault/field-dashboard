@@ -1,11 +1,11 @@
 /**
  * The price book is service_catalog (v093). Three row types share it:
- *   PRICED    sold at unit_price per unit; typical_hours only suggest a price
- *   MEASURED  estimate-builder rows, priced from labor hours per sqft/lnft/each
- *   TASK      estimate-builder rows, priced from flat hours per task
- * Every type can carry a unit_price for job lines; only MEASURED and TASK are
- * priced by the estimate builder. Hours live in one column per type, which
- * the helpers below hide from the screen.
+ *   PRICED    job lines only
+ *   MEASURED  also the old estimate builder, labor hours per sqft/lnft/each
+ *   TASK      also the old estimate builder, flat hours per task
+ * Hours live in one column per type, which the helpers below hide from the
+ * screen. On a job line every row sells at its own unit_price when set, else
+ * at its typical hours × its labor rate (v098: general or skilled).
  */
 
 export type CatalogType = "PRICED" | "MEASURED" | "TASK";
@@ -14,6 +14,10 @@ export type PriceBookUnit = "each" | "hour" | "sqft" | "lnft";
 export const PRICED_UNITS: PriceBookUnit[] = ["each", "hour", "sqft", "lnft"];
 export const MEASURED_UNITS: PriceBookUnit[] = ["sqft", "lnft", "each"];
 
+export type RateType = "general" | "skilled";
+export type Rates = { general: number | null; skilled: number | null };
+export const RATE_LABEL: Record<RateType, string> = { general: "General", skilled: "Skilled" };
+
 export type CatalogRow = {
   type: CatalogType;
   unit: PriceBookUnit | null;
@@ -21,6 +25,7 @@ export type CatalogRow = {
   flat_labor_hours: number | null;
   typical_hours: number | null;
   unit_price: number | null;
+  rate_type: RateType;
 };
 
 /** The unit a row is sold in. A TASK row is sold per task. */
@@ -35,16 +40,28 @@ export function hoursPerUnit(row: CatalogRow): number | null {
   return row.unit === "hour" ? 1 : row.typical_hours;
 }
 
-/** Hours × effective sell rate, to the cent. Null when either is missing. */
-export function suggestedUnitPrice(hours: number | null, sellRate: number): number | null {
-  if (hours === null || !(hours > 0) || !(sellRate > 0)) return null;
-  return Math.round(hours * sellRate * 100) / 100;
+/**
+ * Hours × an hourly rate, per unit: to the cent, or to a hundredth of a cent
+ * for per-sqft and per-lnft work. Null when hours or the rate are missing.
+ */
+export function priceFromHours(hours: number | null, rate: number | null, unit: PriceBookUnit): number | null {
+  if (hours === null || !(hours > 0) || rate === null || !(rate >= 0)) return null;
+  const f = unit === "sqft" || unit === "lnft" ? 10000 : 100;
+  return Math.round(hours * rate * f) / f;
+}
+
+/** What a row sells for per unit on a job line: its own price, else hours × its rate. */
+export function catalogUnitPrice(row: CatalogRow, rates: Rates): number | null {
+  if (row.unit_price !== null) return row.unit_price;
+  return priceFromHours(hoursPerUnit(row), rates[row.rate_type], priceBookUnit(row));
 }
 
 export type PriceBookDraft = {
   name: string;
   type: CatalogType;
   unit: PriceBookUnit;
+  rateType: RateType;
+  /** Your own price; blank means typical hours × the rate. */
   unitPrice: string;
   hours: string;
   materialsNote: string;
@@ -56,6 +73,7 @@ export const EMPTY_DRAFT: PriceBookDraft = {
   name: "",
   type: "PRICED",
   unit: "each",
+  rateType: "general",
   unitPrice: "",
   hours: "",
   materialsNote: "",
@@ -71,6 +89,7 @@ export function rowToDraft(
     name: row.name,
     type: row.type,
     unit: priceBookUnit(row),
+    rateType: row.rate_type,
     unitPrice: row.unit_price === null ? "" : String(row.unit_price),
     hours: hours === null ? "" : String(hours),
     materialsNote: row.materials_note ?? "",
@@ -102,7 +121,9 @@ export function draftToRow(
   d: PriceBookDraft,
 ): { ok: true; row: CatalogWrite } | { ok: false; error: string } {
   const name = d.name.trim();
-  if (!name) return { ok: false, error: "Name is required." };
+  if (!name) return { ok: false, error: "Give it a name." };
+  if (BUILT_IN_NAMES.includes(name.toLowerCase()))
+    return { ok: false, error: `"${name}" is built in. Name the work instead, like "Patch drywall".` };
 
   let unitPrice: number | null = null;
   if (d.unitPrice.trim() !== "") {
@@ -121,6 +142,7 @@ export function draftToRow(
   const base = {
     name,
     unit_price: unitPrice,
+    rate_type: d.rateType,
     materials_note: d.materialsNote.trim() || null,
     notes: d.notes.trim() || null,
     active: d.active,
@@ -144,11 +166,11 @@ export function draftToRow(
   }
 
   if (hours === null)
-    return { ok: false, error: "The estimate builder prices this from hours; enter them." };
+    return { ok: false, error: "Old estimates price this from its hours; enter them." };
 
   if (d.type === "MEASURED") {
     if (!MEASURED_UNITS.includes(d.unit))
-      return { ok: false, error: "Measured work is per sqft, lnft or each." };
+      return { ok: false, error: "Measured work is per sq ft, ln ft or each." };
     return {
       ok: true,
       row: {
@@ -173,4 +195,22 @@ export function draftToRow(
       typical_hours: null,
     },
   };
+}
+
+/** The two built-in hourly lines; a price-book row can't take their names. */
+export const LABOR_HOURLY = "Labor, hourly";
+export const SKILLED_HOURLY = "Skilled labor, hourly";
+const BUILT_IN_NAMES = [LABOR_HOURLY.toLowerCase(), SKILLED_HOURLY.toLowerCase()];
+
+/**
+ * "Save to price book" from an hourly job line: a job-lines-only row sold
+ * each, priced at its hours × the chosen rate.
+ */
+export function rowFromHourlyLine(input: {
+  name: string;
+  hours: string;
+  rateType: RateType;
+}): { ok: true; row: CatalogWrite } | { ok: false; error: string } {
+  if (input.hours.trim() === "") return { ok: false, error: "Enter the hours the work usually takes." };
+  return draftToRow({ ...EMPTY_DRAFT, name: input.name, hours: input.hours, rateType: input.rateType });
 }

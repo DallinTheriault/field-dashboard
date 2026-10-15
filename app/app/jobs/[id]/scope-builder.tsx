@@ -33,6 +33,15 @@ import {
   type NewLine,
   type PriceBookEntry,
 } from "@/lib/jobs/lines";
+import {
+  LABOR_HOURLY,
+  RATE_LABEL,
+  SKILLED_HOURLY,
+  priceFromHours,
+  rowFromHourlyLine,
+  type RateType,
+  type Rates,
+} from "@/lib/estimator/price-book";
 import { deleteTask, deleteTaskPhoto } from "../task-actions";
 
 export type TaskPhoto = { id: number; caption: string | null };
@@ -93,7 +102,7 @@ export function ScopeBuilder({
   lines: initial,
   canWrite,
   pricing,
-  hourlyRate,
+  rates,
 }: {
   jobId: number;
   clientId: number;
@@ -101,7 +110,8 @@ export function ScopeBuilder({
   canWrite: boolean;
   /** Prices and the price book (estimator on). Off: a plain task list. */
   pricing: boolean;
-  hourlyRate: number | null;
+  /** General and skilled hourly rates (null: not set). */
+  rates: Rates;
 }) {
   const supabase = useMemo(() => createClient(), []);
   const [lines, setLines] = useState<JobLine[]>(initial);
@@ -276,8 +286,8 @@ export function ScopeBuilder({
         )}
       </div>
 
-      {canWrite && pricing && <PriceBookPicker onPick={(e) => addLine(lineFromEntry(e))} hourlyRate={hourlyRate} />}
-      {canWrite && <CustomLine pricing={pricing} hourlyRate={hourlyRate} onAdd={addLine} />}
+      {canWrite && pricing && <PriceBookPicker onPick={(e) => addLine(lineFromEntry(e))} rates={rates} />}
+      {canWrite && <CustomLine pricing={pricing} hourlyRate={rates.general} onAdd={addLine} />}
       {err && <div className="form-error mb-2">{err}</div>}
 
       {lines.length === 0 ? (
@@ -295,6 +305,8 @@ export function ScopeBuilder({
               save={saves[l.id]}
               pricing={pricing}
               canWrite={canWrite}
+              clientId={clientId}
+              rates={rates}
               expanded={openId === l.id}
               onToggleExpand={() => setOpenId(openId === l.id ? null : l.id)}
               onWrite={(patch) => write(l.id, patch)}
@@ -342,10 +354,10 @@ function bySort(a: JobLine, b: JobLine) {
 
 function PriceBookPicker({
   onPick,
-  hourlyRate,
+  rates,
 }: {
   onPick: (e: PriceBookEntry) => void;
-  hourlyRate: number | null;
+  rates: Rates;
 }) {
   const supabase = useMemo(() => createClient(), []);
   const [query, setQuery] = useState("");
@@ -365,7 +377,7 @@ function PriceBookPicker({
     const [{ data: rows }, { data: used }] = await Promise.all([
       supabase
         .from("service_catalog")
-        .select("id, name, type, unit, unit_price")
+        .select("id, name, type, unit, unit_price, typical_hours, labor_hours_per_unit, flat_labor_hours, rate_type")
         .eq("active", true)
         .order("name"),
       supabase
@@ -375,10 +387,17 @@ function PriceBookPicker({
         .order("created_at", { ascending: false })
         .limit(60),
     ]);
+    const n = (v: unknown) => (v === null || v === undefined ? null : Number(v));
     setEntries(
       pickerEntries(
-        (rows ?? []).map((r) => ({ ...r, unit_price: r.unit_price === null ? null : Number(r.unit_price) })),
-        hourlyRate,
+        (rows ?? []).map((r) => ({
+          ...r,
+          unit_price: n(r.unit_price),
+          typical_hours: n(r.typical_hours),
+          labor_hours_per_unit: n(r.labor_hours_per_unit),
+          flat_labor_hours: n(r.flat_labor_hours),
+        })),
+        rates,
       ),
     );
     setRecent(recentServiceIds(used ?? []));
@@ -415,7 +434,7 @@ function PriceBookPicker({
             <li className="px-3 py-3 text-2xs text-bone-400">Nothing matches. Add it as a custom line below.</li>
           )}
           {matches.map((e) => (
-            <li key={e.id ?? "hourly"}>
+            <li key={e.id ?? e.name}>
               <button
                 type="button"
                 // Fire before the input's blur closes the list.
@@ -534,6 +553,8 @@ function LineRow({
   save,
   pricing,
   canWrite,
+  clientId,
+  rates,
   expanded,
   onToggleExpand,
   onWrite,
@@ -548,6 +569,8 @@ function LineRow({
   save: SaveState | undefined;
   pricing: boolean;
   canWrite: boolean;
+  clientId: number;
+  rates: Rates;
   expanded: boolean;
   onToggleExpand: () => void;
   onWrite: (patch: Patch) => void;
@@ -634,6 +657,8 @@ function LineRow({
           editable={editable}
           priceEditable={priceEditable}
           pricing={pricing}
+          clientId={clientId}
+          rates={rates}
           onWrite={onWrite}
           onMove={onMove}
           onDelete={onDelete}
@@ -793,6 +818,8 @@ function LineDetails({
   editable,
   priceEditable,
   pricing,
+  clientId,
+  rates,
   onWrite,
   onMove,
   onDelete,
@@ -803,6 +830,8 @@ function LineDetails({
   editable: boolean;
   priceEditable: boolean;
   pricing: boolean;
+  clientId: number;
+  rates: Rates;
   onWrite: (patch: Patch) => void;
   onMove: (dir: -1 | 1) => void;
   onDelete: () => void;
@@ -902,6 +931,10 @@ function LineDetails({
           />
           Bill this line
         </label>
+      )}
+
+      {pricing && editable && line.unit === "hour" && (
+        <SaveToPriceBook line={line} clientId={clientId} rates={rates} />
       )}
 
       {line.photos.length > 0 && (
@@ -1007,6 +1040,124 @@ function LineDetails({
           </button>
         </div>
       )}
+    </div>
+  );
+}
+
+// --- Save to price book -------------------------------------------------------------
+
+/**
+ * Turn an hourly line into price-book work: a name, the hours it usually
+ * takes and which rate it bills at. It is sold each, at hours × that rate, so
+ * it follows the rate when the rate changes. The line itself is untouched.
+ */
+function SaveToPriceBook({ line, clientId, rates }: { line: JobLine; clientId: number; rates: Rates }) {
+  const supabase = useMemo(() => createClient(), []);
+  const builtIn = line.title === LABOR_HOURLY || line.title === SKILLED_HOURLY;
+  const guessedRate: RateType =
+    line.title === SKILLED_HOURLY ||
+    (line.title !== LABOR_HOURLY && line.unit_price !== null && line.unit_price === rates.skilled && rates.skilled !== rates.general)
+      ? "skilled"
+      : "general";
+  const [open, setOpen] = useState(false);
+  const [name, setName] = useState(builtIn ? "" : line.title);
+  const [hours, setHours] = useState(String(line.qty));
+  const [rateType, setRateType] = useState<RateType>(guessedRate);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const [done, setDone] = useState<string | null>(null);
+
+  const h = Number(hours);
+  const price = hours.trim() !== "" && Number.isFinite(h) ? priceFromHours(h, rates[rateType], "each") : null;
+
+  async function save() {
+    setErr(null);
+    const r = rowFromHourlyLine({ name, hours, rateType });
+    if (!r.ok) return setErr(r.error);
+    setBusy(true);
+    const { data: existing, error: readErr } = await supabase.from("service_catalog").select("name").eq("active", true);
+    if (readErr) {
+      setBusy(false);
+      return setErr(readErr.message);
+    }
+    if ((existing ?? []).some((e) => e.name.trim().toLowerCase() === r.row.name.toLowerCase())) {
+      setBusy(false);
+      return setErr(`"${r.row.name}" is already in the price book.`);
+    }
+    const { error } = await supabase.from("service_catalog").insert({ client_id: clientId, ...r.row });
+    setBusy(false);
+    if (error) return setErr(error.message);
+    setDone(`Saved "${r.row.name}" to the price book${price !== null ? ` at ${money(price)} each` : ""}.`);
+    setOpen(false);
+  }
+
+  if (!open) {
+    return (
+      <div className="flex items-center gap-2 flex-wrap">
+        <button type="button" onClick={() => { setOpen(true); setDone(null); }} className="btn-secondary text-xs min-h-[44px]">
+          Save to price book
+        </button>
+        {done && <span className="text-2xs text-field-500" role="status">{done}</span>}
+      </div>
+    );
+  }
+
+  return (
+    <div className="border border-line rounded-sm p-3 space-y-2" data-testid="save-to-price-book">
+      <label className="field-group">
+        <span className="field-label">Name in the price book</span>
+        <input
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          placeholder="What the work is, like Patch drywall"
+          className="w-full min-h-[44px]"
+          aria-label="Name in the price book"
+        />
+      </label>
+      <label className="field-group">
+        <span className="field-label">Typical hours</span>
+        <input
+          inputMode="decimal"
+          value={hours}
+          onChange={(e) => setHours(e.target.value)}
+          className="w-full min-h-[44px]"
+          aria-label="Typical hours"
+        />
+      </label>
+      <fieldset className="field-group">
+        <legend className="field-label">Labor rate</legend>
+        <div className="flex flex-wrap gap-x-4">
+          {(["general", "skilled"] as RateType[]).map((t) => (
+            <label key={t} className="flex items-center gap-2 text-sm text-bone-100 min-h-[44px]">
+              <input
+                type="radio"
+                name={`rate-${line.id}`}
+                checked={rateType === t}
+                onChange={() => setRateType(t)}
+                className="w-4 h-4"
+              />
+              {RATE_LABEL[t]}
+              <span className="text-bone-400 num">{rates[t] === null ? "(not set)" : `${money(rates[t]!)}/hr`}</span>
+            </label>
+          ))}
+        </div>
+      </fieldset>
+      <p className="text-2xs text-bone-400" data-testid="save-price">
+        {price !== null
+          ? `Price: ${money(price)} each (${h} hr × ${money(rates[rateType]!)}/hr)`
+          : rates[rateType] === null
+            ? `Your ${RATE_LABEL[rateType].toLowerCase()} rate isn't set, so this will need a price.`
+            : "Enter the hours to see the price."}
+      </p>
+      {err && <div className="form-error">{err}</div>}
+      <div className="flex justify-end gap-2">
+        <button type="button" onClick={() => { setOpen(false); setErr(null); }} className="btn-ghost text-xs min-h-[44px]">
+          Cancel
+        </button>
+        <button type="button" onClick={save} disabled={busy} className="btn-primary text-xs min-h-[44px]">
+          {busy ? <Loader2 size={12} className="animate-spin" /> : "Save"}
+        </button>
+      </div>
     </div>
   );
 }
