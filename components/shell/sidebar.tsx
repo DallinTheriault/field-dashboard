@@ -13,8 +13,10 @@ import {
   CreditCard,
   ShieldCheck,
   Calculator,
+  Receipt,
 } from "lucide-react";
 import { cn } from "@/lib/cn";
+import { activeHref } from "./nav-active";
 import { Logo } from "@/components/ui/logo";
 import packageJson from "../../package.json";
 
@@ -35,6 +37,7 @@ const ALL_NAV = [
   { href: "/app/contacts", label: "Contacts", icon: Users, flag: null, soon: false },
   { href: "/app/messages", label: "Messages", icon: MessageSquare, flag: "sms" as const, soon: false },
   { href: "/app/calendar", label: "Calendar", icon: CalendarDays, flag: "calendar" as const, soon: false },
+  { href: "/app/estimator/invoices", label: "Invoices", icon: Receipt, flag: "estimator" as const, soon: false },
   { href: "/app/estimator", label: "Business", icon: Calculator, flag: "estimator" as const, soon: false },
   { href: "/app/billing", label: "Billing", icon: CreditCard, flag: "billing" as const, soon: false },
   { href: "/app/settings", label: "Settings", icon: Settings, flag: null, soon: false },
@@ -96,7 +99,7 @@ export function Sidebar({
       {/* Nav */}
       <nav className="flex-1 px-2 py-3 space-y-0.5">
         {NAV.map(({ href, label, icon: Icon, soon }) => {
-          const active = pathname === href || (href !== "/app" && pathname?.startsWith(href));
+          const active = href === activeHref(pathname, NAV.map((n) => n.href));
           return (
             <Link
               key={href}

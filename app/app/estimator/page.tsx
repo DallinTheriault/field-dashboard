@@ -5,7 +5,6 @@ import {
   Car,
   ChevronRight,
   LineChart,
-  Receipt,
   ScanLine,
   Settings2,
   Wallet,
@@ -61,12 +60,6 @@ export default async function EstimatorHome() {
       icon: LineChart,
       label: "Insights",
       blurb: "Estimated vs actual — where bids drift.",
-    },
-    {
-      href: "/app/estimator/invoices",
-      icon: Receipt,
-      label: "Invoices",
-      blurb: "Every invoice, its status, and Stripe sends.",
     },
     {
       href: "/app/estimator/settings",

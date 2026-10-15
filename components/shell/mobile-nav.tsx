@@ -10,8 +10,10 @@ import {
   Calculator,
   Phone,
   Users,
+  Receipt,
 } from "lucide-react";
 import { cn } from "@/lib/cn";
+import { activeHref } from "./nav-active";
 import type { FeatureFlags } from "./sidebar";
 
 /**
@@ -22,7 +24,8 @@ const ALL_TABS = [
   { href: "/app", label: "Home", icon: LayoutDashboard, flag: null as keyof FeatureFlags | null },
   { href: "/app/messages", label: "Messages", icon: MessageSquare, flag: "sms" as const },
   { href: "/app/jobs", label: "Jobs", icon: Briefcase, flag: null },
-  // Estimating happens on-site — when the module is on it earns a thumb slot.
+  // Who owes what is checked from the truck; Business follows when a slot is free.
+  { href: "/app/estimator/invoices", label: "Invoices", icon: Receipt, flag: "estimator" as const },
   { href: "/app/estimator", label: "Business", icon: Calculator, flag: "estimator" as const },
   { href: "/app/calendar", label: "Calendar", icon: CalendarDays, flag: "calendar" as const },
 ] as const;
@@ -64,8 +67,7 @@ export function MobileNav({ featureFlags }: { featureFlags: FeatureFlags }) {
     >
       <ul className="flex items-stretch justify-around">
         {enabled.map(({ href, label, icon: Icon }) => {
-          const active =
-            pathname === href || (href !== "/app" && pathname?.startsWith(href));
+          const active = href === activeHref(pathname, enabled.map((t) => t.href));
           return (
             <li key={href} className="flex-1">
               <Link

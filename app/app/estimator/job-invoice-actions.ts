@@ -515,6 +515,15 @@ export async function voidInvoice(invoiceId: number): Promise<Result> {
   if (!inv) return { ok: false, error: "Invoice not found." };
   const { data: canWrite } = await supabase.rpc("user_can_write_client", { target_client_id: inv.client_id });
   if (canWrite !== true) return { ok: false, error: "You don't have permission to do this." };
+  // Before Stripe: voiding there can't be undone, and money already recorded
+  // means this isn't voided (the database refuses too).
+  const { count: paymentCount } = await supabase
+    .from("payments")
+    .select("id", { count: "exact", head: true })
+    .eq("invoice_id", invoiceId);
+  if ((paymentCount ?? 0) > 0) {
+    return { ok: false, error: "This invoice has payments recorded. Remove them first if they were a mistake." };
+  }
   if (inv.status === "paid") return { ok: false, error: "A paid invoice can't be voided." };
 
   if (inv.stripe_invoice_id) {

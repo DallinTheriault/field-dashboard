@@ -2,15 +2,15 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { BadgeCheck, Ban, Copy, FileDown, Loader2, Trash2 } from "lucide-react";
-import { deleteInvoice, markInvoicePaid } from "../../invoice-actions";
+import { Ban, Copy, FileDown, Loader2, Trash2 } from "lucide-react";
+import { deleteInvoice } from "../../invoice-actions";
 import { voidInvoice } from "../../job-invoice-actions";
 import { SharePdfButton } from "../../share-pdf-button";
 
 /**
- * Everything but sending (the Send panel does that for drafts). An invoice
- * that went out is voided, never deleted; voiding frees its lines and extras
- * to be billed again. Unsent drafts are deleted.
+ * Everything but sending (the Send panel) and payments (the Payments panel).
+ * An invoice that went out is voided, never deleted; voiding frees its lines
+ * and extras to be billed again. Unsent drafts are deleted.
  */
 export function InvoiceActionsBar({
   invoiceId,
@@ -18,12 +18,15 @@ export function InvoiceActionsBar({
   status,
   hasStripe,
   hostedUrl,
+  hasPayments,
 }: {
   invoiceId: number;
   invoiceNumber: string;
   status: string;
   hasStripe: boolean;
   hostedUrl: string | null;
+  /** Money came in: it can't be voided (remove a mistyped payment first). */
+  hasPayments: boolean;
 }) {
   const router = useRouter();
   const [busy, setBusy] = useState<string | null>(null);
@@ -74,22 +77,7 @@ export function InvoiceActionsBar({
             {copied ? "Copied!" : "Copy pay link"}
           </button>
         )}
-        {wentOut && status !== "paid" && (
-          <button
-            type="button"
-            disabled={busy !== null}
-            onClick={() => {
-              if (confirm("Mark this invoice paid (check/cash/Venmo)?")) {
-                run("paid", () => markInvoicePaid(invoiceId));
-              }
-            }}
-            className="btn-secondary text-sm min-h-[44px]"
-          >
-            {busy === "paid" ? <Loader2 size={13} className="animate-spin" /> : <BadgeCheck size={13} />}
-            Mark paid
-          </button>
-        )}
-        {wentOut && status !== "paid" && (
+        {wentOut && status !== "paid" && !hasPayments && (
           <button
             type="button"
             disabled={busy !== null}

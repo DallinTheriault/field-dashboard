@@ -16,8 +16,10 @@ import {
   ShieldCheck,
   LogOut,
   Calculator,
+  Receipt,
 } from "lucide-react";
 import { cn } from "@/lib/cn";
+import { activeHref } from "./nav-active";
 import { Logo } from "@/components/ui/logo";
 import packageJson from "../../package.json";
 import { NAV_DRAWER_OPEN_EVENT } from "./nav-drawer-trigger";
@@ -33,6 +35,7 @@ const ALL_NAV = [
   { href: "/app/contacts", label: "Contacts", icon: Users, flag: null },
   { href: "/app/messages", label: "Messages", icon: MessageSquare, flag: "sms" as const },
   { href: "/app/calendar", label: "Calendar", icon: CalendarDays, flag: "calendar" as const },
+  { href: "/app/estimator/invoices", label: "Invoices", icon: Receipt, flag: "estimator" as const },
   { href: "/app/estimator", label: "Business", icon: Calculator, flag: "estimator" as const },
   { href: "/app/billing", label: "Billing", icon: CreditCard, flag: "billing" as const },
   { href: "/app/settings", label: "Settings", icon: Settings, flag: null },
@@ -161,9 +164,7 @@ export function NavDrawer({
         <nav className="flex-1 overflow-y-auto px-2 py-3">
           <ul className="space-y-0.5">
             {NAV.map(({ href, label, icon: Icon }) => {
-              const active =
-                pathname === href ||
-                (href !== "/app" && pathname?.startsWith(href));
+              const active = href === activeHref(pathname, NAV.map((n) => n.href));
               return (
                 <li key={href}>
                   <Link

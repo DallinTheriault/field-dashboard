@@ -9,7 +9,9 @@ import { InvoiceActionsBar } from "./invoice-actions-bar";
 import { DraftLines, type DraftRow } from "./draft-lines";
 import { JobLinesPanel, type AvailableLine } from "./job-lines-panel";
 import { SendPanel, type Attachment } from "./send-panel";
-import { getTenantTimezone } from "@/lib/dates";
+import { PaymentsPanel } from "./payments-panel";
+import { dayKeyInTz, getTenantTimezone } from "@/lib/dates";
+import type { Payment } from "@/lib/invoices/payments";
 import { buildExtraInvoiceRows } from "@/lib/estimator/expenses";
 import {
   agreedTotal,
@@ -61,6 +63,13 @@ export default async function InvoiceDetailPage({
     .eq("id", invoiceId)
     .maybeSingle();
   if (!inv || !inv.invoice_number) notFound();
+  const { data: paymentRows } = await supabase
+    .from("payments")
+    .select("id, received_on, amount_cents, method, reference")
+    .eq("invoice_id", invoiceId)
+    .order("received_on")
+    .order("id");
+  const payments = (paymentRows ?? []) as Payment[];
 
   const job = inv.jobs as unknown as {
     id: number;
@@ -340,12 +349,24 @@ export default async function InvoiceDetailPage({
         />
       )}
 
+      <PaymentsPanel
+        invoiceId={inv.id}
+        status={inv.status}
+        totalCents={Number(inv.total_cents)}
+        payments={payments}
+        today={dayKeyInTz(new Date(), tz)}
+        canRemove={!inv.stripe_invoice_id}
+        stripeIssued={Boolean(inv.stripe_invoice_id)}
+        draftBlocked={editable ? blocked : null}
+      />
+
       <InvoiceActionsBar
         invoiceId={inv.id}
         invoiceNumber={inv.invoice_number}
         status={inv.status}
         hasStripe={Boolean(inv.stripe_invoice_id)}
         hostedUrl={inv.stripe_hosted_invoice_url}
+        hasPayments={payments.length > 0}
       />
     </div>
   );

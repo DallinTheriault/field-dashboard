@@ -1,7 +1,6 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { createAdminClient } from "@/lib/supabase/admin";
 import { requireWriter } from "@/lib/estimator/auth";
 import { buildClientDocRows } from "@/lib/estimator/client-rows";
 import { buildExtraInvoiceRows } from "@/lib/estimator/expenses";
@@ -183,43 +182,6 @@ export async function createInvoiceFromEstimate(
       invoiceNumber: (data as { invoice_number: string }).invoice_number,
     },
   };
-}
-
-/** Manual fallback — paid by check/cash/Venmo. */
-export async function markInvoicePaid(invoiceId: number): Promise<Result> {
-  const auth = await requireWriter();
-  if (!auth.ok) return { ok: false, error: auth.error };
-  const { supabase, clientId } = auth;
-
-  const { data: inv, error } = await supabase
-    .from("invoices")
-    .update({ status: "paid", paid_at: new Date().toISOString() })
-    .eq("id", invoiceId)
-    .in("status", ["draft", "sent", "overdue"]) // never a void (a stale tab) or twice
-    .select("id, invoice_number, job_id, total_cents")
-    .maybeSingle();
-  if (error || !inv) return { ok: false, error: error?.message ?? "Only an unpaid invoice can be marked paid. Reload it." };
-
-  // create_notification is deliberately service-role-only (SECURITY DEFINER,
-  // no membership check) — the RLS-checked update above already proved the
-  // caller may act on this tenant's invoice.
-  const { data: notif } = await createAdminClient().rpc("create_notification", {
-    p_client_id: clientId,
-    p_kind: "invoice_paid",
-    p_title: `Invoice ${inv.invoice_number} paid`,
-    p_body: `$${(Number(inv.total_cents) / 100).toFixed(2)} received (marked manually).`,
-    p_link_url: `/app/estimator/invoices/${inv.id}`,
-    p_source_job_id: inv.job_id,
-    p_source_message_id: null,
-    p_source_call_summary_id: null,
-  });
-  if (!(notif as { ok?: boolean } | null)?.ok) {
-    console.error("[invoice] notification failed", notif);
-  }
-
-  revalidatePath(`/app/estimator/invoices/${invoiceId}`);
-  revalidatePath("/app/estimator/invoices");
-  return { ok: true };
 }
 
 export async function deleteInvoice(invoiceId: number): Promise<Result> {
