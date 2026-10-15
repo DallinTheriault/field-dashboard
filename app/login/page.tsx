@@ -161,26 +161,10 @@ function LoginForm() {
             </button>
           </form>
 
-          <div className="mt-8 pt-6 border-t border-line-subtle space-y-2">
-            <p className="text-xs text-bone-400">
-              Joining a team?{" "}
-              <Link
-                href="/signup"
-                className="text-bone-100 hover:text-field-500 font-medium"
-              >
-                Create your account →
-              </Link>
-            </p>
-            <p className="text-xs text-bone-400">
-              New business?{" "}
-              <Link
-                href="/onboard"
-                className="text-bone-100 hover:text-field-500 font-medium"
-              >
-                Request setup →
-              </Link>
-            </p>
-          </div>
+          <p className="mt-8 pt-6 border-t border-line-subtle text-xs text-bone-400">
+            Field is invite-only. Joining a team? Ask the owner to add you,
+            then use &ldquo;Forgot password?&rdquo; above to set your password.
+          </p>
         </div>
       </main>
     </div>

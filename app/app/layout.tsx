@@ -39,17 +39,6 @@ export default async function AppLayout({
             and add{" "}
             <span className="font-mono text-bone-100">{user.email}</span>.
           </p>
-          <p className="text-xs text-bone-400 mb-4">
-            If you&apos;re a new business owner setting up Field, the public
-            intake form is at{" "}
-            <a
-              href="/onboard"
-              className="text-bone-100 underline underline-offset-2"
-            >
-              /onboard
-            </a>
-            .
-          </p>
           <form action="/auth/logout" method="POST">
             <button type="submit" className="btn-secondary text-xs h-8">
               Sign out

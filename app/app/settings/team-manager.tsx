@@ -89,7 +89,11 @@ export function TeamManager({
         setError(result.error);
         return;
       }
-      setSuccess(`${email.trim()} added as ${newRole}.`);
+      setSuccess(
+        result.newLogin
+          ? `${email.trim()} added as ${newRole}. They don't have a password yet: ask them to open ${window.location.host}/login, tap "Forgot password?" and set one.`
+          : `${email.trim()} added as ${newRole}.`,
+      );
       setEmail("");
       setAddOpen(false);
       router.refresh();
@@ -221,12 +225,9 @@ export function TeamManager({
         addOpen ? (
           <div className="bg-ink-2 border border-line rounded-sm p-3 space-y-2">
             <p className="text-2xs text-bone-400 leading-relaxed">
-              The person you&apos;re adding must already have a Field account
-              at this email. If they don&apos;t, ask them to sign up at{" "}
-              <span className="font-mono text-bone-100">
-                fielddashboard.netlify.app
-              </span>{" "}
-              first.
+              If they don&apos;t have a Field login yet, adding them makes
+              one. They set their password from the sign-in page with
+              &ldquo;Forgot password?&rdquo;.
             </p>
             <input
               type="email"

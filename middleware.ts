@@ -8,9 +8,9 @@ export async function middleware(request: NextRequest) {
 export const config = {
   // Only run middleware on routes that actually need session refresh.
   // Excludes: static assets, API routes (handle their own auth), public
-  // marketing pages (login, signup, onboard, reset-password), favicon,
+  // auth pages (login, reset-password), favicon,
   // images. Each excluded route saves a network round-trip to Supabase.
   matcher: [
-    "/((?!_next/static|_next/image|favicon.ico|api/|login|signup|onboard|reset-password|auth/|_next/data|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico|css|js|woff|woff2|ttf)$).*)",
+    "/((?!_next/static|_next/image|favicon.ico|api/|login|reset-password|auth/|_next/data|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico|css|js|woff|woff2|ttf)$).*)",
   ],
 };

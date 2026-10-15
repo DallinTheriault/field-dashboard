@@ -14,10 +14,10 @@ import {
 type Result = { ok: true } | { ok: false; error: string };
 
 /**
- * Add an existing Field user to the current tenant.
- *
- * v0.5.11 limitation: invitee must already have a Field auth account.
- * Real magic-link invitations land in v0.6.0.
+ * Add someone to the current tenant by email. Field is invite-only (public
+ * sign-up is off), so when they have no login yet this makes one with no
+ * password; they set it from the sign-in page with "Forgot password?",
+ * which proves they own the mailbox.
  *
  * Permission: caller must be owner (can add any role) or manager (can
  * only add members).
@@ -26,7 +26,7 @@ export async function addTeamMemberByEmail(
   clientId: number,
   email: string,
   role: Role,
-): Promise<Result> {
+): Promise<{ ok: true; newLogin: boolean } | { ok: false; error: string }> {
   const cleanedEmail = email.trim().toLowerCase();
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanedEmail)) {
     return { ok: false, error: "Invalid email address." };
@@ -65,19 +65,21 @@ export async function addTeamMemberByEmail(
   const admin = createAdminClient();
   // Look up the auth user by email
   const { data: usersData, error: lookupErr } =
-    await admin.auth.admin.listUsers();
+    await admin.auth.admin.listUsers({ perPage: 1000 });
   if (lookupErr) {
     return { ok: false, error: `Lookup failed: ${lookupErr.message}` };
   }
-  const target = usersData.users.find(
+  let target = usersData.users.find(
     (u) => (u.email ?? "").toLowerCase() === cleanedEmail,
   );
+  const newLogin = !target;
   if (!target) {
-    return {
-      ok: false,
-      error:
-        "No Field account found for that email. Have them sign up at fielddashboard.netlify.app first, then try again.",
-    };
+    const { data: created, error: createErr } =
+      await admin.auth.admin.createUser({ email: cleanedEmail, email_confirm: true });
+    if (createErr || !created.user) {
+      return { ok: false, error: `Couldn't make a login for ${cleanedEmail}: ${createErr?.message ?? "unknown error"}` };
+    }
+    target = created.user;
   }
 
   const { data: existing } = await admin
@@ -116,7 +118,7 @@ export async function addTeamMemberByEmail(
   });
 
   revalidatePath("/app/settings");
-  return { ok: true };
+  return { ok: true, newLogin };
 }
 
 /**

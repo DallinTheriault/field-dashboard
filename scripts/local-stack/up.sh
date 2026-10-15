@@ -54,7 +54,13 @@ AUTH_ENV=(
   GOTRUE_DB_MIGRATIONS_PATH="$BIN/migrations"
   GOTRUE_JWT_SECRET="$SECRET" GOTRUE_JWT_EXP=3600 GOTRUE_JWT_AUD=authenticated
   GOTRUE_JWT_DEFAULT_GROUP_NAME=authenticated GOTRUE_JWT_ADMIN_ROLES=service_role
-  GOTRUE_DISABLE_SIGNUP=false GOTRUE_EXTERNAL_EMAIL_ENABLED=true GOTRUE_MAILER_AUTOCONFIRM=true
+  # Like prod: invite-only (no public sign-up); password-reset mail goes to
+  # the local mail sink ($FIELDSTACK/mail).
+  GOTRUE_DISABLE_SIGNUP=true GOTRUE_EXTERNAL_EMAIL_ENABLED=true GOTRUE_MAILER_AUTOCONFIRM=true
+  GOTRUE_SMTP_HOST=127.0.0.1 GOTRUE_SMTP_PORT="$MAIL_PORT" GOTRUE_SMTP_USER=local GOTRUE_SMTP_PASS=local
+  GOTRUE_SMTP_ADMIN_EMAIL=auth@field.test GOTRUE_SMTP_SENDER_NAME=Field
+  GOTRUE_MAILER_URLPATHS_RECOVERY=/auth/v1/verify GOTRUE_MAILER_URLPATHS_INVITE=/auth/v1/verify
+  GOTRUE_MAILER_URLPATHS_CONFIRMATION=/auth/v1/verify GOTRUE_MAILER_URLPATHS_EMAIL_CHANGE=/auth/v1/verify
   GOTRUE_RATE_LIMIT_EMAIL_SENT=1000 GOTRUE_LOG_LEVEL=warn
 )
 STORAGE_ENV=(
@@ -107,6 +113,7 @@ server-host = "127.0.0.1"
 server-port = $REST_PORT
 log-level = "warn"
 EOF
+spawn mail-sink node "$HERE/mail-sink.mjs" "$MAIL_PORT" "$FIELDSTACK/mail"
 spawn rest "$BIN/postgrest" "$FIELDSTACK/postgrest.conf"
 spawn auth "${AUTH_ENV[@]}" "$BIN/auth"
 start_storage

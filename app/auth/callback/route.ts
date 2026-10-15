@@ -45,9 +45,9 @@ export async function GET(request: Request) {
     return NextResponse.redirect(`${origin}/reset-password`, { status: 303 });
   }
 
-  // Email confirmation (signup) flow lands at /app since they're now
-  // signed in. If this is a team-member signup and they're not yet on a
-  // tenant, /app/layout will handle that case (they'll see an "ask owner
-  // to add you" empty state — which is the right UX for that path).
-  return NextResponse.redirect(`${origin}${next ?? "/app"}`, { status: 303 });
+  // Everything else lands at /app (or `next`). Someone signed in but not on
+  // a tenant sees /app/layout's "ask the owner to add you" panel. `next` must
+  // be a path on this site: "@evil.com" or "//evil.com" would leave it.
+  const safeNext = next && /^\/(?![/\\])/.test(next) ? next : "/app";
+  return NextResponse.redirect(`${origin}${safeNext}`, { status: 303 });
 }
