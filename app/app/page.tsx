@@ -73,8 +73,8 @@ export default async function HomePage() {
     ? await Promise.all([
         supabase.from("jobs").select(`id, name, status, updated_at, ${JOB_LOCATION_SELECT}`).in("id", readyIds)
           .is("archived_at", null),
-        supabase.from("tasks").select("job_id, qty, unit_price").in("job_id", readyIds)
-          .eq("status", "done").eq("billable", true).is("invoice_id", null),
+        supabase.from("tasks").select("job_id, qty, unit_price, status").in("job_id", readyIds)
+          .eq("billable", true).is("invoice_id", null),
         supabase.from("expenses").select("job_id, amount").in("job_id", readyIds)
           .eq("assignment", "job_extra").is("invoiced_on", null),
         supabase.from("invoices").select("id, job_id, status, stripe_invoice_id, invoice_number").in("job_id", readyIds),
@@ -84,9 +84,12 @@ export default async function HomePage() {
     id: number; name: string | null; status: string; updated_at: string;
   }>).sort((a, b) => (a.updated_at ?? "").localeCompare(b.updated_at ?? ""));
   const jobById = new Map(readyJobs.map((j) => [j.id, j]));
+  // On a completed job every billable line counts as finished, checked or not (v099).
+  const finished = ((tasks ?? []) as Array<Parameters<typeof readyToInvoice>[0]["tasks"][number] & { status: string }>)
+    .filter((t) => t.status === "done" || jobById.get(t.job_id)?.status === "completed");
   const ready = readyToInvoice({
     jobIds: readyJobs.map((j) => j.id),
-    tasks: (tasks ?? []) as Parameters<typeof readyToInvoice>[0]["tasks"],
+    tasks: finished,
     extras: (extras ?? []) as Parameters<typeof readyToInvoice>[0]["extras"],
     completedJobIds: readyJobs.filter((j) => j.status === "completed").map((j) => j.id),
     invoices: (candInvoices ?? []) as Parameters<typeof readyToInvoice>[0]["invoices"],

@@ -3,12 +3,12 @@
 --
 --   ready      finished billable lines or job extras not on an invoice that
 --              went out (unclaimed, or only on an unsent draft), or the job
---              is completed and nothing has gone out for it
+--              is completed and nothing has gone out for it. On a completed
+--              job every billable line counts as finished, checked or not.
 --   invoiced   an invoice went out and nothing is paid yet
---   part_paid  some money in, but an invoice still has a balance, or billable
---              lines aren't invoiced yet
---   paid       everything billable went out and every invoice that went out
---              is fully paid
+--   part_paid  some money in, and an invoice that went out still has a balance
+--   paid       nothing owed: every invoice that went out is fully paid, even
+--              if billable work isn't finished yet
 --   (null)     nothing to bill yet
 --
 -- "Went out" is the same test Home and the invoice guards use: sent, paid or
@@ -110,11 +110,11 @@ invoiced as (
    group by job_id
 ),
 lines as (
-  select t.job_id,
-         count(*) filter (where t.status = 'done') as ready_lines,
-         count(*) as unbilled_lines
+  select t.job_id, count(*) as ready_lines
     from public.tasks t
+    join public.jobs j on j.id = t.job_id
    where t.billable
+     and (t.status = 'done' or j.status = 'completed')
      and (t.invoice_id is null or t.invoice_id in (select id from unsent))
    group by t.job_id
 ),
@@ -132,7 +132,6 @@ facts as (
          j.paid_outside_at,
          j.paid_outside_note,
          coalesce(l.ready_lines, 0) + coalesce(x.ready_extras, 0) as ready_count,
-         coalesce(l.unbilled_lines, 0) as unbilled_lines,
          (j.status = 'completed' and inv.job_id is null) as completed_nothing_sent,
          inv.job_id is not null as went_out,
          coalesce(inv.invoiced_cents, 0) as invoiced_cents,
@@ -152,8 +151,6 @@ select job_id,
          when paid_outside_at is not null then 'paid'
          when ready_count > 0 or completed_nothing_sent then 'ready'
          when not went_out then null
-         when unbilled_lines > 0 and paid_cents > 0 then 'part_paid'
-         when unbilled_lines > 0 then 'invoiced'
          else 'paid'
        end as state,
        ready_count,

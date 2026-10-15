@@ -50,11 +50,30 @@ check("some paid: Part paid", (await state(b.id)) === "part_paid");
 await pay(bInv, 6000);
 check("all paid: Paid", (await state(b.id)) === "paid");
 const b2 = await line(b.id, "Second patch", { status: "open" });
-check("paid, with billable work still to finish: Part paid", (await state(b.id)) === "part_paid");
+check("nothing owed is Paid, even with billable work still to finish", (await state(b.id)) === "paid");
 await owner.patch(`tasks?id=eq.${b2.id}`, { status: "done" });
 check("…and once that work is finished: Ready to invoice", (await state(b.id)) === "ready");
 await owner.patch(`tasks?id=eq.${b2.id}`, { billable: false });
 check("not billable after all: back to Paid", (await state(b.id)) === "paid");
+
+const g = await job("Gus Unchecked");
+const g1 = await line(g.id, "Fence stain", { status: "open" });
+check("an unchecked billable line on a job still in progress: no badge", (await state(g.id)) === null);
+await owner.patch(`jobs?id=eq.${g.id}`, { status: "completed" });
+check("once the job is completed, its unchecked billable lines count as finished: Ready to invoice", (await state(g.id)) === "ready");
+const gInv = await invoiceFor(g.id, [g1]);
+await send(gInv);
+check("…and invoicing them clears it: Invoiced", (await state(g.id)) === "invoiced");
+await pay(gInv, 10000);
+check("…then Paid", (await state(g.id)) === "paid");
+
+const h = await job("Hal Paidish");
+const h1 = await line(h.id, "Deposit work");
+const hInv = await invoiceFor(h.id, [h1]);
+await send(hInv);
+await pay(hInv, 10000);
+await line(h.id, "Rest of the job", { status: "open" });
+check("paid in full with more work still open: Paid", (await state(h.id)) === "paid");
 
 const c = await job("Cal Void");
 const c1 = await line(c.id, "Gutter");
@@ -193,11 +212,13 @@ await page.waitForURL(/billing=unpaid/);
 const unpaidNames = await page.locator(".md\\:hidden a .text-sm.font-medium").allInnerTexts();
 check("Unpaid lists ready, invoiced and part-paid jobs only",
   unpaidNames.includes("Dot Done") && unpaidNames.includes("Ollie Owes") && !unpaidNames.includes("Uma Undo") && !unpaidNames.includes("Bea Ready") &&
+  !unpaidNames.includes("Hal Paidish") && unpaidNames.includes("Gus Unchecked") === false &&
   !unpaidNames.includes("Olga Oldjob") && !unpaidNames.includes("Annie Nothing"), unpaidNames.join(", "));
 await page.getByRole("navigation", { name: "Billing filter" }).getByRole("link", { name: "Paid", exact: true }).click();
 await page.waitForURL(/billing=paid/);
 const paidNames = await page.locator(".md\\:hidden a .text-sm.font-medium").allInnerTexts();
 check("Paid lists paid jobs only", paidNames.includes("Uma Undo") && paidNames.includes("Olga Oldjob") && paidNames.includes("Bea Ready") &&
+  paidNames.includes("Hal Paidish") &&
   !paidNames.includes("Dot Done") && !paidNames.includes("Annie Nothing"), paidNames.join(", "));
 
 const desk = await login(browser, "owner@cascade.test", { width: 1280, height: 900 });

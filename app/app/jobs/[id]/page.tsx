@@ -373,7 +373,7 @@ export default async function JobDetailPage({
                 ? null
                 : billing.paidOutsideAt
                   ? "undo"
-                  : (billing.state === "ready" || billing.state === "part_paid") && billing.owedCents === 0
+                  : billing.state === "ready" && billing.owedCents === 0
                     ? "mark"
                     : null
             }
