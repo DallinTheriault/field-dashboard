@@ -145,7 +145,9 @@ facts as (
 select job_id,
        client_id,
        case
-         -- Money Field sent and is still owed always shows.
+         -- Money still owed on an invoice that went out shows, unless new work
+         -- is ready to invoice (the owner's next step); a paid-outside mark
+         -- never hides it.
          when owed_cents > 0 and paid_cents = 0 and (paid_outside_at is not null or ready_count = 0) then 'invoiced'
          when owed_cents > 0 and (paid_outside_at is not null or ready_count = 0) then 'part_paid'
          when paid_outside_at is not null then 'paid'
