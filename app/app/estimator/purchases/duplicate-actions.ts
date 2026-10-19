@@ -115,7 +115,7 @@ export async function mergePurchaseIntoExisting(input: {
   const admin = createAdminClient();
   const { data: rows } = await admin
     .from("purchases")
-    .select("id, client_id, receipt_path, receipt_paths")
+    .select("id, client_id, receipt_path, receipt_paths, scan_paths")
     .in("id", [placeholderId, targetId]);
 
   const placeholder = (rows ?? []).find((r) => r.id === placeholderId);
@@ -148,11 +148,21 @@ export async function mergePurchaseIntoExisting(input: {
     ...(target.receipt_path ? [target.receipt_path as string] : []),
   ];
   const merged = [...new Set([...existing, ...incoming])];
+  // The scanner's pieces of a tall receipt travel with its photo (and stay
+  // referenced, so they're deleted with the purchase later).
+  const pieceList = (r: typeof target) => {
+    const own = ((r.scan_paths as string[] | null) ?? []).filter(Boolean);
+    return own.length > 0 ? own : null;
+  };
+  const scanPaths =
+    pieceList(target) || pieceList(placeholder)
+      ? [...new Set([...(pieceList(target) ?? existing), ...(pieceList(placeholder) ?? incoming)])]
+      : [];
 
   // ---- 1. APPEND FIRST, and confirm it landed ----------------------------
   const { data: appended, error: appendErr } = await admin
     .from("purchases")
-    .update({ receipt_paths: merged })
+    .update({ receipt_paths: merged, scan_paths: scanPaths })
     .eq("id", targetId)
     .select("id, receipt_paths")
     .maybeSingle();

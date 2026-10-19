@@ -12,6 +12,8 @@ import { readyToInvoice } from "@/lib/home/ready-to-invoice";
 import { balanceDueCents, daysBetween } from "@/lib/invoices/payments";
 import { AddJobButton } from "./jobs/_components/add-job-button";
 import { ScanReceipt } from "./estimator/purchases/scan-receipt";
+import { PendingReceipts } from "./estimator/purchases/pending-receipts";
+import { needsAttention, PURCHASE_SCAN_COLS, toPendingReceipt } from "@/lib/receipts/state";
 
 const usd = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" });
 const CLOSED = '("completed","cancelled")';
@@ -30,7 +32,8 @@ export default async function HomePage() {
   const supabase = await createClient();
   const money = flags.estimator && session !== null && canViewSettings(session.role);
 
-  const [openRes, pickRes, billingRes, unpaidRes] = await Promise.all([
+  const scanning = flags.estimator && flags.receiptAi && session !== null;
+  const [openRes, pickRes, billingRes, unpaidRes, receiptsRes] = await Promise.all([
     supabase
       .from("jobs")
       .select(`id, name, status, start_datetime, ${JOB_LOCATION_SELECT}`)
@@ -56,7 +59,26 @@ export default async function HomePage() {
           .in("status", ["sent", "overdue"])
           .not("invoice_number", "is", null)
       : Promise.resolve({ data: [] }),
+    // Scanned receipts still to check. Members see the ones they took.
+    scanning
+      ? (() => {
+          const q = supabase
+            .from("purchases")
+            .select(`id, vendor, purchase_date, total, tax, receipt_paths, created_by, ${PURCHASE_SCAN_COLS}, expenses(count)`)
+            .not("scan_status", "is", null)
+            .order("id", { ascending: false })
+            .limit(20);
+          return money ? q : q.eq("created_by", session!.userId);
+        })()
+      : Promise.resolve({ data: [] }),
   ]);
+
+  const now = Date.now();
+  const toCheck = ((receiptsRes.data ?? []) as unknown as Array<Parameters<typeof toPendingReceipt>[0] & {
+    expenses: Array<{ count: number }> | null;
+  }>)
+    .map((p) => toPendingReceipt(p, p.expenses?.[0]?.count ?? 0, now))
+    .filter((p) => p.state === "reading" || (needsAttention(p.state) && (money || p.state !== "compare")));
 
   const open = (openRes.data ?? []) as unknown as Array<Parameters<typeof jobAddress>[0] & {
     id: number; name: string | null; status: string; start_datetime: string | null;
@@ -111,7 +133,7 @@ export default async function HomePage() {
       <section className="grid grid-cols-3 gap-3" aria-label="Start something">
         <AddJobButton variant="tile" />
         {flags.estimator && session?.clientId && flags.receiptAi ? (
-          <ScanReceipt variant="tile" clientId={session.clientId} jobs={pickJobs} role={session.role} />
+          <ScanReceipt variant="tile" />
         ) : (
           <Link href="/app/estimator/purchases" className="home-tile">
             <Receipt size={26} />
@@ -123,6 +145,16 @@ export default async function HomePage() {
           <span>New contact</span>
         </Link>
       </section>
+
+      {session && (
+        <PendingReceipts
+          receipts={toCheck}
+          jobs={pickJobs}
+          role={session.role}
+          receiptAi={flags.receiptAi}
+          allHref={money ? "/app/estimator/purchases" : undefined}
+        />
+      )}
 
       <HomeList title="Open jobs" icon={Briefcase} href="/app/jobs" linkLabel="All jobs" testId="open-jobs"
         empty="No open jobs. Tap New job to add one.">

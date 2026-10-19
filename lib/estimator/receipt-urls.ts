@@ -1,6 +1,6 @@
 import "server-only";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { thumbPathFor } from "./receipt-paths";
+import { isPdfPath, thumbPathFor } from "./receipt-paths";
 
 /**
  * Batched signed-URL minting for receipt listings (RECEIPTS_VIEW_SPEC §6.3).
@@ -25,8 +25,11 @@ export async function mintReceiptThumbUrls(
 ): Promise<Map<number, string>> {
   const firstPathByPurchase = new Map<number, string>();
   for (const p of purchases) {
+    // A PDF can't be an <img>: the first photo, or no thumbnail.
     const first =
-      (p.receipt_paths ?? []).find(Boolean) ?? p.receipt_path ?? null;
+      [...(p.receipt_paths ?? []), ...(p.receipt_path ? [p.receipt_path] : [])].find(
+        (x) => x && !isPdfPath(x),
+      ) ?? null;
     if (first) firstPathByPurchase.set(p.id, first);
   }
   if (firstPathByPurchase.size === 0) return new Map();
@@ -55,11 +58,13 @@ export async function mintReceiptThumbUrls(
   return out;
 }
 
+export type PurchaseFile = { url: string; pdf: boolean };
+
 /** All full-size signed URLs for ONE purchase, in order, in a single call. */
 export async function mintPurchasePhotoUrls(purchase: {
   receipt_paths: string[] | null;
   receipt_path: string | null;
-}): Promise<string[]> {
+}): Promise<PurchaseFile[]> {
   const paths = [
     ...((purchase.receipt_paths ?? []).filter(Boolean)),
     ...(purchase.receipt_path ? [purchase.receipt_path] : []),
@@ -72,5 +77,5 @@ export async function mintPurchasePhotoUrls(purchase: {
   if (error || !data) return [];
   return data
     .filter((r) => !r.error && r.signedUrl)
-    .map((r) => r.signedUrl as string);
+    .map((r) => ({ url: r.signedUrl as string, pdf: isPdfPath(r.path ?? "") }));
 }

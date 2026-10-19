@@ -11,6 +11,7 @@ import { ReceiptsView, type ReceiptRow } from "./receipts-view";
 import { mintReceiptThumbUrls } from "@/lib/estimator/receipt-urls";
 import { JOB_LOCATION_SELECT, toJobPick, withBilling } from "@/lib/jobs/address";
 import { BILLING_COLS, billingByJob } from "@/lib/jobs/billing";
+import { PURCHASE_SCAN_COLS, toPendingReceipt } from "@/lib/receipts/state";
 
 /**
  * Expenses — the single intake / list / assignment surface (ruling Q2).
@@ -54,7 +55,7 @@ export default async function ExpenseIntakePage() {
     supabase
       .from("purchases")
       .select(
-        "id, vendor, purchase_date, source, total, tax, receipt_path, receipt_paths, expenses(count)",
+        `id, vendor, purchase_date, source, total, tax, receipt_path, receipt_paths, ${PURCHASE_SCAN_COLS}, expenses(count)`,
       )
       .order("id", { ascending: false })
       .limit(50),
@@ -65,7 +66,7 @@ export default async function ExpenseIntakePage() {
   const items: ExpenseItemRow[] = (itemRows ?? []).map((e) => {
     const job = e.jobs as unknown as { name: string | null } | null;
     const purchase = e.purchases as unknown as {
-      vendor: string;
+      vendor: string | null;
       purchase_date: string | null;
       receipt_path: string | null;
       receipt_paths: string[] | null;
@@ -104,16 +105,12 @@ export default async function ExpenseIntakePage() {
   const itemCountOf = (p: NonNullable<typeof purchaseRows>[number]) =>
     ((p.expenses as unknown as Array<{ count: number }> | null)?.[0]?.count) ?? 0;
 
-  const pendingPurchases = (purchaseRows ?? [])
-    .filter((p) => itemCountOf(p) === 0)
-    .map((p) => ({
-      id: p.id as number,
-      vendor: p.vendor as string,
-      purchase_date: p.purchase_date as string,
-      hasPhotos: ((p.receipt_paths as string[] | null) ?? []).length > 0,
-      total: p.total === null || p.total === undefined ? null : Number(p.total),
-      tax: p.tax === null || p.tax === undefined ? null : Number(p.tax),
-    }));
+  // Receipts to check: no items yet (being read, read, failed, or never
+  // read), or a new read of one already saved, to compare.
+  const now = Date.now();
+  const pending = (purchaseRows ?? [])
+    .map((p) => toPendingReceipt(p as unknown as Parameters<typeof toPendingReceipt>[0], itemCountOf(p), now))
+    .filter((p) => p.itemCount === 0 || p.state === "compare");
 
   // Unassigned-item counts per purchase, in one query (badge accuracy).
   const unassignedByPurchase = new Map<number, number>();
@@ -135,7 +132,7 @@ export default async function ExpenseIntakePage() {
 
   const receipts: ReceiptRow[] = (purchaseRows ?? []).map((p) => ({
     id: p.id as number,
-    vendor: (p.vendor as string) ?? "—",
+    vendor: (p.vendor as string | null) ?? "Receipt",
     purchaseDate: String(p.purchase_date ?? ""),
     total: p.total === null || p.total === undefined ? null : Number(p.total),
     itemCount: itemCountOf(p),
@@ -174,7 +171,7 @@ export default async function ExpenseIntakePage() {
         clientId={session.clientId}
         items={items}
         jobs={jobs}
-        pendingPurchases={pendingPurchases}
+        pending={pending}
         receiptAi={flags.receiptAi}
         role={session.role}
       />

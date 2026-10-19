@@ -65,13 +65,6 @@ export type ModifierRow = {
   active: boolean;
 };
 
-export type ZoneRow = {
-  id: number;
-  label: string;
-  flat_fee: number;
-  active: boolean;
-};
-
 export type EntityRow = {
   id: number;
   name: string;
@@ -87,7 +80,6 @@ export type EstimatorBundle = {
   materials: MaterialRow[];
   links: ServiceMaterialRow[];
   modifiers: ModifierRow[];
-  zones: ZoneRow[];
   entities: EntityRow[];
 };
 
@@ -235,28 +227,23 @@ export type PricedEstimate = {
   result: JobPricingResult;
   rows: ClientRow[];
   settings: EngineSettings;
-  travelFee: number;
 };
 
-export function priceEstimate(
-  rawLines: RawLine[],
-  travelZoneId: number | null,
-  bundle: EstimatorBundle,
-): PricedEstimate {
+/**
+ * Prices an estimate. No travel fee: estimates no longer carry one (mileage
+ * is for taxes, never billed). Estimates saved with a fee keep it as stored.
+ */
+export function priceEstimate(rawLines: RawLine[], bundle: EstimatorBundle): PricedEstimate {
   const settings = buildEngineSettings(bundle);
-  const zone = travelZoneId
-    ? bundle.zones.find((z) => z.id === travelZoneId)
-    : undefined;
-  const travelFee = zone?.flat_fee ?? 0;
   const result = priceJob(
     {
       lines: rawLines.map((l, i) => toEngineLine(l, i, bundle)),
-      travelFee,
+      travelFee: 0,
     },
     settings,
   );
   const { rows } = allocateClientRows(result);
-  return { result, rows, settings, travelFee };
+  return { result, rows, settings };
 }
 
 /**
@@ -268,7 +255,6 @@ export function buildSavePayload(args: {
   clientId: number;
   jobId: number;
   billingEntityId: number | null;
-  travelZoneId: number | null;
   notes: string | null;
   overridePrice: number | null;
   overrideReason: string | null;
@@ -353,7 +339,7 @@ export function buildSavePayload(args: {
       client_id: args.clientId,
       job_id: args.jobId,
       billing_entity_id: args.billingEntityId,
-      travel_zone_id: args.travelZoneId,
+      travel_zone_id: null,
       resolved_loaded_rate: settings.loadedLaborRate,
       resolved_margin_pct: result.marginPct,
       resolved_material_markup_pct: settings.materialMarkupPct,

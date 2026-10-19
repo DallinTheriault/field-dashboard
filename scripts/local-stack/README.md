@@ -12,11 +12,15 @@ for testing migrations and the app without touching prod. Plain processes, no Do
 | `gateway.mjs` | 54321 | one URL for all three, like Supabase's gateway |
 | stripe-mock | 12111 | Stripe's official mock API, answering from fixtures |
 | stripe shim | 12112 | In front of stripe-mock: a finalized invoice gets `open` and a hosted URL, as real Stripe returns. The app talks to this |
+| `anthropic-mock.mjs` | 12113 | Stands in for the Claude API on receipt scans (no key, no cost). Scenarios script its replies and read what the app sent. Scans run inline (`SCAN_RUNNER=inline`), not in a Netlify background function |
 
 ```sh
 scripts/local-stack/fetch.sh        # once: downloads the services into /opt/fieldstack
 scripts/local-stack/up.sh --fresh   # build the database, start everything, write .env.local
 npm run dev                         # the app, against the local stack
+# A shell that already exports ANTHROPIC_BASE_URL beats .env.local; then run
+#   ANTHROPIC_BASE_URL=http://127.0.0.1:12113 npm run dev
+# so receipt scans go to the mock, not the real API.
 scripts/local-stack/down.sh         # stop (data kept; --fresh wipes it)
 ```
 

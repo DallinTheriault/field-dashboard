@@ -74,9 +74,6 @@ const BUNDLE: EstimatorBundle = {
       active: true,
     },
   ],
-  zones: [
-    { id: 50, label: "15–30 mi", flat_fee: 35, active: true },
-  ],
   entities: [],
 };
 
@@ -149,12 +146,11 @@ describe("buildSavePayload (Snapshot Rule)", () => {
   ];
 
   function snapshot(bundle: EstimatorBundle) {
-    const priced = priceEstimate(rawLines, 50, bundle);
+    const priced = priceEstimate(rawLines, bundle);
     return buildSavePayload({
       clientId: 1,
       jobId: 99,
       billingEntityId: null,
-      travelZoneId: 50,
       notes: null,
       overridePrice: null,
       overrideReason: null,
@@ -167,7 +163,9 @@ describe("buildSavePayload (Snapshot Rule)", () => {
     const p = snapshot(BUNDLE);
     expect(p.estimate.resolved_loaded_rate).toBeCloseTo(84.6154, 3);
     expect(p.estimate.resolved_margin_pct).toBe(0.4);
-    expect(p.estimate.resolved_travel_fee).toBe(35);
+    // Estimates never carry a travel fee (mileage is never billed).
+    expect(p.estimate.resolved_travel_fee).toBe(0);
+    expect(p.estimate.travel_zone_id).toBeNull();
     expect(p.lines).toHaveLength(2);
     // Catalog line froze the service's hours/unit and prep multiplier
     expect(p.lines[0].resolved_hours_per_unit).toBeCloseTo(0.01, 9);
@@ -188,14 +186,10 @@ describe("buildSavePayload (Snapshot Rule)", () => {
       (s, l) => s + l.resolved_client_amount,
       0,
     );
-    // Lines + travel row = price; travel is its own client row, so
-    // line amounts sum to price minus the travel row.
-    const priced = priceEstimate(rawLines, 50, BUNDLE);
-    const travelRow = priced.rows.find((r) => r.kind === "travel");
-    expect(rowSum + (travelRow?.amount ?? 0)).toBeCloseTo(
-      p.estimate.computed_price,
-      2,
-    );
+    // No travel row: the line amounts alone make the price.
+    const priced = priceEstimate(rawLines, BUNDLE);
+    expect(priced.rows.some((r) => r.kind === "travel")).toBe(false);
+    expect(rowSum).toBeCloseTo(p.estimate.computed_price, 2);
   });
 
   it("carries the optional task link without touching pricing", () => {
@@ -203,12 +197,11 @@ describe("buildSavePayload (Snapshot Rule)", () => {
       { ...rawLines[0], taskId: 7 },
       { ...rawLines[1], taskId: null },
     ];
-    const priced = priceEstimate(linked, 50, BUNDLE);
+    const priced = priceEstimate(linked, BUNDLE);
     const p = buildSavePayload({
       clientId: 1,
       jobId: 99,
       billingEntityId: null,
-      travelZoneId: 50,
       notes: null,
       overridePrice: null,
       overrideReason: null,

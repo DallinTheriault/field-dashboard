@@ -32,7 +32,7 @@ export default async function EditEstimatePage({
     supabase
       .from("estimates")
       .select(
-        "id, job_id, status, billing_entity_id, travel_zone_id, notes, manual_override_price, override_reason, jobs(id, name, address)",
+        "id, job_id, status, billing_entity_id, notes, manual_override_price, override_reason, jobs(id, name, address)",
       )
       .eq("id", estimateId)
       .maybeSingle(),
@@ -108,7 +108,6 @@ export default async function EditEstimatePage({
       existing={{
         estimateId: est.id,
         billingEntityId: est.billing_entity_id,
-        travelZoneId: est.travel_zone_id,
         notes: est.notes ?? "",
         overridePrice:
           est.manual_override_price === null

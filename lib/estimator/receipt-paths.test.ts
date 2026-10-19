@@ -54,6 +54,21 @@ describe("allStoragePathsFor — regression: deleting a purchase must not orphan
     expect(paths).toEqual(["1/a.jpg", "1/a-thumb.jpg"]);
   });
 
+  it("includes the scanner's pieces of a tall receipt, once", () => {
+    const paths = allStoragePathsFor({
+      receipt_paths: ["1/a.jpg", "1/b.jpg"],
+      scan_paths: ["1/a-x-piece1.jpg", "1/a-x-piece2.jpg", "1/b.jpg"],
+    });
+    expect(paths).toEqual([
+      "1/a.jpg",
+      "1/a-thumb.jpg",
+      "1/b.jpg",
+      "1/b-thumb.jpg",
+      "1/a-x-piece1.jpg",
+      "1/a-x-piece2.jpg",
+    ]);
+  });
+
   it("handles a purchase with no photos at all", () => {
     expect(allStoragePathsFor({ receipt_paths: null, receipt_path: null })).toEqual([]);
     expect(allStoragePathsFor({})).toEqual([]);

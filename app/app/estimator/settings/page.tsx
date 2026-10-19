@@ -5,7 +5,6 @@ import {
   Hammer,
   Package,
   Percent,
-  MapPin,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentUserRole } from "@/lib/permissions/current-role";
@@ -17,7 +16,6 @@ import { EntitiesManager } from "./entities-manager";
 import { CatalogManager } from "./catalog-manager";
 import { MaterialsManager } from "./materials-manager";
 import { ModifiersManager } from "./modifiers-manager";
-import { ZonesManager } from "./zones-manager";
 
 /**
  * Pricing: your rates, billing entities, the price book, and the old
@@ -84,13 +82,6 @@ export default async function EstimatorSettingsPage() {
       title: "Prep modifiers",
       desc: "Old estimate builder only: extra labor hours for harder jobs (never materials).",
       body: <ModifiersManager clientId={clientId} />,
-    },
-    {
-      id: "zones",
-      icon: MapPin,
-      title: "Travel zones",
-      desc: "Old estimate builder only: a flat fee by distance, one per estimate.",
-      body: <ZonesManager clientId={clientId} />,
     },
   ];
 

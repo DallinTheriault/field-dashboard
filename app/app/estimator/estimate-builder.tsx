@@ -27,11 +27,6 @@ const usd = new Intl.NumberFormat("en-US", {
   style: "currency",
   currency: "USD",
 });
-const usd0 = new Intl.NumberFormat("en-US", {
-  style: "currency",
-  currency: "USD",
-  maximumFractionDigits: 0,
-});
 
 /** Line as edited — numeric fields stay strings so "1.2" types naturally. */
 type UILine = {
@@ -62,7 +57,6 @@ export type ExistingEstimate = {
   /** null = "revise": prefill from a source estimate but save a NEW version. */
   estimateId: number | null;
   billingEntityId: number | null;
-  travelZoneId: number | null;
   notes: string;
   overridePrice: number | null;
   overrideReason: string;
@@ -152,9 +146,6 @@ export function EstimateBuilder({
       bundle.entities[0]?.id ??
       null,
   );
-  const [travelZoneId, setTravelZoneId] = useState<number | null>(
-    existing?.travelZoneId ?? bundle.zones[0]?.id ?? null,
-  );
   const [notes, setNotes] = useState(existing?.notes ?? "");
   const [overrideOn, setOverrideOn] = useState(
     existing?.overridePrice !== null && existing !== null,
@@ -176,8 +167,8 @@ export function EstimateBuilder({
 
   const rawLines = useMemo(() => lines.map(toRaw), [lines]);
   const priced = useMemo(
-    () => priceEstimate(rawLines, travelZoneId, bundle),
-    [rawLines, travelZoneId, bundle],
+    () => priceEstimate(rawLines, bundle),
+    [rawLines, bundle],
   );
   const overrideNum = parseFloat(overridePrice);
   const hasOverride = overrideOn && Number.isFinite(overrideNum) && overrideNum > 0;
@@ -306,7 +297,6 @@ export function EstimateBuilder({
       estimateId: existing?.estimateId ?? null,
       jobId: job.id,
       billingEntityId: entityId,
-      travelZoneId,
       notes,
       overridePrice: hasOverride ? overrideNum : null,
       overrideReason,
@@ -610,24 +600,6 @@ export function EstimateBuilder({
       {/* Details */}
       <section className="panel px-4 py-3 space-y-3">
         <div className="grid grid-cols-2 gap-3">
-          {bundle.zones.length > 0 && (
-            <label className="field-group">
-              <span className="field-label">Travel zone</span>
-              <select
-                value={travelZoneId ?? ""}
-                onChange={(e) =>
-                  setTravelZoneId(e.target.value ? Number(e.target.value) : null)
-                }
-                className="w-full"
-              >
-                {bundle.zones.map((z) => (
-                  <option key={z.id} value={z.id}>
-                    {z.label} — {usd0.format(z.flat_fee)}
-                  </option>
-                ))}
-              </select>
-            </label>
-          )}
           {bundle.entities.length > 1 && (
             <label className="field-group">
               <span className="field-label">Estimate under</span>
