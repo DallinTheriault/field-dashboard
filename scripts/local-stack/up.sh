@@ -114,6 +114,7 @@ server-port = $REST_PORT
 log-level = "warn"
 EOF
 spawn mail-sink node "$HERE/mail-sink.mjs" "$MAIL_PORT" "$FIELDSTACK/mail"
+spawn anthropic-mock node "$HERE/anthropic-mock.mjs" "$ANTHROPIC_MOCK_PORT"
 spawn rest "$BIN/postgrest" "$FIELDSTACK/postgrest.conf"
 spawn auth "${AUTH_ENV[@]}" "$BIN/auth"
 start_storage
@@ -141,7 +142,10 @@ NEXT_PUBLIC_APP_URL=http://localhost:$APP_PORT
 ESTIMATOR_STRIPE_SECRET_KEY=sk_test_localstack
 ESTIMATOR_STRIPE_API_BASE=http://127.0.0.1:$STRIPE_SHIM_PORT
 ESTIMATOR_STRIPE_WEBHOOK_SECRET=whsec_localstack
-ADMIN_EMAILS=admin@other.test"
+ADMIN_EMAILS=admin@other.test
+ANTHROPIC_API_KEY=sk-ant-localstack-mock
+ANTHROPIC_BASE_URL=http://127.0.0.1:$ANTHROPIC_MOCK_PORT
+SCAN_RUNNER=inline"
 if [ ! -e "$ENV_FILE" ] || grep -q "^# local-stack" "$ENV_FILE"; then
   { echo "# local-stack: written by scripts/local-stack/up.sh; safe to delete"; echo "$STACK_ENV"; } >"$ENV_FILE"
   echo "wrote .env.local for the local stack"

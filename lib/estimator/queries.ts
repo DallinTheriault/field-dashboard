@@ -10,7 +10,7 @@ import type { EstimatorBundle } from "./assemble";
 export async function getEstimatorBundle(
   supabase: SupabaseClient,
 ): Promise<EstimatorBundle> {
-  const [settings, overhead, services, materials, links, modifiers, zones, entities] =
+  const [settings, overhead, services, materials, links, modifiers, entities] =
     await Promise.all([
       supabase
         .from("pricing_settings")
@@ -45,11 +45,6 @@ export async function getEstimatorBundle(
         .select("id, name, scope, math, value, active")
         .eq("active", true)
         .order("value"),
-      supabase
-        .from("travel_zones")
-        .select("id, label, flat_fee, active")
-        .eq("active", true)
-        .order("flat_fee"),
       supabase
         .from("billing_entities")
         .select("id, name, invoice_prefix, is_default, active")
@@ -97,10 +92,6 @@ export async function getEstimatorBundle(
     modifiers: (modifiers.data ?? []).map((x) => ({
       ...x,
       value: Number(x.value),
-    })),
-    zones: (zones.data ?? []).map((x) => ({
-      ...x,
-      flat_fee: Number(x.flat_fee),
     })),
     entities: entities.data ?? [],
   };

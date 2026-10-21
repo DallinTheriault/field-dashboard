@@ -188,7 +188,11 @@ export type ReceiptItemInput = {
  * admin client bypasses RLS.
  *
  * This ONLY defaults new items at confirm time. It never rewrites history —
- * existing unassigned rows stay exactly as they are.
+ * existing unassigned rows stay exactly as they are — except with `replace`:
+ * "Use the new read" on a purchase already saved swaps its items for these,
+ * refused while any of them is on an invoice.
+ *
+ * Saving uses up the waiting read: the purchase leaves "Check this".
  */
 export async function saveScannedReceipt(input: {
   purchaseId: number;
@@ -199,6 +203,7 @@ export async function saveScannedReceipt(input: {
   tax: number | null;
   total: number | null;
   items: ReceiptItemInput[];
+  replace?: boolean;
 }): Promise<Result> {
   const auth = await requireMember();
   if (!auth.ok) return { ok: false, error: auth.error };
@@ -256,6 +261,21 @@ export async function saveScannedReceipt(input: {
       : null;
   const date = (input.date || "").slice(0, 10);
 
+  // Replacing: the items being swapped out, and the jobs they leave.
+  const { data: oldItems } = await admin
+    .from("expenses")
+    .select("id, job_id, invoiced_on")
+    .eq("purchase_id", purchase.id);
+  if (input.replace && (oldItems ?? []).some((it) => it.invoiced_on !== null)) {
+    return {
+      ok: false,
+      error: "An item from this receipt is on an invoice, so its items can't be replaced. Remove it from the invoice first.",
+    };
+  }
+  if (!input.replace && (oldItems ?? []).length > 0) {
+    return { ok: false, error: "This receipt already has items. Open it to compare the new read." };
+  }
+
   const { error: uErr } = await admin
     .from("purchases")
     .update({
@@ -264,6 +284,9 @@ export async function saveScannedReceipt(input: {
       subtotal: sub,
       tax: tax !== null && Number.isFinite(tax) ? tax : null,
       total: total !== null && Number.isFinite(total) ? total : null,
+      scan_status: null,
+      scan_result: null,
+      scan_error: null,
     })
     .eq("id", purchase.id);
   if (uErr) return { ok: false, error: uErr.message };
@@ -288,8 +311,112 @@ export async function saveScannedReceipt(input: {
   );
   if (iErr) return { ok: false, error: iErr.message };
 
+  // New items are in; only now drop the old ones, so a failed insert never
+  // leaves the purchase empty.
+  if (input.replace && (oldItems ?? []).length > 0) {
+    const { error: dErr } = await admin
+      .from("expenses")
+      .delete()
+      .in(
+        "id",
+        (oldItems ?? []).map((it) => it.id),
+      )
+      .is("invoiced_on", null);
+    if (dErr) return { ok: false, error: dErr.message };
+    for (const it of oldItems ?? []) if (it.job_id) jobIdsToCheck.add(it.job_id as number);
+  }
+
   revalidatePath("/app/estimator/purchases");
+  revalidatePath(`/app/estimator/purchases/${purchase.id}`);
+  revalidatePath("/app");
   for (const jid of jobIdsToCheck) revalidatePath(`/app/jobs/${jid}`);
+  return { ok: true };
+}
+
+function localISO(v: string | undefined): string {
+  if (v && /^\d{4}-\d{2}-\d{2}$/.test(v)) return v;
+  return new Date().toISOString().slice(0, 10);
+}
+
+/**
+ * Save first, scan second: the purchase a receipt photo is saved onto, made
+ * before the upload. No vendor until someone reads it (never a made-up
+ * name). `jobId` when scanned from a job, so checking it starts on that job.
+ * Any member may capture (architect Q1); the scan route is gated separately.
+ */
+export async function startReceipt(input: {
+  jobId?: number | null;
+  /** The phone's local date (the server's may be tomorrow already). */
+  date?: string;
+  /** Queue the scan now, so the list says "Reading…" from the start. The
+   *  scan route starts it once the photo is up; if that never happens it
+   *  goes stale and shows Needs entry. */
+  scan?: boolean;
+}): Promise<{ ok: true; purchaseId: number } | { ok: false; error: string }> {
+  const auth = await requireMember();
+  if (!auth.ok) return { ok: false, error: auth.error };
+  const admin = createAdminClient();
+  const jobId = input.jobId ? Number(input.jobId) : null;
+  if (jobId) {
+    const { data: job } = await admin.from("jobs").select("id, client_id").eq("id", jobId).maybeSingle();
+    if (!job || job.client_id !== auth.clientId) return { ok: false, error: "Job not found." };
+  }
+  const { data, error } = await admin
+    .from("purchases")
+    .insert({
+      client_id: auth.clientId,
+      vendor: null,
+      purchase_date: localISO(input.date),
+      source: "scan",
+      created_by: auth.userId,
+      scan_job_id: jobId,
+      ...(input.scan ? { scan_status: "queued", scan_requested_at: new Date().toISOString() } : {}),
+    })
+    .select("id")
+    .single();
+  if (error || !data) return { ok: false, error: error?.message ?? "Couldn't save the receipt." };
+  return { ok: true, purchaseId: data.id as number };
+}
+
+/** Undo startReceipt when the photo never made it up: removes the purchase
+ * only while it has no photo and no items. Any member (they made it). */
+export async function discardEmptyReceipt(purchaseId: number): Promise<Result> {
+  const auth = await requireMember();
+  if (!auth.ok) return { ok: false, error: auth.error };
+  const admin = createAdminClient();
+  const { count } = await admin
+    .from("expenses")
+    .select("*", { count: "exact", head: true })
+    .eq("purchase_id", Number(purchaseId));
+  if ((count ?? 0) > 0) return { ok: false, error: "This receipt has items." };
+  const { error } = await admin
+    .from("purchases")
+    .delete()
+    .eq("id", Number(purchaseId))
+    .eq("client_id", auth.clientId)
+    .eq("receipt_paths", "{}")
+    .is("receipt_path", null);
+  if (error) return { ok: false, error: error.message };
+  return { ok: true };
+}
+
+/** "Keep what I saved": drop a waiting read without changing the purchase. */
+export async function dismissScan(purchaseId: number): Promise<Result> {
+  const auth = await requireMember();
+  if (!auth.ok) return { ok: false, error: auth.error };
+  const admin = createAdminClient();
+  const { data, error } = await admin
+    .from("purchases")
+    .update({ scan_status: null, scan_result: null, scan_error: null })
+    .eq("id", Number(purchaseId))
+    .eq("client_id", auth.clientId)
+    .in("scan_status", ["ready", "needs_entry"])
+    .select("id");
+  if (error) return { ok: false, error: error.message };
+  if (!data?.length) return { ok: false, error: "Nothing to dismiss." };
+  revalidatePath("/app/estimator/purchases");
+  revalidatePath(`/app/estimator/purchases/${purchaseId}`);
+  revalidatePath("/app");
   return { ok: true };
 }
 
@@ -352,7 +479,7 @@ export async function deletePurchase(purchaseId: number): Promise<Result> {
   const supabase = await createClient();
   const { data: purchase } = await supabase
     .from("purchases")
-    .select("id, client_id, receipt_path, receipt_paths")
+    .select("id, client_id, receipt_path, receipt_paths, scan_paths")
     .eq("id", purchaseId)
     .maybeSingle();
   if (!purchase) return { ok: false, error: "Purchase not found." };
@@ -382,6 +509,7 @@ export async function deletePurchase(purchaseId: number): Promise<Result> {
   const paths = allStoragePathsFor({
     receipt_path: purchase.receipt_path as string | null,
     receipt_paths: purchase.receipt_paths as string[] | null,
+    scan_paths: purchase.scan_paths as string[] | null,
   }).filter((p) => inTenantFolder(purchase.client_id as number, p));
   if (paths.length > 0) {
     await createAdminClient().storage.from("receipts").remove(paths);

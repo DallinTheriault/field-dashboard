@@ -5,23 +5,23 @@ import { useRouter } from "next/navigation";
 import {
   Camera,
   Check,
+  ChevronDown,
+  ChevronRight,
   CopyCheck,
   ImagePlus,
   Loader2,
-  Paperclip,
   Plus,
   ScanLine,
   SplitSquareHorizontal,
   Trash2,
   TriangleAlert,
 } from "lucide-react";
-import { createClient } from "@/lib/supabase/client";
 import {
   findDuplicatePurchase,
   mergePurchaseIntoExisting,
   type DuplicateHit,
 } from "./duplicate-actions";
-import { saveScannedReceipt } from "./purchase-actions";
+import { discardEmptyReceipt, saveScannedReceipt, startReceipt } from "./purchase-actions";
 import {
   ReceiptAssignment,
   resolveTarget,
@@ -29,19 +29,237 @@ import {
   type ReceiptTarget,
 } from "./receipt-assignment";
 import type { Role } from "@/lib/permissions/roles";
-import { compressImage } from "@/lib/photos/compress";
-import {
-  scanTotalsMismatch,
-  type ScanResult,
-} from "@/lib/estimator/receipt-scan";
+import { prepareReceipt, type PreparedReceipt } from "@/lib/receipts/prepare";
+import { scanTotalsMismatch, type StoredScan } from "@/lib/estimator/receipt-scan";
 
 const usd = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" });
 const round2 = (n: number) => Math.round((n + 1e-9) * 100) / 100;
+
+/** What a failed scan says, everywhere it shows. */
+export const SCAN_FAILED_TEXT =
+  "Couldn't read this receipt right now. Your photo is saved. Type it in or tap Scan again later.";
+/** The self-check's note when the items still don't add up. */
+export const SCAN_MISMATCH_TEXT = "Items don't add up to the total, check the numbers.";
 
 function todayISO(): string {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
+
+async function uploadReceipt(purchaseId: number, prepared: PreparedReceipt[]): Promise<void> {
+  const fd = new FormData();
+  for (const p of prepared) {
+    fd.append("receipts", p.file);
+    // Same order as the files; an empty one means "no thumbnail" (a PDF).
+    fd.append("thumbs", p.thumb ?? new File([], "none.jpg", { type: "image/jpeg" }));
+  }
+  if (prepared.some((p) => p.pieces.length > 0)) {
+    for (const p of prepared) for (const piece of p.pieces) fd.append("pieces", piece);
+    fd.append("plan", JSON.stringify(prepared.map((p) => p.pieces.length)));
+  }
+  const up = await fetch(`/api/estimator/purchases/${purchaseId}/receipts`, { method: "POST", body: fd });
+  if (!up.ok) {
+    const data = await up.json().catch(() => ({}));
+    throw new Error(data.error ?? "Upload failed.");
+  }
+}
+
+/**
+ * Ask for a scan of a saved receipt. keepalive: it still goes if the page is
+ * closed right after. The answer isn't needed: the list follows the scan.
+ */
+export function requestScan(purchaseId: number): Promise<unknown> {
+  return fetch(`/api/estimator/purchases/${purchaseId}/scan`, { method: "POST", keepalive: true }).catch(
+    () => undefined,
+  );
+}
+
+/**
+ * Scan intake: photograph (or pick photos, or an emailed PDF) → readied on
+ * the phone → saved → read in the background. Nothing waits on the read: the
+ * receipt shows "Reading…", then "Check this" in Receipts to check, where
+ * nothing is saved as the purchase until Save.
+ */
+export function ScanReceipt({
+  variant = "panel",
+  jobId = null,
+}: {
+  /** "tile": the big Home button. "inline": the job page's row. */
+  variant?: "panel" | "tile" | "inline";
+  /** Scanned from a job: checking it starts on that job. */
+  jobId?: number | null;
+}) {
+  const router = useRouter();
+  const cameraRef = useRef<HTMLInputElement>(null);
+  const libraryRef = useRef<HTMLInputElement>(null);
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState<string | null>(null);
+  const [saved, setSaved] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!saved) return;
+    const t = window.setTimeout(() => setSaved(false), variant === "tile" ? 5000 : 8000);
+    return () => window.clearTimeout(t);
+  }, [saved, variant]);
+
+  async function start(files: FileList | null) {
+    if (!files || files.length === 0) return;
+    setErr(null);
+    setSaved(false);
+    setBusy(true);
+    let pid: number | null = null;
+    try {
+      setMsg("Getting the photo ready…");
+      const prepared: PreparedReceipt[] = [];
+      for (const f of Array.from(files).slice(0, 6)) prepared.push(await prepareReceipt(f));
+      setMsg("Saving…");
+      const started = await startReceipt({ jobId, date: todayISO(), scan: true });
+      if (!started.ok) throw new Error(started.error);
+      pid = started.purchaseId;
+      await uploadReceipt(pid, prepared);
+      void requestScan(pid);
+      setSaved(true);
+      router.refresh();
+    } catch (e) {
+      // The photo never made it: don't leave an empty receipt behind.
+      if (pid !== null) await discardEmptyReceipt(pid).catch(() => undefined);
+      setErr(e instanceof Error ? e.message : "Couldn't save the receipt.");
+    } finally {
+      setMsg(null);
+      setBusy(false);
+      if (cameraRef.current) cameraRef.current.value = "";
+      if (libraryRef.current) libraryRef.current.value = "";
+    }
+  }
+
+  const inputs = (
+    <>
+      <input
+        ref={cameraRef}
+        type="file"
+        accept="image/*"
+        capture="environment"
+        className="hidden"
+        aria-label="Take a photo of a receipt"
+        onChange={(e) => start(e.target.files)}
+      />
+      <input
+        ref={libraryRef}
+        type="file"
+        accept="image/*,.heic,.heif,application/pdf"
+        multiple
+        className="hidden"
+        aria-label="Choose receipt photos or a PDF"
+        onChange={(e) => start(e.target.files)}
+      />
+    </>
+  );
+  const status = (
+    <>
+      {busy && msg && <div className="text-2xs text-bone-400">{msg}</div>}
+      {saved && (
+        <div role="status" className="flex items-center gap-2 text-2xs text-status-completed">
+          <Check size={13} className="shrink-0" />
+          Saved. Reading it now. You can leave this page.
+        </div>
+      )}
+      {err && <div className="form-error">{err}</div>}
+    </>
+  );
+
+  if (variant === "tile") {
+    return (
+      <>
+        {inputs}
+        <button
+          type="button"
+          onClick={() => cameraRef.current?.click()}
+          disabled={busy}
+          className="home-tile"
+        >
+          {busy ? <Loader2 size={26} className="animate-spin" /> : <Camera size={26} />}
+          <span>{busy ? (msg ?? "Saving…") : "Scan receipt"}</span>
+        </button>
+        {(saved || err) && (
+          <div
+            role="status"
+            aria-live="polite"
+            className="fixed inset-x-0 bottom-[calc(4.5rem_+_env(safe-area-inset-bottom))] md:bottom-6 z-40 flex justify-center px-4"
+          >
+            <div className="panel max-w-md w-full px-3 py-2.5 shadow-lg space-y-1">
+              {saved && (
+                <div className="flex items-center gap-2 text-sm text-bone-50">
+                  <Check size={14} className="text-status-completed shrink-0" />
+                  Receipt saved. It&apos;s being read now.
+                </div>
+              )}
+              {err && (
+                <div className="flex items-start gap-2">
+                  <div className="form-error flex-1">{err}</div>
+                  <button type="button" onClick={() => setErr(null)} className="btn-ghost text-xs min-h-[44px]">
+                    Close
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+      </>
+    );
+  }
+
+  const buttons = (
+    <span className="ml-auto flex gap-2">
+      {inputs}
+      <button
+        type="button"
+        onClick={() => cameraRef.current?.click()}
+        disabled={busy}
+        className="btn-primary text-xs h-8"
+      >
+        {busy ? <Loader2 size={11} className="animate-spin" /> : <Camera size={11} />}
+        Camera
+      </button>
+      <button
+        type="button"
+        onClick={() => libraryRef.current?.click()}
+        disabled={busy}
+        className="btn-secondary text-xs h-8"
+      >
+        <ImagePlus size={11} />
+        Photos or PDF
+      </button>
+    </span>
+  );
+
+  if (variant === "inline") {
+    return (
+      <div className="space-y-2">
+        <div className="flex items-center gap-2 flex-wrap">
+          <ScanLine size={13} className="text-field-500 shrink-0" />
+          <span className="text-2xs text-bone-400">Scan a receipt: it saves now and reads on its own</span>
+          {buttons}
+        </div>
+        {status}
+      </div>
+    );
+  }
+
+  return (
+    <section className="panel">
+      <div className="px-4 py-3 flex items-center gap-2 flex-wrap">
+        <ScanLine size={14} className="text-field-500 shrink-0" />
+        <span className="text-sm font-semibold text-bone-100">Scan a receipt</span>
+        <span className="text-2xs text-bone-400">saves now, reads on its own, you check it</span>
+        {buttons}
+      </div>
+      {(busy || saved || err) && <div className="px-4 pb-3 space-y-1">{status}</div>}
+    </section>
+  );
+}
+
+/* ---------- the check screen ---------- */
 
 type ConfirmRow = {
   key: number;
@@ -53,7 +271,7 @@ type ConfirmRow = {
 };
 let rowKey = 1000;
 
-function rowsFromScan(items: ScanResult["items"]): ConfirmRow[] {
+function rowsFromScan(items: StoredScan["items"]): ConfirmRow[] {
   return items.map((it) => ({
     key: ++rowKey,
     description: it.description,
@@ -85,263 +303,47 @@ function rowAmount(r: ConfirmRow): number | null {
 }
 
 /**
- * Scan intake (spec §6.2–§6.3): photograph → compress (receipt preset:
- * 2400px/85% — thermal-paper 6pt print must survive) → upload → extract →
- * EDITABLE confirm screen. Nothing persists until Accept. Reject keeps
- * the photos on the purchase and drops into manual entry.
+ * Check a read (or type a receipt in): vendor, date, tax, total and job at
+ * the top, filled in from the read; the items folded underneath; one tap to
+ * save. Everything stays editable and nothing is saved until Save (§6.3).
+ * `replace`: "Use the new read" on a purchase already saved — Save swaps its
+ * items for these.
  */
-export function ScanReceipt({
-  clientId,
-  jobs = [],
-  role = "owner",
-  variant = "panel",
-}: {
-  clientId: number;
-  jobs?: JobOption[];
-  role?: Role;
-  /** "tile": one big Home button that opens the camera; the review opens as a full-screen sheet. */
-  variant?: "panel" | "tile";
-}) {
-  const router = useRouter();
-  const supabase = createClient();
-  const cameraRef = useRef<HTMLInputElement>(null);
-  const libraryRef = useRef<HTMLInputElement>(null);
-  const [phase, setPhase] = useState<"idle" | "working" | "confirm">("idle");
-  const [workingMsg, setWorkingMsg] = useState("");
-  const [err, setErr] = useState<string | null>(null);
-  const [purchaseId, setPurchaseId] = useState<number | null>(null);
-  const [scan, setScan] = useState<ScanResult | null>(null);
-  const [parseFailed, setParseFailed] = useState(false);
-
-  async function start(files: FileList | null) {
-    if (!files || files.length === 0) return;
-    setErr(null);
-    setPhase("working");
-    let pid: number | null = null;
-    try {
-      setWorkingMsg("Compressing…");
-      const compressed: File[] = [];
-      const thumbs: File[] = [];
-      for (const f of Array.from(files).slice(0, 6)) {
-        const blob = await compressImage(f, 2400, 0.85); // receipt preset
-        compressed.push(
-          new File([blob], "receipt.jpg", { type: blob.type || "image/jpeg" }),
-        );
-        // Small rendition for the Receipts list/grid. Best-effort: if it
-        // fails, the upload proceeds and readers fall back to the full image.
-        try {
-          const t = await compressImage(f, 400, 0.7);
-          thumbs.push(new File([t], "thumb.jpg", { type: t.type || "image/jpeg" }));
-        } catch {
-          /* degrade to full-image fallback */
-        }
-      }
-
-      const { data: purchase, error: pErr } = await supabase
-        .from("purchases")
-        .insert({
-          client_id: clientId,
-          vendor: "Receipt (scanning…)",
-          purchase_date: todayISO(),
-          source: "scan",
-        })
-        .select("id")
-        .single();
-      if (pErr || !purchase) throw new Error(pErr?.message ?? "Couldn't start the scan.");
-      pid = purchase.id;
-      setPurchaseId(purchase.id);
-
-      setWorkingMsg("Uploading…");
-      const fd = new FormData();
-      for (const f of compressed) fd.append("receipts", f);
-      if (thumbs.length === compressed.length) {
-        for (const t of thumbs) fd.append("thumbs", t);
-      }
-      const up = await fetch(`/api/estimator/purchases/${purchase.id}/receipts`, {
-        method: "POST",
-        body: fd,
-      });
-      if (!up.ok) {
-        const data = await up.json().catch(() => ({}));
-        throw new Error(data.error ?? "Upload failed.");
-      }
-
-      setWorkingMsg("Reading the receipt…");
-      const res = await fetch(`/api/estimator/purchases/${purchase.id}/scan`, {
-        method: "POST",
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data.error ?? "Extraction failed.");
-
-      if (data.status === "parse_failed") {
-        setScan(null);
-        setParseFailed(true);
-      } else {
-        setScan(data.result as ScanResult);
-        setParseFailed(false);
-      }
-      setPhase("confirm");
-    } catch (e) {
-      setErr(e instanceof Error ? e.message : "Scan failed.");
-      // Photos (if uploaded) stay on the purchase — manual entry can pick
-      // it up from the "needs items" list below.
-      setPhase(pid ? "confirm" : "idle");
-      if (pid) {
-        setScan(null);
-        setParseFailed(true);
-      }
-      router.refresh();
-    } finally {
-      if (cameraRef.current) cameraRef.current.value = "";
-      if (libraryRef.current) libraryRef.current.value = "";
-    }
-  }
-
-  function reset() {
-    setPhase("idle");
-    setPurchaseId(null);
-    setScan(null);
-    setParseFailed(false);
-    router.refresh();
-  }
-
-  const inputs = (
-    <>
-      <input
-        ref={cameraRef}
-        type="file"
-        accept="image/*"
-        capture="environment"
-        className="hidden"
-        onChange={(e) => start(e.target.files)}
-      />
-      <input
-        ref={libraryRef}
-        type="file"
-        accept="image/*"
-        multiple
-        className="hidden"
-        onChange={(e) => start(e.target.files)}
-      />
-    </>
-  );
-  const review = (
-    <>
-      {phase === "working" && <div className="px-4 pb-3 text-2xs text-bone-400">{workingMsg}</div>}
-      {err && <div className="px-4 pb-3"><div className="form-error">{err}</div></div>}
-      {phase === "confirm" && purchaseId !== null && (
-        <ConfirmScan
-          purchaseId={purchaseId}
-          scan={scan}
-          parseFailed={parseFailed}
-          onDone={reset}
-          jobs={jobs}
-          role={role}
-        />
-      )}
-    </>
-  );
-
-  if (variant === "tile") {
-    return (
-      <>
-        {inputs}
-        <button
-          type="button"
-          onClick={() => cameraRef.current?.click()}
-          disabled={phase === "working"}
-          className="home-tile"
-        >
-          {phase === "working" ? <Loader2 size={26} className="animate-spin" /> : <Camera size={26} />}
-          <span>Scan receipt</span>
-        </button>
-        {(phase !== "idle" || err) && (
-          <div className="fixed inset-0 z-50 bg-ink-0 overflow-y-auto" role="dialog" aria-label="Scan a receipt">
-            <div className="max-w-2xl mx-auto py-3">
-              <div className="flex items-center px-4 min-h-[44px]">
-                <span className="text-sm font-semibold text-bone-100 flex-1">Scan a receipt</span>
-                {phase !== "working" && (
-                  <button type="button" onClick={() => { setErr(null); reset(); }} className="btn-ghost text-sm min-h-[44px]">
-                    Close
-                  </button>
-                )}
-              </div>
-              {review}
-            </div>
-          </div>
-        )}
-      </>
-    );
-  }
-
-  return (
-    <section className="panel">
-      <div className="px-4 py-3 flex items-center gap-2 flex-wrap">
-        <ScanLine size={14} className="text-field-500 shrink-0" />
-        <span className="text-sm font-semibold text-bone-100">Scan a receipt</span>
-        <span className="text-2xs text-bone-400">
-          photo → items, you review before anything saves
-        </span>
-        <span className="ml-auto flex gap-2">
-          {inputs}
-          <button
-            type="button"
-            onClick={() => cameraRef.current?.click()}
-            disabled={phase === "working"}
-            className="btn-primary text-xs h-8"
-          >
-            {phase === "working" ? (
-              <Loader2 size={11} className="animate-spin" />
-            ) : (
-              <Camera size={11} />
-            )}
-            Camera
-          </button>
-          <button
-            type="button"
-            onClick={() => libraryRef.current?.click()}
-            disabled={phase === "working"}
-            className="btn-secondary text-xs h-8"
-          >
-            <ImagePlus size={11} />
-            Photos
-          </button>
-        </span>
-      </div>
-      {review}
-    </section>
-  );
-}
-
-/** The accuracy contract (§6.3): everything editable, nothing silently
- * committed, visible mismatch warning, add/delete rows. Also serves as
- * manual entry when extraction failed (photos already attached). */
 export function ConfirmScan({
   purchaseId,
   scan,
-  parseFailed,
   onDone,
+  onCancel,
   jobs = [],
   role = "owner",
   initialVendor,
   initialDate,
   initialTax,
   initialTotal,
+  initialTarget,
+  replace = false,
+  canViewPhoto = true,
 }: {
   purchaseId: number;
-  scan: ScanResult | null;
-  parseFailed: boolean;
+  scan: StoredScan | null;
   onDone: () => void;
+  /** "Later": close without saving (defaults to onDone). */
+  onCancel?: () => void;
   jobs?: JobOption[];
   role?: Role;
-  /** Header the purchase already carries (the "enter items later" path) —
-   *  prefilled so the user verifies rather than retypes. */
+  /** Header the purchase already carries — prefilled so the user verifies
+   *  rather than retypes. The read wins where it has a value. */
   initialVendor?: string | null;
   initialDate?: string | null;
   initialTax?: number | null;
   initialTotal?: number | null;
+  /** Where the receipt goes, preselected (the job it was scanned from). */
+  initialTarget?: ReceiptTarget;
+  replace?: boolean;
+  /** The photo route is owner/manager only. */
+  canViewPhoto?: boolean;
 }) {
-  const [target, setTarget] = useState<ReceiptTarget>({ kind: "unset" });
+  const [target, setTarget] = useState<ReceiptTarget>(initialTarget ?? { kind: "unset" });
   const [splitOpen, setSplitOpen] = useState(false);
   const [receiptDefault, setReceiptDefault] = useState<ReceiptTarget>({ kind: "unset" });
   const [selected, setSelected] = useState<Set<number>>(new Set());
@@ -357,6 +359,8 @@ export function ConfirmScan({
   const [rows, setRows] = useState<ConfirmRow[]>(
     scan && scan.items.length > 0 ? rowsFromScan(scan.items) : [blankConfirmRow()],
   );
+  // Folded when there's a read to trust; open when typing it in.
+  const [itemsOpen, setItemsOpen] = useState(!(scan && scan.items.length > 0));
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [dupe, setDupe] = useState<DuplicateHit | null>(null);
@@ -371,17 +375,18 @@ export function ConfirmScan({
     tax: Number.isFinite(statedTax) ? statedTax : null,
     items: rows.map((r) => ({ amount: rowAmount(r) })),
   });
+  const itemCount = rows.filter((r) => r.description.trim()).length;
 
   const patch = (key: number, p: Partial<ConfirmRow>) =>
     setRows((prev) => prev.map((r) => (r.key === key ? { ...r, ...p } : r)));
 
-  // Duplicate check (§5.1): after extraction, before anything else persists.
-  // Re-runs when the user edits vendor/date/total, since those are the match
-  // fields. Never blocks — it surfaces choices.
+  // Duplicate check (§5.1): before anything persists. Re-runs when the user
+  // edits vendor/date/total, since those are the match fields. Never blocks.
+  // Not when replacing: that IS the saved purchase.
   useEffect(() => {
     const v = vendor.trim();
     const t = parseFloat(totalStr);
-    if (!v || !date || !Number.isFinite(t)) {
+    if (replace || !v || !date || !Number.isFinite(t)) {
       setDupe(null);
       return;
     }
@@ -399,7 +404,7 @@ export function ConfirmScan({
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [vendor, date, totalStr, purchaseId]);
+  }, [vendor, date, totalStr, purchaseId, replace]);
 
   async function mergePhotos(alsoItems: boolean) {
     if (!dupe) return;
@@ -429,13 +434,17 @@ export function ConfirmScan({
     router.push(`/app/estimator/purchases/${dupe.id}`);
   }
 
-  async function accept() {
+  async function save() {
     setErr(null);
     if (!vendor.trim()) return setErr("Who was the vendor?");
     const items = rows.filter((r) => r.description.trim());
-    if (items.length === 0) return setErr("Add at least one item.");
+    if (items.length === 0) {
+      setItemsOpen(true);
+      return setErr("Add at least one item.");
+    }
     for (const r of items) {
       if (rowAmount(r) === null) {
+        setItemsOpen(true);
         return setErr(`"${r.description.trim()}": needs an amount (or $/ea).`);
       }
     }
@@ -454,6 +463,7 @@ export function ConfirmScan({
         date: date || todayISO(),
         tax: Number.isFinite(tax) ? round2(tax) : null,
         total: Number.isFinite(total) ? round2(total) : null,
+        replace,
         items: items.map((row) => {
           const qty = parseFloat(row.qtyStr);
           const unit = parseFloat(row.unitStr);
@@ -502,18 +512,15 @@ export function ConfirmScan({
     return "receipt";
   };
 
-  return (
-    <div className="px-4 pb-4 space-y-3 border-t border-line-subtle pt-3">
-      {parseFailed && (
-        <div className="form-error flex items-start gap-2">
-          <TriangleAlert size={13} className="shrink-0 mt-0.5" />
-          <span>
-            Couldn&apos;t read this one — the photo is saved. Type the items in
-            below.
-          </span>
-        </div>
-      )}
+  const field = (label: string, input: React.ReactNode) => (
+    <label className="field-group min-w-0">
+      <span className="field-label">{label}</span>
+      {input}
+    </label>
+  );
 
+  return (
+    <div className="px-4 pb-4 space-y-3 border-t border-line-subtle pt-3" data-testid="confirm-scan">
       {/* Possible duplicate (§5.3). Three explicit actions, nothing
           preselected, never a hard stop. */}
       {dupe && !dupeDismissed && (
@@ -572,60 +579,79 @@ export function ConfirmScan({
           </div>
         </div>
       )}
-      <div className="flex flex-wrap gap-2">
-        <input
-          value={vendor}
-          onChange={(e) => setVendor(e.target.value)}
-          placeholder="Vendor"
-          className="flex-1 min-w-40"
-        />
-        <input type="date" value={date} onChange={(e) => setDate(e.target.value)} className="w-36" />
-        <label className="flex items-center gap-1">
-          <span className="text-2xs text-bone-400">Tax</span>
+
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+        <div className="col-span-2">
+          {field(
+            "Vendor",
+            <input
+              value={vendor}
+              onChange={(e) => setVendor(e.target.value)}
+              placeholder="e.g. Home Depot"
+              aria-label="Vendor"
+              className="w-full min-h-[44px]"
+            />,
+          )}
+        </div>
+        <div className="col-span-2 sm:col-span-2">
+          {field(
+            "Date",
+            <input
+              type="date"
+              value={date}
+              onChange={(e) => setDate(e.target.value)}
+              aria-label="Date"
+              className="w-full min-h-[44px]"
+            />,
+          )}
+        </div>
+        {field(
+          "Tax",
           <input
             inputMode="decimal"
             value={taxStr}
             onChange={(e) => setTaxStr(e.target.value)}
             placeholder="0.00"
             aria-label="Receipt tax"
-            className="w-20"
-          />
-        </label>
-        <label className="flex items-center gap-1">
-          <span className="text-2xs text-bone-400">Total</span>
+            className="w-full min-h-[44px]"
+          />,
+        )}
+        {field(
+          "Total",
           <input
             inputMode="decimal"
             value={totalStr}
             onChange={(e) => setTotalStr(e.target.value)}
             placeholder="0.00"
             aria-label="Receipt total"
-            className="w-24"
-          />
-        </label>
-        <a
-          href={`/api/estimator/purchases/${purchaseId}/receipt`}
-          target="_blank"
-          rel="noreferrer"
-          className="btn-ghost text-xs h-8"
-          title="View the photo"
-        >
-          <Paperclip size={11} />
-          Photo
-        </a>
+            className="w-full min-h-[44px]"
+          />,
+        )}
+        {canViewPhoto && (
+          <a
+            href={`/api/estimator/purchases/${purchaseId}/receipt`}
+            target="_blank"
+            rel="noreferrer"
+            className="btn-ghost text-xs min-h-[44px] self-end col-span-2 justify-start"
+          >
+            View the photo
+          </a>
+        )}
       </div>
 
-      {/* Verify the total, not every word (§5.4). Amounts are the reliable
-          part of extraction; descriptions are workable-but-imperfect. */}
+      {/* Receipt-level assignment: one choice for the whole run (§5.1). */}
+      <ReceiptAssignment value={target} onChange={setTarget} jobs={jobs} role={role} disabled={busy} />
+
+      {/* Verify the total, not every word (§5.4). */}
       {mismatch ? (
-        <div className="form-error flex items-start gap-2">
+        <div className="form-error flex items-start gap-2" data-testid="scan-mismatch">
           <TriangleAlert size={13} className="shrink-0 mt-0.5" />
           <span>
-            Items add to <span className="num">{usd.format(itemSum)}</span> but
-            the receipt says they should be{" "}
-            <span className="num">{usd.format(expected ?? 0)}</span>
-            {Number.isFinite(statedTax) ? " before tax" : ""} — a line may be
-            missing, doubled, or misread. Check the rows below, or accept
-            anyway.
+            {SCAN_MISMATCH_TEXT}{" "}
+            <span className="text-bone-300 num">
+              Items {usd.format(itemSum)} · receipt {usd.format(expected ?? 0)}
+              {Number.isFinite(statedTax) ? " before tax" : ""}
+            </span>
           </span>
         </div>
       ) : (
@@ -633,166 +659,170 @@ export function ConfirmScan({
           <div className="flex items-center gap-2 text-2xs text-status-completed">
             <Check size={13} className="shrink-0" />
             <span>
-              Items add up to the receipt total
-              {Number.isFinite(statedTax) ? " before tax" : ""} —{" "}
+              Items add up to the receipt
+              {Number.isFinite(statedTax) ? " before tax" : ""}:{" "}
               <span className="num">{usd.format(itemSum)}</span>.
             </span>
           </div>
         )
       )}
 
-      {/* Receipt-level assignment: one choice for the whole run (§5.1). */}
-      <ReceiptAssignment
-        value={target}
-        onChange={setTarget}
-        jobs={jobs}
-        role={role}
-        disabled={busy}
-      />
-
       <button
         type="button"
-        onClick={() =>
-          setSplitOpen((v) => {
-            if (!v) setReceiptDefault(target);
-            return !v;
-          })
-        }
-        className="btn-ghost text-xs h-8"
+        onClick={() => setItemsOpen((v) => !v)}
+        aria-expanded={itemsOpen}
+        className="w-full flex items-center gap-2 text-left text-sm text-bone-100 min-h-[44px] rounded-sm px-2 bg-ink-2 shadow-inset-line"
       >
-        <SplitSquareHorizontal size={12} />
-        {splitOpen ? "Done splitting" : "Split this receipt"}
+        {itemsOpen ? <ChevronDown size={14} className="text-bone-400" /> : <ChevronRight size={14} className="text-bone-400" />}
+        <span className="flex-1">
+          {itemCount} item{itemCount === 1 ? "" : "s"}
+        </span>
+        <span className="num">{usd.format(itemSum)}</span>
       </button>
 
-      {splitOpen && (
-        <div className="flex flex-wrap items-center gap-2 bg-ink-2 rounded-sm shadow-inset-line p-2">
-          <span className="text-2xs text-bone-400">
-            Tick the odd ones out, pick above, then
-          </span>
+      {itemsOpen && (
+        <div className="space-y-2">
           <button
             type="button"
-            onClick={applyToSelected}
-            disabled={selected.size === 0 || target.kind === "unset"}
-            className="btn-secondary text-xs h-8"
+            onClick={() =>
+              setSplitOpen((v) => {
+                if (!v) setReceiptDefault(target);
+                return !v;
+              })
+            }
+            className="btn-ghost text-xs h-8"
           >
-            Apply to {selected.size} selected
+            <SplitSquareHorizontal size={12} />
+            {splitOpen ? "Done splitting" : "Split this receipt"}
           </button>
-          {rowTargets.size > 0 && (
-            <button
-              type="button"
-              onClick={() => setRowTargets(new Map())}
-              className="btn-ghost text-xs h-8 ml-auto"
-            >
-              Clear overrides
-            </button>
+
+          {splitOpen && (
+            <div className="flex flex-wrap items-center gap-2 bg-ink-2 rounded-sm shadow-inset-line p-2">
+              <span className="text-2xs text-bone-400">Tick the odd ones out, pick above, then</span>
+              <button
+                type="button"
+                onClick={applyToSelected}
+                disabled={selected.size === 0 || target.kind === "unset"}
+                className="btn-secondary text-xs h-8"
+              >
+                Apply to {selected.size} selected
+              </button>
+              {rowTargets.size > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setRowTargets(new Map())}
+                  className="btn-ghost text-xs h-8 ml-auto"
+                >
+                  Clear overrides
+                </button>
+              )}
+            </div>
           )}
+
+          <ul className="space-y-1.5">
+            {rows.map((r) => (
+              <li key={r.key} className="bg-ink-2 rounded-sm shadow-inset-line p-2 space-y-1.5">
+                <div className="flex gap-2">
+                  {splitOpen && (
+                    <input
+                      type="checkbox"
+                      checked={selected.has(r.key)}
+                      onChange={(e) =>
+                        setSelected((prev) => {
+                          const next = new Set(prev);
+                          if (e.target.checked) next.add(r.key);
+                          else next.delete(r.key);
+                          return next;
+                        })
+                      }
+                      aria-label={`Select ${r.description || "item"}`}
+                      className="mt-2 shrink-0"
+                    />
+                  )}
+                  <input
+                    value={r.description}
+                    onChange={(e) => patch(r.key, { description: e.target.value })}
+                    placeholder="Item"
+                    aria-label="Item"
+                    className="flex-1 min-w-0 text-sm"
+                  />
+                  {splitOpen && rowTargets.has(r.key) && (
+                    <span className="chip normal-case tracking-normal shrink-0 self-center border-field-500/40 text-field-400">
+                      {targetChip(rowTargets.get(r.key))}
+                    </span>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => setRows((prev) => prev.filter((x) => x.key !== r.key))}
+                    className="text-bone-500 hover:text-status-danger p-1"
+                    aria-label="Remove row"
+                  >
+                    <Trash2 size={12} />
+                  </button>
+                </div>
+                <div className="flex flex-wrap items-center gap-2 text-sm">
+                  <label className="flex items-center gap-1">
+                    <span className="text-2xs text-bone-400">qty</span>
+                    <input
+                      inputMode="decimal"
+                      value={r.qtyStr}
+                      onChange={(e) => patch(r.key, { qtyStr: e.target.value })}
+                      aria-label="Quantity"
+                      className="w-12"
+                    />
+                  </label>
+                  <label className="flex items-center gap-1">
+                    <span className="text-2xs text-bone-400">$/ea</span>
+                    <input
+                      inputMode="decimal"
+                      value={r.unitStr}
+                      onChange={(e) => patch(r.key, { unitStr: e.target.value })}
+                      aria-label="Unit price"
+                      className="w-20"
+                    />
+                  </label>
+                  <label className="flex items-center gap-1">
+                    <span className="text-2xs text-bone-400">amount</span>
+                    <input
+                      inputMode="decimal"
+                      value={r.amountStr}
+                      onChange={(e) => patch(r.key, { amountStr: e.target.value })}
+                      placeholder={rowAmount(r) === null ? "" : String(rowAmount(r))}
+                      aria-label="Amount"
+                      className="w-20"
+                    />
+                  </label>
+                  {r.sku && (
+                    <span className="text-2xs text-bone-500 truncate max-w-40" title={r.sku}>
+                      {r.sku}
+                    </span>
+                  )}
+                </div>
+              </li>
+            ))}
+          </ul>
+          <button
+            type="button"
+            onClick={() => setRows((prev) => [...prev, blankConfirmRow()])}
+            className="btn-ghost text-xs h-8"
+          >
+            <Plus size={12} />
+            Add row
+          </button>
         </div>
       )}
 
-      <ul className="space-y-1.5">
-        {rows.map((r) => (
-          <li key={r.key} className="bg-ink-2 rounded-sm shadow-inset-line p-2 space-y-1.5">
-            <div className="flex gap-2">
-              {splitOpen && (
-                <input
-                  type="checkbox"
-                  checked={selected.has(r.key)}
-                  onChange={(e) =>
-                    setSelected((prev) => {
-                      const next = new Set(prev);
-                      if (e.target.checked) next.add(r.key);
-                      else next.delete(r.key);
-                      return next;
-                    })
-                  }
-                  aria-label={`Select ${r.description || "item"}`}
-                  className="mt-2 shrink-0"
-                />
-              )}
-              <input
-                value={r.description}
-                onChange={(e) => patch(r.key, { description: e.target.value })}
-                placeholder="Item"
-                className="flex-1 min-w-0 text-sm"
-              />
-              {splitOpen && rowTargets.has(r.key) && (
-                <span className="chip normal-case tracking-normal shrink-0 self-center border-field-500/40 text-field-400">
-                  {targetChip(rowTargets.get(r.key))}
-                </span>
-              )}
-              <button
-                type="button"
-                onClick={() => setRows((prev) => prev.filter((x) => x.key !== r.key))}
-                className="text-bone-500 hover:text-status-danger p-1"
-                aria-label="Remove row"
-              >
-                <Trash2 size={12} />
-              </button>
-            </div>
-            <div className="flex flex-wrap items-center gap-2 text-sm">
-              <label className="flex items-center gap-1">
-                <span className="text-2xs text-bone-400">qty</span>
-                <input
-                  inputMode="decimal"
-                  value={r.qtyStr}
-                  onChange={(e) => patch(r.key, { qtyStr: e.target.value })}
-                  aria-label="Quantity"
-                  className="w-12"
-                />
-              </label>
-              <label className="flex items-center gap-1">
-                <span className="text-2xs text-bone-400">$/ea</span>
-                <input
-                  inputMode="decimal"
-                  value={r.unitStr}
-                  onChange={(e) => patch(r.key, { unitStr: e.target.value })}
-                  aria-label="Unit price"
-                  className="w-20"
-                />
-              </label>
-              <label className="flex items-center gap-1">
-                <span className="text-2xs text-bone-400">amount</span>
-                <input
-                  inputMode="decimal"
-                  value={r.amountStr}
-                  onChange={(e) => patch(r.key, { amountStr: e.target.value })}
-                  placeholder={rowAmount(r) === null ? "" : String(rowAmount(r))}
-                  aria-label="Amount"
-                  className="w-20"
-                />
-              </label>
-              {r.sku && (
-                <span className="text-2xs text-bone-500 truncate max-w-40" title={r.sku}>
-                  {r.sku}
-                </span>
-              )}
-            </div>
-          </li>
-        ))}
-      </ul>
-
       <div className="flex items-center gap-2">
-        <button
-          type="button"
-          onClick={() => setRows((prev) => [...prev, blankConfirmRow()])}
-          className="btn-ghost text-xs h-8"
-        >
-          <Plus size={12} />
-          Add row
-        </button>
-        <span className="num text-sm text-bone-100 ml-auto">
-          Items {usd.format(itemSum)}
-        </span>
-        <button type="button" onClick={onDone} className="btn-secondary text-sm min-h-[42px]">
+        <button type="button" onClick={onCancel ?? onDone} className="btn-secondary text-sm min-h-[44px]">
           Later
         </button>
         <button
           type="button"
-          onClick={accept}
+          onClick={save}
           disabled={busy}
-          className="btn-primary text-sm min-h-[42px]"
+          className="btn-primary text-sm min-h-[44px] flex-1 sm:flex-none sm:ml-auto sm:min-w-[140px]"
         >
-          {busy ? <Loader2 size={13} className="animate-spin" /> : "Accept"}
+          {busy ? <Loader2 size={13} className="animate-spin" /> : replace ? "Save the new read" : "Save"}
         </button>
       </div>
       {err && <div className="form-error">{err}</div>}

@@ -23,7 +23,6 @@ export type SaveEstimateInput = {
   /** Estimates always belong to a job — there is no standalone path. */
   jobId: number;
   billingEntityId: number | null;
-  travelZoneId: number | null;
   notes: string;
   overridePrice: number | null;
   overrideReason: string;
@@ -161,29 +160,18 @@ export async function saveEstimate(
     }
   }
   if (
-    input.travelZoneId &&
-    !bundle.zones.some((z) => z.id === Number(input.travelZoneId))
-  ) {
-    return { ok: false, error: "Unknown travel zone." };
-  }
-  if (
     input.billingEntityId &&
     !bundle.entities.some((e) => e.id === Number(input.billingEntityId))
   ) {
     return { ok: false, error: "Unknown billing entity." };
   }
 
-  const priced = priceEstimate(
-    lines,
-    input.travelZoneId ? Number(input.travelZoneId) : null,
-    bundle,
-  );
+  const priced = priceEstimate(lines, bundle);
   const payload = buildSavePayload({
     estimateId: input.estimateId ?? null,
     clientId,
     jobId,
     billingEntityId: input.billingEntityId ? Number(input.billingEntityId) : null,
-    travelZoneId: input.travelZoneId ? Number(input.travelZoneId) : null,
     notes: (input.notes ?? "").trim() || null,
     overridePrice,
     overrideReason: overridePrice !== null ? overrideReason : null,
@@ -296,7 +284,7 @@ export async function repriceEstimate(estimateId: number): Promise<Result> {
     supabase
       .from("estimates")
       .select(
-        "id, job_id, billing_entity_id, travel_zone_id, notes, manual_override_price, override_reason",
+        "id, job_id, billing_entity_id, notes, manual_override_price, override_reason",
       )
       .eq("id", estimateId)
       .maybeSingle(),
@@ -364,13 +352,12 @@ export async function repriceEstimate(estimateId: number): Promise<Result> {
 
   const overridePrice =
     est.manual_override_price === null ? null : Number(est.manual_override_price);
-  const priced = priceEstimate(rawLines, est.travel_zone_id, bundle);
+  const priced = priceEstimate(rawLines, bundle);
   const payload = buildSavePayload({
     estimateId,
     clientId,
     jobId: est.job_id,
     billingEntityId: est.billing_entity_id,
-    travelZoneId: est.travel_zone_id,
     notes: est.notes,
     overridePrice,
     overrideReason: est.override_reason,

@@ -12,6 +12,7 @@ import {
 import { EstimateStatusChip } from "../../estimator/estimate-status";
 import { JobActuals } from "../../estimator/job-actuals";
 import { JobExpenseCapture } from "./job-expense-capture";
+import { PURCHASE_SCAN_COLS, toPendingReceipt } from "@/lib/receipts/state";
 import { JobDetailsSheet } from "./job-details-sheet";
 import { JobOptionsMenu } from "./job-options-menu";
 import { ScopeBuilder, type JobLine } from "./scope-builder";
@@ -107,6 +108,7 @@ export default async function JobDetailPage({
     { data: pricingSettings },
     { data: jobProperty },
     { data: billingRow },
+    { data: scanRows },
   ] = await Promise.all([
     getTeamMembers(job.client_id),
     getActivityTimeline("job", Number(job.id)),
@@ -177,7 +179,23 @@ export default async function JobDetailPage({
     estimatorOn && canSeeInternals
       ? supabase.from("job_billing").select(BILLING_COLS).eq("job_id", job.id).maybeSingle()
       : Promise.resolve({ data: null }),
+    // Receipts scanned from this job and not saved yet (v100).
+    estimatorOn && flags.receiptAi
+      ? supabase
+          .from("purchases")
+          .select(`id, vendor, purchase_date, total, tax, receipt_paths, ${PURCHASE_SCAN_COLS}, expenses(count)`)
+          .eq("scan_job_id", job.id)
+          .not("scan_status", "is", null)
+          .order("id", { ascending: false })
+          .limit(20)
+      : Promise.resolve({ data: null }),
   ]);
+  const scanNow = Date.now();
+  const pendingReceipts = ((scanRows ?? []) as unknown as Array<Parameters<typeof toPendingReceipt>[0] & {
+    expenses: Array<{ count: number }> | null;
+  }>)
+    .map((p) => toPendingReceipt(p, p.expenses?.[0]?.count ?? 0, scanNow))
+    .filter((p) => p.itemCount === 0);
   const billing = billingRow ? toJobBilling(billingRow as Record<string, unknown>) : null;
   const isOwner = session?.role === "owner";
 
@@ -405,6 +423,14 @@ export default async function JobDetailPage({
       {estimatorOn && session && (
         <JobExpenseCapture
           jobId={Number(job.id)}
+          job={{
+            id: Number(job.id),
+            name: (job.name as string | null) ?? `Job #${job.id}`,
+            jobNumber: (job.job_number as string | null) ?? null,
+            address: propertyAddress ?? (job.address as string | null) ?? null,
+            status: (job.status as string | null) ?? null,
+          }}
+          pending={pendingReceipts}
           role={session.role}
           receiptAiEnabled={flags.receiptAi}
           items={jobExpenseItems}

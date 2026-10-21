@@ -3,17 +3,21 @@ import { randomUUID } from "node:crypto";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { thumbPathFor } from "@/lib/estimator/receipt-paths";
+import { MAX_PIECES } from "@/lib/receipts/pieces";
 
 const MAX_BYTES = 8 * 1024 * 1024;
-// Scan images only — types Claude vision accepts (HEIC excluded on purpose;
-// the client compresses to JPEG before upload anyway).
-const ALLOWED_MIME = new Set(["image/jpeg", "image/png", "image/webp"]);
+// Types the scanner reads: photos (the phone converts HEIC to JPEG before
+// upload) and PDFs (emailed receipts).
+const ALLOWED_MIME = new Set(["image/jpeg", "image/png", "image/webp", "application/pdf"]);
+const EXT: Record<string, string> = {
+  "image/jpeg": "jpg",
+  "image/png": "png",
+  "image/webp": "webp",
+  "application/pdf": "pdf",
+};
+/** Pieces across the whole receipt (the scanner reads at most 8 parts). */
+const MAX_TOTAL_PIECES = 8;
 
-/**
- * Multi-image receipt upload for the scan flow (long receipts span
- * photos). Appends to purchases.receipt_paths[] — the legacy single-path
- * route stays for manual attachments. Same sealed-bucket door as always.
- */
 export async function POST(
   request: Request,
   context: { params: Promise<{ id: string }> },
@@ -44,7 +48,7 @@ export async function POST(
 
   const { data: purchase } = await supabase
     .from("purchases")
-    .select("id, client_id, receipt_paths")
+    .select("id, client_id, receipt_paths, scan_paths")
     .eq("id", purchaseId)
     .maybeSingle();
   if (!purchase || purchase.client_id !== clientId) {
@@ -64,8 +68,28 @@ export async function POST(
       return NextResponse.json({ error: "File too large (max 8MB each)" }, { status: 400 });
     }
     if (!ALLOWED_MIME.has(f.type)) {
-      return NextResponse.json({ error: "Use JPEG/PNG/WebP photos." }, { status: 400 });
+      return NextResponse.json({ error: "Use a photo (JPEG, PNG, WebP) or a PDF." }, { status: 400 });
     }
+  }
+
+  const pieces = formData.getAll("pieces").filter((f): f is File => f instanceof File);
+  let plan: number[] = files.map(() => 0);
+  if (pieces.length > 0) {
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(String(formData.get("plan") ?? ""));
+    } catch {
+      parsed = null;
+    }
+    const ok =
+      Array.isArray(parsed) &&
+      parsed.length === files.length &&
+      parsed.every((n) => Number.isInteger(n) && n >= 0 && n <= MAX_PIECES && n !== 1) &&
+      parsed.reduce((a: number, b: number) => a + b, 0) === pieces.length &&
+      pieces.length <= MAX_TOTAL_PIECES &&
+      pieces.every((p) => p.type === "image/jpeg" && p.size <= MAX_BYTES);
+    if (!ok) return NextResponse.json({ error: "Bad receipt pieces." }, { status: 400 });
+    plan = parsed as number[];
   }
 
   // Optional small renditions, one per photo, same order (field "thumbs").
@@ -74,24 +98,42 @@ export async function POST(
 
   const admin = createAdminClient();
   const newPaths: string[] = [];
+  const written: string[] = []; // photos and pieces, for cleanup on failure
+  const scanOrder: string[] = []; // what the scanner reads for these files
+  let pieceAt = 0;
   for (const [i, f] of files.entries()) {
-    const ext = f.type === "image/png" ? "png" : f.type === "image/webp" ? "webp" : "jpg";
-    const path = `${clientId}/purchase-${purchaseId}-${randomUUID()}.${ext}`;
+    const path = `${clientId}/purchase-${purchaseId}-${randomUUID()}.${EXT[f.type]}`;
     const { error } = await admin.storage
       .from("receipts")
       .upload(path, await f.arrayBuffer(), { contentType: f.type, upsert: false });
     if (error) {
       // Don't leave earlier objects orphaned behind a failed batch.
-      if (newPaths.length > 0) await admin.storage.from("receipts").remove(newPaths);
+      if (written.length > 0) await admin.storage.from("receipts").remove(written);
       return NextResponse.json({ error: error.message }, { status: 500 });
     }
     newPaths.push(path);
+    written.push(path);
+
+    if (plan[i] === 0) scanOrder.push(path);
+    for (let k = 0; k < plan[i]; k++) {
+      const piece = pieces[pieceAt++];
+      const piecePath = `${clientId}/purchase-${purchaseId}-${randomUUID()}-piece${k + 1}.jpg`;
+      const { error: pErr } = await admin.storage
+        .from("receipts")
+        .upload(piecePath, await piece.arrayBuffer(), { contentType: "image/jpeg", upsert: false });
+      if (pErr) {
+        await admin.storage.from("receipts").remove(written);
+        return NextResponse.json({ error: pErr.message }, { status: 500 });
+      }
+      written.push(piecePath);
+      scanOrder.push(piecePath);
+    }
 
     // Thumbnail is best-effort by design: field connectivity is unreliable and
     // losing a receipt because its thumbnail failed would be absurd. The list
     // falls back to the full image when no -thumb object exists.
     const thumb = thumbs[i];
-    if (thumb) {
+    if (thumb && thumb.size > 0) {
       const thumbPath = thumbPathFor(path);
       const { error: tErr } = await admin.storage
         .from("receipts")
@@ -103,13 +145,19 @@ export async function POST(
     }
   }
 
-  const allPaths = [...((purchase.receipt_paths as string[] | null) ?? []), ...newPaths];
+  const priorPaths = (purchase.receipt_paths as string[] | null) ?? [];
+  const priorScan = (purchase.scan_paths as string[] | null) ?? [];
+  const allPaths = [...priorPaths, ...newPaths];
+  // Pieces anywhere on the receipt: the scanner reads the whole receipt in
+  // order, pieces in place of their photo. None: it reads receipt_paths.
+  const scanPaths =
+    priorScan.length > 0 || pieces.length > 0 ? [...(priorScan.length > 0 ? priorScan : priorPaths), ...scanOrder] : [];
   const { error: updateErr } = await admin
     .from("purchases")
-    .update({ receipt_paths: allPaths })
+    .update({ receipt_paths: allPaths, scan_paths: scanPaths })
     .eq("id", purchaseId);
   if (updateErr) {
-    await admin.storage.from("receipts").remove(newPaths);
+    await admin.storage.from("receipts").remove(written);
     return NextResponse.json({ error: updateErr.message }, { status: 500 });
   }
 

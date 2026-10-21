@@ -41,10 +41,22 @@ export function isThumbPath(path: string): boolean {
 export function allStoragePathsFor(purchase: {
   receipt_path?: string | null;
   receipt_paths?: string[] | null;
+  /** The scanner's pieces of a tall receipt (no thumbnails of their own). */
+  scan_paths?: string[] | null;
 }): string[] {
   const full = [
     ...((purchase.receipt_paths ?? []).filter(Boolean) as string[]),
     ...(purchase.receipt_path ? [purchase.receipt_path] : []),
   ];
-  return [...new Set(full.flatMap((p) => [p, thumbPathFor(p)]))];
+  return [
+    ...new Set([
+      ...full.flatMap((p) => [p, thumbPathFor(p)]),
+      ...((purchase.scan_paths ?? []).filter(Boolean) as string[]),
+    ]),
+  ];
+}
+
+/** True for a PDF receipt (shown as a link, not an image). */
+export function isPdfPath(path: string): boolean {
+  return /\.pdf$/i.test(path);
 }

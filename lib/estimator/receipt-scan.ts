@@ -21,12 +21,23 @@ export type ScanResult = {
   items: ScanItem[];
 };
 
-export const SCAN_MODEL = "claude-haiku-4-5";
-/** §6.1.4: a truncated 40-line receipt fails parse and masquerades as a
- * model error — never configure below 4096. */
-export const SCAN_MAX_TOKENS = 8192;
+/** The one place the scan model is named: switching models is this line. */
+export const SCAN_MODEL = "claude-sonnet-5-5";
 
-export const SCAN_SYSTEM_PROMPT = `You extract data from receipt photos for a field-service bookkeeping app.
+/** A read as stored on the purchase (purchases.scan_result): the result plus
+ * the self-check. "mismatch" survives one automatic rescan. */
+export type StoredScan = ScanResult & {
+  check?: { mismatch: boolean; itemSum: number; expected: number | null; rescanned: boolean };
+};
+/** Thinking depth. Receipts are transcription, not reasoning. */
+export const SCAN_EFFORT = "low" as const;
+/** Server-side retry on another model if a safety classifier declines. */
+export const SCAN_FALLBACK_BETA = "server-side-fallback-2026-07-01" as const;
+/** §6.1.4: a truncated 40-line receipt fails parse and masquerades as a
+ * model error — never configure below 4096. Thinking shares this budget. */
+export const SCAN_MAX_TOKENS = 16000;
+
+export const SCAN_SYSTEM_PROMPT = `You extract data from receipts (photos or PDFs) for a field-service bookkeeping app.
 
 Return ONLY a valid JSON object — no markdown fences, no commentary, no text before or after. Exact schema:
 {"vendor": string|null, "date": string|null, "subtotal": number|null, "tax": number|null, "total": number|null, "items": [{"description": string, "sku": string|null, "qty": number|null, "unit_price": number|null, "amount": number|null}]}
@@ -43,6 +54,31 @@ Rules:
 export const SCAN_RETRY_INSTRUCTION =
   "Your previous reply was not parseable as JSON. Respond again with ONLY the JSON object matching the schema — no fences, no commentary, first character must be { and last must be }.";
 
+/** The self-check rescan: the items didn't add up, so say by how much. */
+export function scanSelfCheckInstruction(check: {
+  itemSum: number;
+  expected: number | null;
+  tax: number | null;
+}): string {
+  const target =
+    check.tax !== null
+      ? `the total minus tax, ${check.expected?.toFixed(2)}`
+      : `the total, ${check.expected?.toFixed(2)}`;
+  return `Your items add up to ${check.itemSum.toFixed(2)}, but they should add up to ${target}. Look at the receipt again, line by line: a line may be missing, read twice, or misread (quantity, price, or a discount). Respond with the corrected JSON object only, same schema. If the receipt really doesn't add up, return what is printed; never invent a line to make it balance.`;
+}
+
+/** What to tell the model about the images it's getting. */
+export function scanUserText(input: { images: number; pieces: boolean; pdfs: number }): string {
+  if (input.pieces) {
+    return `These ${input.images} images are overlapping pieces of ONE long receipt, top to bottom. Lines near each cut appear in two pieces; count each line once. Extract it as a single JSON object.`;
+  }
+  if (input.pdfs > 0 && input.images === 0) return "Extract this receipt as a JSON object.";
+  const parts = input.images + input.pdfs;
+  return parts > 1
+    ? `These ${parts} files are ONE receipt, in order. Extract it as a single JSON object.`
+    : "Extract this receipt as a JSON object.";
+}
+
 /** Media types Claude vision accepts (HEIC is not one of them). */
 export const SCAN_IMAGE_TYPES: Record<string, string> = {
   jpg: "image/jpeg",
@@ -51,6 +87,9 @@ export const SCAN_IMAGE_TYPES: Record<string, string> = {
   webp: "image/webp",
   gif: "image/gif",
 };
+
+/** Emailed receipts (Home Depot) arrive as PDFs; they go as a document. */
+export const SCAN_PDF_EXT = "pdf";
 
 const num = (v: unknown): number | null => {
   if (typeof v === "number" && Number.isFinite(v)) return Math.round(v * 100) / 100;
@@ -118,7 +157,7 @@ export function parseScanResponse(raw: string): ScanResult | null {
 }
 
 /** YYYY-MM-DD or null — never guess. */
-function normalizeDate(v: string | null): string | null {
+export function normalizeDate(v: string | null): string | null {
   if (!v) return null;
   if (/^\d{4}-\d{2}-\d{2}$/.test(v)) return v;
   const us = v.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{2,4})$/);
