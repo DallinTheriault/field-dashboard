@@ -2,6 +2,7 @@ import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { drivingMiles, lookupAddress, pointKey, type Point } from "./geo";
 import { addressKey, baseOn, mapsUrl } from "./plan";
+import { sharedNominatimTurn } from "./throttle";
 
 export type PropertyMiles =
   | { status: "ok"; miles: number; base: string; url: string }
@@ -37,7 +38,7 @@ export async function milesFromBase(
       .eq("address_key", key)
       .maybeSingle();
     if (hit) return hit.status === "ok" ? { lat: Number(hit.lat), lon: Number(hit.lon) } : "not_found";
-    const g = await lookupAddress(addr);
+    const g = await lookupAddress(addr, sharedNominatimTurn(admin));
     if (g.status === "error") return "error";
     await admin.from("geocode_cache").upsert(
       {

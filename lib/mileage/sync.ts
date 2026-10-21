@@ -2,6 +2,7 @@ import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { jobContactName, type JobLocationRow } from "@/lib/jobs/address";
 import { drivingMiles, lookupAddress, pointKey, type Point } from "./geo";
+import { sharedNominatimTurn } from "./throttle";
 import { addressKey, planDays, sumMiles, type Base, type DayPlan, type JobInfo, type SiteVisit } from "./plan";
 
 /**
@@ -92,10 +93,11 @@ export async function syncDayTrips(
       .in("address_key", [...addresses.keys()]);
     for (const g of (cached ?? []) as GeoRow[]) geo.set(g.address_key, g);
   }
+  const turn = sharedNominatimTurn(admin);
   if (opts.network) {
     for (const [key, address] of addresses) {
       if (geo.has(key) || !online()) continue;
-      const g = await lookupAddress(address);
+      const g = await lookupAddress(address, turn);
       if (g.status === "error") {
         geo.set(key, "error");
         continue;

@@ -12,6 +12,7 @@ import {
   deleteRatePeriod,
   deleteTrip,
   restoreTrip,
+  checkMapServices,
   saveBase,
   saveRatePeriod,
   syncTripsNow,
@@ -491,6 +492,7 @@ function Bases({ bases, onError }: { bases: BaseRecord[]; onError: (m: string | 
           </li>
         ))}
       </ul>
+      {bases.length > 0 && <ServiceCheckRow />}
       {editId !== null && (
         <div className="px-4 pb-4 pt-2 space-y-2 border-t border-line-subtle">
           <input value={address} onChange={(e) => setAddress(e.target.value)} placeholder="Street, city, state, ZIP" aria-label="Base address" className="w-full min-h-[44px]" />
@@ -522,6 +524,31 @@ function Bases({ bases, onError }: { bases: BaseRecord[]; onError: (m: string | 
         </div>
       )}
     </section>
+  );
+}
+
+/** "Check map services": one request to each, from today's base. */
+function ServiceCheckRow() {
+  const [result, setResult] = useState<Awaited<ReturnType<typeof checkMapServices>> | null>(null);
+  const [pending, start] = useTransition();
+  const NAMES = { census: "US Census geocoder", nominatim: "OpenStreetMap (Nominatim)", valhalla: "Valhalla routing", osrm: "OSRM routing (backup)" };
+  return (
+    <div className="px-4 py-3 border-t border-line-subtle space-y-2" data-testid="service-check">
+      <button type="button" disabled={pending} onClick={() => start(async () => setResult(await checkMapServices()))} className="btn-ghost text-xs min-h-[36px]">
+        {pending ? <Loader2 size={11} className="animate-spin" /> : null}
+        Check map services
+      </button>
+      {result && !result.ok && <div className="form-error">{result.error}</div>}
+      {result?.ok && result.data && (
+        <ul className="space-y-1 text-2xs">
+          {result.data.checks.map((c) => (
+            <li key={c.service} data-service={c.service} data-ok={c.ok ? "yes" : "no"} className={c.ok ? "text-bone-300" : "text-status-danger"}>
+              {c.ok ? "Reached" : "Couldn't reach"} {NAMES[c.service]} ({c.ms} ms): {c.detail}
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
   );
 }
 

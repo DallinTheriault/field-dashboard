@@ -81,6 +81,11 @@ await bases.getByLabel("Base address").fill(BASE_B);
 await bases.getByLabel("Starts on").fill("2026-09-27");
 await bases.getByRole("button", { name: "Save base" }).click();
 await bases.getByText(BASE_B).waitFor();
+const svc = page.getByTestId("service-check");
+await svc.getByRole("button", { name: "Check map services" }).click();
+await svc.locator('li[data-service="osrm"]').waitFor({ timeout: 30_000 });
+check("Check map services reaches all four from today's base", (await svc.locator('li[data-ok="yes"]').count()) === 4,
+  await svc.innerText());
 const baseRows = await adminGet("mileage_bases?client_id=eq.8&order=effective_from&select=*");
 check("two bases, each from its date", baseRows.length === 2 && baseRows[0].effective_from === "2026-01-01" && baseRows[1].effective_from === "2026-09-27");
 

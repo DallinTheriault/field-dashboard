@@ -7,6 +7,8 @@ import { getTenantTimezone, dayKeyInTz } from "@/lib/dates";
 import { syncDayTrips, type SyncResult } from "@/lib/mileage/sync";
 import { baseOn, daysBetween } from "@/lib/mileage/plan";
 import { milesFromBase, type PropertyMiles } from "@/lib/mileage/property-miles";
+import { checkServices, type ServiceCheck } from "@/lib/mileage/geo";
+import { sharedNominatimTurn } from "@/lib/mileage/throttle";
 
 type Result<T = undefined> = { ok: true; data?: T } | { ok: false; error: string };
 
@@ -47,6 +49,22 @@ export async function propertyMilesNow(address: string): Promise<Result<Property
   if (!a) return { ok: true, data: { status: "no_address", address: "" } };
   const today = dayKeyInTz(new Date(), await getTenantTimezone());
   return { ok: true, data: await milesFromBase(createAdminClient(), auth.clientId, a, today) };
+}
+
+/** Ask each map service once, from today's base: can Field reach them? */
+export async function checkMapServices(): Promise<Result<{ base: string; checks: ServiceCheck[] }>> {
+  const auth = await requireWriter();
+  if (!auth.ok) return auth;
+  const admin = createAdminClient();
+  const today = dayKeyInTz(new Date(), await getTenantTimezone());
+  const { data: bases } = await admin.from("mileage_bases").select("id, address, effective_from").eq("client_id", auth.clientId);
+  const base = baseOn(
+    today,
+    (bases ?? []).map((b) => ({ id: b.id, address: b.address, effectiveFrom: String(b.effective_from) })),
+  );
+  if (!base) return { ok: false, error: "Add a base first." };
+  const checks = await checkServices(base.address, null, sharedNominatimTurn(admin));
+  return { ok: true, data: { base: base.address, checks } };
 }
 
 /* ---------- trips ---------- */

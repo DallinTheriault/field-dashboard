@@ -11,6 +11,7 @@
 --   geocode_cache          every address looked up (Census, then an exact
 --                          house-number match from OpenStreetMap), per tenant
 --   route_cache            every driving distance worked out, per pair of points
+--   geo_throttle           Nominatim's one-request-a-second limit, across servers
 --   mileage_rate_periods   IRS rate by the date it takes effect
 --
 -- Trips (mileage_entries) gain a kind:
@@ -72,6 +73,38 @@ create table public.route_cache (
   primary key (client_id, from_point, to_point)
 );
 
+-- Nominatim's usage policy allows at most one request a second, from all of
+-- the app's servers together. Each request first takes the next free slot
+-- here (a row lock serializes callers) and waits until it comes.
+create table public.geo_throttle (
+  service text primary key,
+  next_at timestamptz not null default now()
+);
+insert into public.geo_throttle (service) values ('nominatim');
+
+create function public.geo_throttle_slot(p_service text, p_gap_ms integer)
+returns integer
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  slot timestamptz;
+begin
+  update public.geo_throttle
+     set next_at = greatest(next_at, clock_timestamp()) + make_interval(secs => p_gap_ms / 1000.0)
+   where service = p_service
+  returning next_at - make_interval(secs => p_gap_ms / 1000.0) into slot;
+  if slot is null then
+    raise exception 'unknown service %', p_service;
+  end if;
+  -- Milliseconds to wait before sending.
+  return greatest(0, ceil(extract(epoch from (slot - clock_timestamp())) * 1000))::integer;
+end;
+$$;
+revoke execute on function public.geo_throttle_slot(text, integer) from public, anon, authenticated;
+grant execute on function public.geo_throttle_slot(text, integer) to service_role;
+
 create table public.mileage_rate_periods (
   client_id      bigint not null references public."Clients"(id) on delete cascade,
   effective_from date not null,
@@ -109,6 +142,7 @@ alter table public.job_site_days enable row level security;
 alter table public.geocode_cache enable row level security;
 alter table public.route_cache enable row level security;
 alter table public.mileage_rate_periods enable row level security;
+alter table public.geo_throttle enable row level security; -- server only: no policies
 
 create policy mileage_bases_select on public.mileage_bases for select
   using (client_id in (select public.current_user_client_ids()));
@@ -143,6 +177,7 @@ create policy route_cache_select on public.route_cache for select
 
 revoke all on public.mileage_bases, public.job_site_days, public.geocode_cache,
   public.route_cache, public.mileage_rate_periods from anon;
+revoke all on public.geo_throttle from anon, authenticated;
 
 create trigger trg_mileage_bases_updated_at before update on public.mileage_bases
   for each row execute function public.set_updated_at();

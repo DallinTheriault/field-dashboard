@@ -62,7 +62,7 @@ http
 
       if (p === "/census/locations/onelineaddress") {
         const a = url.searchParams.get("address") ?? "";
-        log.push({ service: "census", q: a });
+        log.push({ service: "census", q: a, at: Date.now(), ua: req.headers["user-agent"] ?? null });
         if (script.censusDown) return send(res, 503, { error: "down" });
         const miss = !placeable(a) || script.censusMiss.some((m) => norm(a).includes(norm(m)));
         const pt = place(a);
@@ -72,7 +72,7 @@ http
       }
       if (p === "/nominatim/search") {
         const a = url.searchParams.get("q") ?? "";
-        log.push({ service: "nominatim", q: a });
+        log.push({ service: "nominatim", q: a, at: Date.now(), ua: req.headers["user-agent"] ?? null });
         if (script.nominatimDown) return send(res, 503, { error: "down" });
         if (!placeable(a)) return send(res, 200, []);
         const pt = place(a);
@@ -82,13 +82,13 @@ http
         ]);
       }
       if (p === "/valhalla/route" && req.method === "POST") {
-        log.push({ service: "valhalla" });
+        log.push({ service: "valhalla", at: Date.now(), ua: req.headers["user-agent"] ?? null });
         if (script.valhallaDown) return send(res, 503, { error: "down" });
         const [a, b] = JSON.parse(raw || "{}").locations ?? [];
         return send(res, 200, { trip: { summary: { length: Math.round(miles(a, b) * 1.3 * 1000) / 1000 } } });
       }
       if (p.startsWith("/osrm/route/v1/driving/")) {
-        log.push({ service: "osrm" });
+        log.push({ service: "osrm", at: Date.now(), ua: req.headers["user-agent"] ?? null });
         if (script.osrmDown) return send(res, 503, { code: "Down" });
         const [a, b] = p.split("/").pop().split(";").map((s) => {
           const [lon, lat] = s.split(",").map(Number);
