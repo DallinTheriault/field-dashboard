@@ -212,8 +212,24 @@ export async function syncDayTrips(
     };
     if (!have) {
       const { error } = await admin.from("mileage_entries").insert({ client_id: clientId, ...row, calculated_at: now });
-      if (error) console.error("[mileage] insert trip failed", p.date, error.message);
-      else result.inserted++;
+      if (!error) {
+        result.inserted++;
+        continue;
+      }
+      if (error.code !== "23505") {
+        console.error("[mileage] insert trip failed", p.date, error.message);
+        continue;
+      }
+      // Another sync made the day's trip first: bring it up to date, if it's
+      // still automatic.
+      const { error: uErr } = await admin
+        .from("mileage_entries")
+        .update({ ...row, calculated_at: now })
+        .eq("client_id", clientId)
+        .eq("trip_date", p.date)
+        .eq("kind", "auto");
+      if (uErr) console.error("[mileage] update trip failed", p.date, uErr.message);
+      else result.updated++;
       continue;
     }
     // Only write when something changed (a failed route was retried above).

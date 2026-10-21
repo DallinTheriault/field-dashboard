@@ -206,8 +206,10 @@ const j6 = await mk("Fay Various", "Pre-Field work, Various Properties");
 await hours(j6.id, "2026-10-07");
 await mileagePage();
 const various = page.getByTestId("needs-miles").locator('li[data-date="2026-10-07"]');
-check("an address that won't place is flagged, never guessed", (await dayTrips("2026-10-07"))[0]?.miles_status === "no_address" &&
-  (await various.getByText(/Couldn't find this address on the map: Pre-Field work, Various Properties/).count()) === 1);
+const v7 = (await dayTrips("2026-10-07"))[0];
+check("an address that won't place is flagged, never guessed", v7?.miles_status === "no_address" &&
+  (await various.getByText(/Couldn't find this address on the map: Pre-Field work, Various Properties/).count()) === 1,
+  `${v7?.miles_status} ${v7?.miles_note} ui=${await various.count()}`);
 await various.getByLabel("Type the miles").fill("12");
 await various.getByRole("button", { name: "Save miles" }).click();
 check("…typing the miles saves them, and they stay", !!(await until(async () => {
