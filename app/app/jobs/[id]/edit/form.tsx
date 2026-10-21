@@ -199,7 +199,9 @@ export function JobEditForm({
 
     setSaving(false);
     setSaved(true);
-    router.push(`/app/jobs/${job.id}`);
+    // Just completed: the job page asks which days you were there if no
+    // hours are logged (mileage).
+    router.push(status === "completed" && job.status !== "completed" ? `/app/jobs/${job.id}?days=ask` : `/app/jobs/${job.id}`);
     router.refresh();
   }
 

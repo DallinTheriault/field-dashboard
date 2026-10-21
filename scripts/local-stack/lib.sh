@@ -27,6 +27,7 @@ STRIPE_MOCK_PORT=12111
 STRIPE_SHIM_PORT=12112
 MAIL_PORT=12125
 ANTHROPIC_MOCK_PORT=12113
+GEO_MOCK_PORT=12114
 APP_PORT="${APP_PORT:-3000}"
 
 # Local-only password for the platform roles. Nothing here is reachable off-box:

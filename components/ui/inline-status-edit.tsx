@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { ChevronDown, Loader2 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { StatusChip } from "@/components/ui/status-chip";
@@ -34,6 +34,7 @@ export function InlineStatusEdit({
   currentStatus: string;
 }) {
   const router = useRouter();
+  const pathname = usePathname();
   const [open, setOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -70,8 +71,11 @@ export function InlineStatusEdit({
       setErr(error.message);
       return;
     }
-    // Refresh server-rendered data so the timeline picks up the new status_log row
-    router.refresh();
+    // Completed: the job page asks which days you were there if no hours
+    // are logged (mileage). Otherwise refresh so the timeline picks up the
+    // new status_log row.
+    if (next === "completed") router.replace(`${pathname}?days=ask`, { scroll: false });
+    else router.refresh();
   }
 
   return (

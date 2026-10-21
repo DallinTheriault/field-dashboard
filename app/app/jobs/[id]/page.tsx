@@ -12,6 +12,9 @@ import {
 import { EstimateStatusChip } from "../../estimator/estimate-status";
 import { JobActuals } from "../../estimator/job-actuals";
 import { JobExpenseCapture } from "./job-expense-capture";
+import { PropertyMiles } from "../../estimator/mileage/property-miles";
+import { SiteDaysDialog } from "../../estimator/mileage/site-days";
+import { daysBetween } from "@/lib/mileage/plan";
 import { PURCHASE_SCAN_COLS, toPendingReceipt } from "@/lib/receipts/state";
 import { JobDetailsSheet } from "./job-details-sheet";
 import { JobOptionsMenu } from "./job-options-menu";
@@ -27,7 +30,7 @@ import { createClient } from "@/lib/supabase/server";
 import { getTeamMembers } from "@/lib/team/members";
 import { getActivityTimeline } from "@/lib/timeline/fetch";
 import { getJobTags, listTagsForClient } from "@/lib/tags/server";
-import { getTenantTimezone } from "@/lib/dates";
+import { dayKeyInTz, getTenantTimezone } from "@/lib/dates";
 import { getTenantFeatureFlags } from "@/lib/features/flags";
 import { extraAmounts } from "@/lib/estimator/expenses";
 import { BILLING_COLS, toJobBilling } from "@/lib/jobs/billing";
@@ -65,11 +68,14 @@ function fmtPhone(p: string | null): string {
 
 export default async function JobDetailPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ id: string }>;
+  /** days=ask: just marked completed; ask which days on site if no hours. */
+  searchParams: Promise<{ days?: string }>;
 }) {
   const supabase = await createClient();
-  const { id } = await params;
+  const [{ id }, { days: daysParam }] = await Promise.all([params, searchParams]);
 
   // Batch 1 — everything that doesn't need the job row. tz + flags share
   // the layout's tenant-context fetch; role shares the layout's auth.
@@ -155,15 +161,18 @@ export default async function JobDetailPage({
           .eq("job_id", job.id)
           .order("id", { ascending: false })
       : Promise.resolve({ data: null }),
-    // Mileage context for the trip proposal + the read-only trips line.
-    // Fetched here so JobActuals never round-trips from the client.
+    // Trips that include this job (its days on site), a read-only line.
     estimatorOn && canSeeInternals
-      ? supabase.from("mileage_entries").select("miles").eq("job_id", job.id)
+      ? supabase
+          .from("mileage_entries")
+          .select("miles")
+          .neq("kind", "removed")
+          .or(`job_id.eq.${job.id},stops.cs.[{"job_id":${job.id}}]`)
       : Promise.resolve({ data: null }),
     estimatorOn && canSeeInternals
       ? supabase
           .from("pricing_settings")
-          .select("mileage_base_address, default_hourly_rate, skilled_hourly_rate, material_markup_pct")
+          .select("default_hourly_rate, skilled_hourly_rate, material_markup_pct")
           .maybeSingle()
       : Promise.resolve({ data: null }),
     // Not role-gated: the property address is customer info shown to every
@@ -171,7 +180,7 @@ export default async function JobDetailPage({
     job.property_id
       ? supabase
           .from("properties")
-          .select("id, address, unit, miles_from_base")
+          .select("id, address, unit")
           .eq("id", job.property_id)
           .maybeSingle()
       : Promise.resolve({ data: null }),
@@ -197,10 +206,23 @@ export default async function JobDetailPage({
     .map((p) => toPendingReceipt(p, p.expenses?.[0]?.count ?? 0, scanNow))
     .filter((p) => p.itemCount === 0);
   const billing = billingRow ? toJobBilling(billingRow as Record<string, unknown>) : null;
+
+  // Just completed with no hours logged: which days were you there?
+  let siteDaysAsk: string[] | null = null;
+  if (daysParam === "ask" && estimatorOn && canSeeInternals && job.status === "completed") {
+    const [{ count: hourRows }, { count: dayRows }] = await Promise.all([
+      supabase.from("time_entries").select("*", { count: "exact", head: true }).eq("job_id", job.id),
+      supabase.from("job_site_days").select("*", { count: "exact", head: true }).eq("job_id", job.id),
+    ]);
+    if ((hourRows ?? 0) === 0 && (dayRows ?? 0) === 0) {
+      const startDay = job.start_datetime ? dayKeyInTz(job.start_datetime, tz) : null;
+      const endDay = job.end_datetime ? dayKeyInTz(job.end_datetime, tz) : null;
+      siteDaysAsk = startDay ? daysBetween(startDay, endDay) : [];
+    }
+  }
   const isOwner = session?.role === "owner";
 
-  // Trips logged against this job — a read-only signal (§6.2). Deliberately
-  // NOT part of job costing math this pass.
+  // Trips that include this job: a read-only signal, never job costing.
   const tripCount = (mileageRows ?? []).length;
   const tripMiles =
     Math.round(
@@ -212,23 +234,6 @@ export default async function JobDetailPage({
         .filter(Boolean)
         .join(", ")
     : null;
-  const mileageContext = canSeeInternals && estimatorOn
-    ? {
-        baseAddress:
-          (pricingSettings?.mileage_base_address as string | null) ?? null,
-        // Legacy jobs have no property — fall back to the job's inline address.
-        destination: propertyAddress ?? (job.address as string | null) ?? null,
-        cachedMiles:
-          jobProperty?.miles_from_base === null ||
-          jobProperty?.miles_from_base === undefined
-            ? null
-            : Number(jobProperty.miles_from_base),
-        propertyId: (jobProperty?.id as number | undefined) ?? null,
-        purpose:
-          [job.service, job.scope].filter(Boolean).join(" — ") ||
-          `Job ${job.job_number ?? job.id}`,
-      }
-    : undefined;
 
   // Mirrors invoiceGuard() in purchase-actions: finalized (sent, or issued
   // through Stripe) means frozen; draft means still editable.
@@ -357,9 +362,15 @@ export default async function JobDetailPage({
             >
               {propertyAddress ?? job.address}
             </a>
+            {estimatorOn && canSeeInternals && (jobProperty?.address ?? job.address) && (
+              <div>
+                <PropertyMiles address={(jobProperty?.address ?? job.address) as string} />
+              </div>
+            )}
           </div>
         )}
       </div>
+      {siteDaysAsk && <SiteDaysDialog jobId={Number(job.id)} days={siteDaysAsk} closeHref={`/app/jobs/${job.id}`} />}
 
       <div className="flex flex-wrap items-center gap-2 mt-2.5 mb-5">
         <JobDetailsSheet
@@ -451,11 +462,7 @@ export default async function JobDetailPage({
 
       {estimatorOn && canSeeInternals && (
         <>
-          <JobActuals
-            clientId={job.client_id}
-            jobId={Number(job.id)}
-            mileage={mileageContext}
-          />
+          <JobActuals clientId={job.client_id} jobId={Number(job.id)} />
           {tripCount > 0 && (
             <div className="panel px-4 py-2.5 mb-5 flex items-center gap-2 text-2xs text-bone-400">
               <Car size={12} className="text-bone-500" />

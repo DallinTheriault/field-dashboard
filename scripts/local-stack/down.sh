@@ -2,7 +2,7 @@
 # Stop the local stack. Data stays in $FIELDSTACK; `up.sh --fresh` wipes it.
 source "$(dirname "$0")/lib.sh"
 
-for name in gateway storage auth rest stripe-shim stripe-mock mail-sink anthropic-mock; do
+for name in gateway storage auth rest stripe-shim stripe-mock mail-sink anthropic-mock geo-mock; do
   f="$PG_RUN/$name.pid"
   if [ -s "$f" ]; then
     kill "$(cat "$f")" 2>/dev/null || true
