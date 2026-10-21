@@ -229,9 +229,10 @@ check("desktop table shows the badge in the Status column", (await deskRow.locat
 await desk.screenshot({ path: "/opt/fieldstack/e2e/billing-jobs-desktop.png" });
 
 // --- Pickers -------------------------------------------------------------------------------------------
-await desk.goto(`${APP}/app/estimator/mileage`);
+// The Expenses page's "Log a purchase" job picker (mileage no longer has one).
+await desk.goto(`${APP}/app/estimator/purchases`);
 await desk.waitForLoadState("networkidle");
-await desk.getByRole("button", { name: "Log a trip" }).click();
+await desk.getByRole("button", { name: /Log a purchase/ }).click();
 await desk.locator("select option").first().waitFor({ state: "attached" });
 const options = await desk.evaluate(() => [...document.querySelectorAll("select option")].map((o) => o.textContent ?? ""));
 check("job pickers show the billing state", options.some((o) => /Dot Done.*ready to invoice$/.test(o)) && options.some((o) => /Uma Undo.*· paid$/.test(o)),

@@ -43,3 +43,11 @@ INSERT INTO public.jobs (client_id, contact_id, property_id, name, address, serv
 SELECT client_id, contact_id, id, CASE client_id WHEN 8 THEN 'Pat Rivera' ELSE 'Other Customer' END,
        address, 'Repairs', 'scheduled', 'manual'
 FROM p;
+
+-- 2026 IRS mileage rates (v101 prefills them for tenants that already exist;
+-- the seed's tenants come after the migrations).
+INSERT INTO public.mileage_rate_periods (client_id, effective_from, rate_per_mile, note)
+SELECT c.id, r.d, r.rate, r.note FROM public."Clients" c
+CROSS JOIN (VALUES (date '2026-01-01', 0.725, 'IRS business rate, Jan 1 to Jun 30, 2026 (IR-2025-128)'),
+                   (date '2026-07-01', 0.76, 'IRS business rate from Jul 1, 2026 (IR-2026-29)')) AS r(d, rate, note)
+ON CONFLICT DO NOTHING;

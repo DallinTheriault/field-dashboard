@@ -3,276 +3,347 @@
 import { revalidatePath } from "next/cache";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { requireWriter } from "@/lib/estimator/auth";
+import { getTenantTimezone, dayKeyInTz } from "@/lib/dates";
+import { syncDayTrips, type SyncResult } from "@/lib/mileage/sync";
+import { baseOn, daysBetween } from "@/lib/mileage/plan";
+import { milesFromBase, type PropertyMiles } from "@/lib/mileage/property-miles";
 
 type Result<T = undefined> = { ok: true; data?: T } | { ok: false; error: string };
 
 const round1 = (n: number) => Math.round((n + 1e-9) * 10) / 10;
+const isDate = (s: string) => /^\d{4}-\d{2}-\d{2}$/.test(s);
 
 function cleanMiles(v: number | string): number | null {
-  const n = Number(v);
-  if (!Number.isFinite(n) || n < 0) return null;
+  const n = Number(String(v).replace(/[^\d.]/g, ""));
+  if (String(v).trim() === "" || !Number.isFinite(n) || n < 0) return null;
   return round1(n);
 }
 
+function revalidate(jobIds: Array<number | null | undefined> = []) {
+  revalidatePath("/app/estimator/mileage");
+  revalidatePath("/app/estimator/mileage/catch-up");
+  revalidatePath("/app/estimator/expenses");
+  for (const id of jobIds) if (id) revalidatePath(`/app/jobs/${id}`);
+}
+
+async function sync(clientId: number): Promise<SyncResult> {
+  return syncDayTrips(createAdminClient(), clientId, { network: true, tz: await getTenantTimezone() });
+}
+
+/** Work out any trips that need it (the Mileage page calls this after it renders). */
+export async function syncTripsNow(): Promise<Result<SyncResult>> {
+  const auth = await requireWriter();
+  if (!auth.ok) return auth;
+  const r = await sync(auth.clientId);
+  if (r.inserted || r.updated || r.deleted) revalidate();
+  return { ok: true, data: r };
+}
+
+/** One-way miles from today's base to an address, to check against Google Maps. */
+export async function propertyMilesNow(address: string): Promise<Result<PropertyMiles>> {
+  const auth = await requireWriter();
+  if (!auth.ok) return auth;
+  const a = (address ?? "").trim();
+  if (!a) return { ok: true, data: { status: "no_address", address: "" } };
+  const today = dayKeyInTz(new Date(), await getTenantTimezone());
+  return { ok: true, data: await milesFromBase(createAdminClient(), auth.clientId, a, today) };
+}
+
+/* ---------- trips ---------- */
+
 export type TripInput = {
   tripDate: string;
+  /** Where the drive started; blank = the base on that date. */
+  startAddress?: string;
   destination: string;
   purpose: string;
   miles: number | string;
   jobId?: number | null;
-  vehicle?: string | null;
-  roundTrip?: boolean;
-  source?: "manual" | "proposed";
-  /** Only when the user explicitly opts in — never a side effect of editing. */
-  saveDistanceToPropertyId?: number | null;
 };
 
-/**
- * Create one trip. Mileage is its own record type: this writes NOTHING to
- * purchases/expenses and never touches job costing.
- *
- * The proposal path carries `source: 'proposed'` and is guarded here against
- * producing a second trip for the same job + day. That guard is server-side on
- * purpose (architect requirement): the client's dismissal memory is a
- * convenience, so a cleared browser or a new device must not be able to
- * duplicate a trip. A partial unique index backs this up structurally.
- */
+/** A trip added by hand (a supply run, work from before Field). Never recalculated. */
 export async function createTrip(input: TripInput): Promise<Result<{ id: number }>> {
   const auth = await requireWriter();
   if (!auth.ok) return auth;
   const { clientId } = auth;
-
   const tripDate = (input.tripDate ?? "").slice(0, 10);
   const destination = (input.destination ?? "").trim();
   const purpose = (input.purpose ?? "").trim();
   const miles = cleanMiles(input.miles);
-  const source = input.source === "proposed" ? "proposed" : "manual";
-
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(tripDate)) return { ok: false, error: "Pick a date." };
+  if (!isDate(tripDate)) return { ok: false, error: "Pick a date." };
   if (!destination) return { ok: false, error: "Where did you drive?" };
-  if (!purpose) return { ok: false, error: "What was the business purpose?" };
-  if (miles === null) return { ok: false, error: "Miles must be 0 or more." };
+  if (!purpose) return { ok: false, error: "What was it for?" };
+  if (miles === null) return { ok: false, error: "Miles must be a number, 0 or more." };
 
   const admin = createAdminClient();
-
-  // Tenant boundary — the admin client bypasses RLS, so a referenced job must
-  // belong to the caller's client_id (derived from the session, not the body).
   let jobId: number | null = null;
   if (input.jobId != null) {
-    const { data: job } = await admin
-      .from("jobs")
-      .select("id, client_id")
-      .eq("id", Number(input.jobId))
-      .maybeSingle();
+    const { data: job } = await admin.from("jobs").select("id, client_id").eq("id", Number(input.jobId)).maybeSingle();
     if (!job || job.client_id !== clientId) return { ok: false, error: "Job not found." };
     jobId = job.id;
   }
-
-  // Non-negotiable duplicate guard for proposals: ANY existing entry for this
-  // job + date means no second trip gets proposed into existence.
-  if (source === "proposed" && jobId !== null) {
-    const { count } = await admin
-      .from("mileage_entries")
-      .select("*", { count: "exact", head: true })
-      .eq("client_id", clientId)
-      .eq("job_id", jobId)
-      .eq("trip_date", tripDate);
-    if ((count ?? 0) > 0) {
-      return { ok: false, error: "A trip is already logged for this job on that day." };
-    }
+  let start = (input.startAddress ?? "").trim() || null;
+  let baseId: number | null = null;
+  if (!start) {
+    const { data: bases } = await admin.from("mileage_bases").select("id, address, effective_from").eq("client_id", clientId);
+    const b = baseOn(
+      tripDate,
+      (bases ?? []).map((x) => ({ id: x.id, address: x.address, effectiveFrom: String(x.effective_from) })),
+    );
+    start = b?.address ?? null;
+    baseId = b?.id ?? null;
   }
-
   const { data, error } = await admin
     .from("mileage_entries")
     .insert({
       client_id: clientId,
       trip_date: tripDate,
+      kind: "manual",
+      source: "manual",
       job_id: jobId,
+      base_id: baseId,
+      start_address: start,
       destination,
       purpose,
       miles,
-      round_trip: input.roundTrip ?? true,
-      vehicle: (input.vehicle ?? "").trim() || null,
-      source,
+      miles_status: "ok",
+      round_trip: true,
     })
     .select("id")
     .single();
-  if (error || !data) {
-    // The partial unique index is the structural backstop for the same race.
-    if (error?.code === "23505") {
-      return { ok: false, error: "A trip is already logged for this job on that day." };
-    }
-    return { ok: false, error: error?.message ?? "Couldn't save the trip." };
-  }
-
-  // Cache the distance on the property ONLY when explicitly requested (§5.3):
-  // editing one trip must never silently overwrite the saved distance.
-  if (input.saveDistanceToPropertyId != null) {
-    const { data: prop } = await admin
-      .from("properties")
-      .select("id, client_id")
-      .eq("id", Number(input.saveDistanceToPropertyId))
-      .maybeSingle();
-    if (prop && prop.client_id === clientId) {
-      await admin
-        .from("properties")
-        .update({ miles_from_base: miles })
-        .eq("id", prop.id);
-    }
-  }
-
-  revalidatePath("/app/estimator/mileage");
-  if (jobId) revalidatePath(`/app/jobs/${jobId}`);
+  if (error || !data) return { ok: false, error: error?.message ?? "Couldn't save the trip." };
+  revalidate([jobId]);
   return { ok: true, data: { id: data.id } };
 }
 
-/** Edit a trip. created_at is immutable (a DB trigger enforces it too). */
+/**
+ * Edit a trip. An automatic trip that's edited becomes "edited" and is never
+ * recalculated again (Put back undoes that). Typing miles into a trip Field
+ * couldn't work out is an edit like any other.
+ */
 export async function updateTrip(
   id: number,
-  patch: {
-    tripDate?: string;
-    destination?: string;
-    purpose?: string;
-    miles?: number | string;
-    vehicle?: string | null;
-  },
+  patch: { tripDate?: string; startAddress?: string; destination?: string; purpose?: string; miles?: number | string },
 ): Promise<Result> {
   const auth = await requireWriter();
   if (!auth.ok) return auth;
-  const { clientId } = auth;
-
   const admin = createAdminClient();
   const { data: row } = await admin
     .from("mileage_entries")
-    .select("id, client_id, job_id")
+    .select("id, client_id, kind, job_id")
     .eq("id", Number(id))
     .maybeSingle();
-  if (!row || row.client_id !== clientId) return { ok: false, error: "Trip not found." };
+  if (!row || row.client_id !== auth.clientId) return { ok: false, error: "Trip not found." };
+  if (row.kind === "removed") return { ok: false, error: "Put this trip back before editing it." };
 
   const update: Record<string, unknown> = {};
   if (patch.tripDate !== undefined) {
     const d = patch.tripDate.slice(0, 10);
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) return { ok: false, error: "Pick a date." };
+    if (!isDate(d)) return { ok: false, error: "Pick a date." };
+    if (row.kind !== "manual") return { ok: false, error: "An automatic trip's date comes from the days on site." };
     update.trip_date = d;
   }
+  if (patch.startAddress !== undefined) update.start_address = patch.startAddress.trim() || null;
   if (patch.destination !== undefined) {
-    const v = patch.destination.trim();
-    if (!v) return { ok: false, error: "Where did you drive?" };
-    update.destination = v;
+    if (!patch.destination.trim()) return { ok: false, error: "Where did you drive?" };
+    update.destination = patch.destination.trim();
   }
   if (patch.purpose !== undefined) {
-    const v = patch.purpose.trim();
-    if (!v) return { ok: false, error: "What was the business purpose?" };
-    update.purpose = v;
+    if (!patch.purpose.trim()) return { ok: false, error: "What was it for?" };
+    update.purpose = patch.purpose.trim();
   }
   if (patch.miles !== undefined) {
     const m = cleanMiles(patch.miles);
-    if (m === null) return { ok: false, error: "Miles must be 0 or more." };
+    if (m === null) return { ok: false, error: "Miles must be a number, 0 or more." };
     update.miles = m;
+    update.miles_status = "ok";
+    update.miles_note = null;
   }
-  if (patch.vehicle !== undefined) update.vehicle = (patch.vehicle ?? "").trim() || null;
   if (Object.keys(update).length === 0) return { ok: true };
+  if (row.kind === "auto") update.kind = "edited";
 
   const { error } = await admin.from("mileage_entries").update(update).eq("id", row.id);
   if (error) return { ok: false, error: error.message };
-
-  revalidatePath("/app/estimator/mileage");
-  if (row.job_id) revalidatePath(`/app/jobs/${row.job_id}`);
+  revalidate([row.job_id]);
   return { ok: true };
 }
 
+/** Delete a trip. An automatic one is kept as removed, so it isn't made again. */
 export async function deleteTrip(id: number): Promise<Result> {
   const auth = await requireWriter();
   if (!auth.ok) return auth;
-  const { clientId } = auth;
-
   const admin = createAdminClient();
   const { data: row } = await admin
     .from("mileage_entries")
-    .select("id, client_id, job_id")
+    .select("id, client_id, kind, job_id")
     .eq("id", Number(id))
     .maybeSingle();
-  if (!row || row.client_id !== clientId) return { ok: false, error: "Trip not found." };
-
-  const { error } = await admin.from("mileage_entries").delete().eq("id", row.id);
+  if (!row || row.client_id !== auth.clientId) return { ok: false, error: "Trip not found." };
+  const { error } =
+    row.kind === "manual"
+      ? await admin.from("mileage_entries").delete().eq("id", row.id)
+      : await admin.from("mileage_entries").update({ kind: "removed" }).eq("id", row.id);
   if (error) return { ok: false, error: error.message };
-  revalidatePath("/app/estimator/mileage");
-  if (row.job_id) revalidatePath(`/app/jobs/${row.job_id}`);
+  revalidate([row.job_id]);
   return { ok: true };
 }
 
-/** Set (or clear) the per-year rate. Never defaulted, never guessed. */
-export async function setMileageRate(
-  year: number,
-  ratePerMile: number | string | null,
-): Promise<Result> {
+/** Undo an edit or a removal: the day goes back to its automatic trip. */
+export async function restoreTrip(id: number): Promise<Result> {
   const auth = await requireWriter();
   if (!auth.ok) return auth;
-  const { clientId } = auth;
-
-  const y = Number(year);
-  if (!Number.isInteger(y) || y < 2000 || y > 2100) {
-    return { ok: false, error: "Pick a valid year." };
-  }
   const admin = createAdminClient();
-
-  if (ratePerMile === null || ratePerMile === "") {
-    await admin.from("mileage_rates").delete().eq("client_id", clientId).eq("year", y);
-    revalidatePath("/app/estimator/mileage");
-    return { ok: true };
-  }
-  const rate = Number(ratePerMile);
-  if (!Number.isFinite(rate) || rate < 0) {
-    return { ok: false, error: "Rate must be 0 or more." };
-  }
-  const { error } = await admin
-    .from("mileage_rates")
-    .upsert(
-      { client_id: clientId, year: y, rate_per_mile: rate, updated_at: new Date().toISOString() },
-      { onConflict: "client_id,year" },
-    );
-  if (error) return { ok: false, error: error.message };
-  revalidatePath("/app/estimator/mileage");
-  return { ok: true };
-}
-
-/** The origin for proposed trips. Saved distances are NOT recomputed (§5.3). */
-export async function setMileageBaseAddress(address: string): Promise<Result> {
-  const auth = await requireWriter();
-  if (!auth.ok) return auth;
-  const { clientId } = auth;
-  const admin = createAdminClient();
-  const { error } = await admin
-    .from("pricing_settings")
-    .update({ mileage_base_address: address.trim() || null })
-    .eq("client_id", clientId);
-  if (error) return { ok: false, error: error.message };
-  revalidatePath("/app/estimator/mileage");
-  return { ok: true };
-}
-
-/** Explicit "update saved distance for this property" (§5.3). */
-export async function setPropertyDistance(
-  propertyId: number,
-  miles: number | string,
-): Promise<Result> {
-  const auth = await requireWriter();
-  if (!auth.ok) return auth;
-  const { clientId } = auth;
-  const m = cleanMiles(miles);
-  if (m === null) return { ok: false, error: "Miles must be 0 or more." };
-
-  const admin = createAdminClient();
-  const { data: prop } = await admin
-    .from("properties")
-    .select("id, client_id")
-    .eq("id", Number(propertyId))
+  const { data: row } = await admin
+    .from("mileage_entries")
+    .select("id, client_id, kind, job_id")
+    .eq("id", Number(id))
     .maybeSingle();
-  if (!prop || prop.client_id !== clientId) return { ok: false, error: "Property not found." };
+  if (!row || row.client_id !== auth.clientId) return { ok: false, error: "Trip not found." };
+  if (row.kind !== "edited" && row.kind !== "removed") return { ok: false, error: "Nothing to put back." };
   const { error } = await admin
-    .from("properties")
-    .update({ miles_from_base: m })
-    .eq("id", prop.id);
+    .from("mileage_entries")
+    .update({ kind: "auto", miles_status: "pending" })
+    .eq("id", row.id);
   if (error) return { ok: false, error: error.message };
+  await sync(auth.clientId);
+  revalidate([row.job_id]);
   return { ok: true };
+}
+
+/* ---------- bases ---------- */
+
+/**
+ * Where trips start, from a date on. Adding or changing one recalculates the
+ * automatic trips it covers; edited and manual trips stay as they are.
+ */
+export async function saveBase(input: { id?: number | null; address: string; effectiveFrom: string }): Promise<Result> {
+  const auth = await requireWriter();
+  if (!auth.ok) return auth;
+  const address = (input.address ?? "").trim();
+  const from = (input.effectiveFrom ?? "").slice(0, 10);
+  if (!address) return { ok: false, error: "Enter the address." };
+  if (!isDate(from)) return { ok: false, error: "Pick the date it starts." };
+  const admin = createAdminClient();
+  const { error } = input.id
+    ? await admin
+        .from("mileage_bases")
+        .update({ address, effective_from: from })
+        .eq("id", Number(input.id))
+        .eq("client_id", auth.clientId)
+    : await admin.from("mileage_bases").insert({ client_id: auth.clientId, address, effective_from: from });
+  if (error) {
+    return { ok: false, error: error.code === "23505" ? "There's already a base starting that day." : error.message };
+  }
+  await sync(auth.clientId);
+  revalidate();
+  return { ok: true };
+}
+
+export async function deleteBase(id: number): Promise<Result> {
+  const auth = await requireWriter();
+  if (!auth.ok) return auth;
+  const admin = createAdminClient();
+  const { error } = await admin.from("mileage_bases").delete().eq("id", Number(id)).eq("client_id", auth.clientId);
+  if (error) return { ok: false, error: error.message };
+  await sync(auth.clientId);
+  revalidate();
+  return { ok: true };
+}
+
+/* ---------- rates ---------- */
+
+/** The IRS rate from a date on. Each trip uses the rate in effect on its date. */
+export async function saveRatePeriod(input: { effectiveFrom: string; rate: number | string; note?: string }): Promise<Result> {
+  const auth = await requireWriter();
+  if (!auth.ok) return auth;
+  const from = (input.effectiveFrom ?? "").slice(0, 10);
+  const raw = String(input.rate).trim();
+  // Typed as cents (76) or dollars (0.76): both mean 76 cents.
+  let rate = Number(raw.replace(/[^\d.]/g, ""));
+  if (!isDate(from)) return { ok: false, error: "Pick the date it starts." };
+  if (!raw || !Number.isFinite(rate) || rate < 0) return { ok: false, error: "Enter the rate, e.g. 0.76." };
+  if (rate >= 10) rate = rate / 100;
+  const admin = createAdminClient();
+  const { error } = await admin.from("mileage_rate_periods").upsert(
+    { client_id: auth.clientId, effective_from: from, rate_per_mile: Math.round(rate * 10000) / 10000, note: input.note?.trim() || null },
+    { onConflict: "client_id,effective_from" },
+  );
+  if (error) return { ok: false, error: error.message };
+  revalidate();
+  return { ok: true };
+}
+
+export async function deleteRatePeriod(effectiveFrom: string): Promise<Result> {
+  const auth = await requireWriter();
+  if (!auth.ok) return auth;
+  const admin = createAdminClient();
+  const { error } = await admin
+    .from("mileage_rate_periods")
+    .delete()
+    .eq("client_id", auth.clientId)
+    .eq("effective_from", effectiveFrom.slice(0, 10));
+  if (error) return { ok: false, error: error.message };
+  revalidate();
+  return { ok: true };
+}
+
+/* ---------- days on site ---------- */
+
+async function jobInTenant(admin: ReturnType<typeof createAdminClient>, jobId: number, clientId: number) {
+  const { data } = await admin
+    .from("jobs")
+    .select("id, client_id, start_datetime, end_datetime")
+    .eq("id", jobId)
+    .maybeSingle();
+  return data && data.client_id === clientId ? data : null;
+}
+
+/**
+ * After a job is marked completed: if it has no hours logged and no days on
+ * site, the days to ask about ("Which days were you there?"), starting from
+ * the scheduled days. Null when there's nothing to ask.
+ */
+export async function siteDaysToAsk(jobId: number): Promise<Result<{ days: string[] } | null>> {
+  const auth = await requireWriter();
+  if (!auth.ok) return { ok: true, data: null }; // members aren't asked
+  const admin = createAdminClient();
+  const job = await jobInTenant(admin, Number(jobId), auth.clientId);
+  if (!job) return { ok: false, error: "Job not found." };
+  const [{ count: hours }, { count: days }] = await Promise.all([
+    admin.from("time_entries").select("*", { count: "exact", head: true }).eq("job_id", job.id),
+    admin.from("job_site_days").select("*", { count: "exact", head: true }).eq("job_id", job.id),
+  ]);
+  if ((hours ?? 0) > 0 || (days ?? 0) > 0) return { ok: true, data: null };
+  const tz = await getTenantTimezone();
+  const start = job.start_datetime ? dayKeyInTz(job.start_datetime, tz) : null;
+  const end = job.end_datetime ? dayKeyInTz(job.end_datetime, tz) : null;
+  return { ok: true, data: { days: start ? daysBetween(start, end) : [] } };
+}
+
+/** Save the days on site for a job (replacing any entered before), then work out the trips. */
+export async function setJobSiteDays(jobId: number, days: string[]): Promise<Result> {
+  const auth = await requireWriter();
+  if (!auth.ok) return auth;
+  const clean = [...new Set((days ?? []).map((d) => String(d).slice(0, 10)).filter(isDate))].sort();
+  if (clean.length > 62) return { ok: false, error: "That's more days than one job should have." };
+  const admin = createAdminClient();
+  const job = await jobInTenant(admin, Number(jobId), auth.clientId);
+  if (!job) return { ok: false, error: "Job not found." };
+  const { error: dErr } = await admin.from("job_site_days").delete().eq("job_id", job.id);
+  if (dErr) return { ok: false, error: dErr.message };
+  if (clean.length > 0) {
+    const { error } = await admin
+      .from("job_site_days")
+      .insert(clean.map((day) => ({ client_id: auth.clientId, job_id: job.id, day })));
+    if (error) return { ok: false, error: error.message };
+  }
+  await admin.from("jobs").update({ site_days_done_at: new Date().toISOString() }).eq("id", job.id);
+  await sync(auth.clientId);
+  revalidate([job.id]);
+  return { ok: true };
+}
+
+/** Catch-up: "I wasn't on site for this one." */
+export async function markNoSiteDays(jobId: number): Promise<Result> {
+  return setJobSiteDays(jobId, []);
 }

@@ -12,11 +12,9 @@ import {
   summarizePnl,
   summarizeStock,
 } from "@/lib/estimator/expenses";
-import {
-  ALTERNATIVE_METHODS_NOTE,
-  buildRateMap,
-  summarizeMileage,
-} from "@/lib/estimator/mileage";
+import { ALTERNATIVE_METHODS_NOTE } from "@/lib/estimator/mileage";
+import { loadRatePeriods, loadTrips } from "@/lib/mileage/trips";
+import { yearTotals } from "@/lib/mileage/plan";
 import { ExpensesManager } from "./expenses-manager";
 
 const usd = new Intl.NumberFormat("en-US", {
@@ -53,8 +51,8 @@ export default async function ExpensesPage({
   const [
     { data: expenseRows },
     { data: paymentRows },
-    { data: mileageRows },
-    { data: rateRows },
+    trips,
+    ratePeriods,
   ] = await Promise.all([
     supabase
       .from("expenses")
@@ -74,12 +72,8 @@ export default async function ExpensesPage({
       .lte("received_on", `${year}-12-31`),
     // Mileage is stated separately and NEVER summed into the P&L (§6.3):
     // standard mileage and actual vehicle costs are alternative methods.
-    supabase
-      .from("mileage_entries")
-      .select("trip_date, miles")
-      .gte("trip_date", `${year}-01-01`)
-      .lte("trip_date", `${year}-12-31`),
-    supabase.from("mileage_rates").select("year, rate_per_mile"),
+    loadTrips(supabase, year),
+    loadRatePeriods(supabase),
   ]);
 
   const expenses = (expenseRows ?? []).map((e) => {
@@ -110,14 +104,8 @@ export default async function ExpensesPage({
   // enter income, totalExpenses, net, or byCategory.
   const pnl = summarizePnl({ paymentCents, expenses });
 
-  const mileage = summarizeMileage(
-    (mileageRows ?? []).map((m) => ({
-      trip_date: String(m.trip_date),
-      miles: Number(m.miles),
-    })),
-    year,
-    buildRateMap(rateRows ?? []),
-  );
+  // Each trip at the IRS rate on its date (v101).
+  const mileage = yearTotals(trips, ratePeriods);
   const vehicleExpenseTotal =
     pnl.byCategory.find((c) => c.category === "Vehicle & fuel")?.total ?? 0;
 
@@ -258,19 +246,20 @@ export default async function ExpensesPage({
           <div className="px-4 py-3 grid grid-cols-2 gap-3">
             <div>
               <div className="label-eyebrow">Standard mileage</div>
-              <div className="num text-base text-bone-50 mt-0.5">
-                {mileage.rateSet ? usd.format(mileage.dollars) : "—"}
+              <div className="num text-base text-bone-50 mt-0.5" data-testid="standard-mileage">
+                {usd.format(mileage.dollars)}
               </div>
               <div className="text-2xs text-bone-400 num mt-0.5">
-                {mileage.miles} miles
-                {mileage.rateSet ? ` × ${mileage.rate}` : ""}
+                {mileage.miles} miles at the IRS rate on each trip&apos;s date
               </div>
-              {!mileage.rateSet && mileage.miles > 0 && (
+              {(mileage.missing > 0 || mileage.unpricedMiles > 0) && (
                 <Link
-                  href="/app/estimator/mileage"
+                  href={`/app/estimator/mileage?y=${year}`}
                   className="text-2xs text-status-lead hover:text-status-lead/80 underline underline-offset-2"
                 >
-                  Rate not set for {year}
+                  {mileage.missing > 0
+                    ? `${mileage.missing} trip${mileage.missing === 1 ? "" : "s"} still need miles`
+                    : "Some miles have no rate"}
                 </Link>
               )}
             </div>

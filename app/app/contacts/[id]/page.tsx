@@ -23,6 +23,10 @@ import { getActivityTimeline } from "@/lib/timeline/fetch";
 import { DeleteContactButton } from "./delete-contact-button";
 import { cn } from "@/lib/cn";
 import { getTenantTimezone } from "@/lib/dates";
+import { getCurrentUserRole } from "@/lib/permissions/current-role";
+import { canViewSettings } from "@/lib/permissions/roles";
+import { getTenantFeatureFlags } from "@/lib/features/flags";
+import { PropertyMiles } from "../../estimator/mileage/property-miles";
 
 function fmtPhone(p: string | null): string {
   if (!p) return "—";
@@ -70,7 +74,9 @@ export default async function ContactDetailPage({
   params: Promise<{ id: string }>;
   searchParams: Promise<{ tab?: string }>;
 }) {
-  const tz = await getTenantTimezone();
+  const [tz, session, flags] = await Promise.all([getTenantTimezone(), getCurrentUserRole(), getTenantFeatureFlags()]);
+  // Mileage is owner/manager business data.
+  const showMiles = flags.estimator && !!session && canViewSettings(session.role);
   const { id } = await params;
   const { tab } = await searchParams;
   const activeTab: TabKey = (TABS.some((t) => t.key === tab) ? tab : "activity") as TabKey;
@@ -204,6 +210,7 @@ export default async function ContactDetailPage({
               <Row label="Phone" value={fmtPhone(contact.phone)} mono icon={Phone} />
               <Row label="Email" value={contact.email ?? "—"} icon={Mail} />
               <PropertiesRow
+                showMiles={showMiles}
                 properties={
                   (propertiesData ?? []) as Array<{
                     id: number;
@@ -304,7 +311,9 @@ export default async function ContactDetailPage({
  */
 function PropertiesRow({
   properties,
+  showMiles = false,
 }: {
+  showMiles?: boolean;
   properties: Array<{
     id: number;
     address: string;
@@ -331,6 +340,11 @@ function PropertiesRow({
                 )}
                 {p.label && (
                   <span className="text-2xs text-bone-500"> · {p.label}</span>
+                )}
+                {showMiles && (
+                  <div>
+                    <PropertyMiles address={p.address} />
+                  </div>
                 )}
               </li>
             ))}

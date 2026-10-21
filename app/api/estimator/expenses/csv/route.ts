@@ -2,11 +2,9 @@ import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { dayKeyInTz, getTenantTimezone } from "@/lib/dates";
 import { METHOD_LABELS, type PaymentMethod } from "@/lib/invoices/payments";
-import {
-  ALTERNATIVE_METHODS_NOTE,
-  buildRateMap,
-  summarizeMileage,
-} from "@/lib/estimator/mileage";
+import { ALTERNATIVE_METHODS_NOTE } from "@/lib/estimator/mileage";
+import { loadRatePeriods, loadTrips } from "@/lib/mileage/trips";
+import { yearTotals } from "@/lib/mileage/plan";
 
 function csvCell(v: string | number | null): string {
   const s = String(v ?? "");
@@ -34,7 +32,7 @@ export async function GET(request: Request) {
     ? Number(yParam)
     : Number(dayKeyInTz(new Date(), tz).slice(0, 4));
 
-  const [{ data: expenses }, { data: payments }, { data: mileage }, { data: rates }] =
+  const [{ data: expenses }, { data: payments }, trips, rates] =
     await Promise.all([
     supabase
       .from("expenses")
@@ -50,13 +48,8 @@ export async function GET(request: Request) {
       .order("received_on"),
     // Mileage gets its OWN block below — never interleaved with expenses and
     // never added into NET PROFIT (§6.3).
-    supabase
-      .from("mileage_entries")
-      .select("trip_date, destination, purpose, miles, jobs(job_number)")
-      .gte("trip_date", `${year}-01-01`)
-      .lte("trip_date", `${year}-12-31`)
-      .order("trip_date", { ascending: true }),
-    supabase.from("mileage_rates").select("year, rate_per_mile"),
+    loadTrips(supabase, year),
+    loadRatePeriods(supabase),
   ]);
 
   type Row = [string, string, string, string, string, number];
@@ -104,33 +97,15 @@ export async function GET(request: Request) {
   ];
 
   // ---- mileage: a separate block, deliberately outside NET PROFIT --------
-  const trips = (mileage ?? []).map((m) => {
-    const job = m.jobs as unknown as { job_number: string | null } | null;
-    return {
-      date: String(m.trip_date).slice(0, 10),
-      destination: m.destination as string,
-      purpose: m.purpose as string,
-      miles: Number(m.miles),
-      jobNumber: job?.job_number ?? "",
-    };
-  });
   if (trips.length > 0) {
-    const totals = summarizeMileage(
-      trips.map((t) => ({ trip_date: t.date, miles: t.miles })),
-      year,
-      buildRateMap(rates ?? []),
-    );
+    const totals = yearTotals(trips, rates);
     lines.push(
       "",
       csvCell(`MILEAGE — ${ALTERNATIVE_METHODS_NOTE}`),
-      ["date", "destination", "purpose", "miles", "job number"].join(","),
-      ...trips.map((t) =>
-        [t.date, t.destination, t.purpose, t.miles, t.jobNumber].map(csvCell).join(","),
-      ),
-      ["", "", "TOTAL MILES", totals.miles, ""].map(csvCell).join(","),
-      totals.rateSet
-        ? ["", "", `AT ${totals.rate}/MILE`, "", totals.dollars].map(csvCell).join(",")
-        : ["", "", "RATE NOT SET FOR " + year, "", ""].map(csvCell).join(","),
+      ["date", "start", "destination", "purpose", "miles"].join(","),
+      ...trips.map((t) => [t.date, t.startAddress, t.destination.replaceAll(" → ", " then "), t.purpose, t.miles].map(csvCell).join(",")),
+      ["", "", "", "TOTAL MILES", totals.miles].map(csvCell).join(","),
+      ["", "", "", "STANDARD MILEAGE (IRS rate on each trip's date)", totals.dollars.toFixed(2)].map(csvCell).join(","),
     );
   }
 
