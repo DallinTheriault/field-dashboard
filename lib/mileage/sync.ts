@@ -2,7 +2,7 @@ import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { jobContactName, type JobLocationRow } from "@/lib/jobs/address";
 import { drivingMiles, lookupAddress, pointKey, type Point } from "./geo";
-import { sharedNominatimTurn } from "./throttle";
+import { sharedTurn } from "./throttle";
 import { addressKey, planDays, sumMiles, type Base, type DayPlan, type JobInfo, type SiteVisit } from "./plan";
 
 /**
@@ -17,8 +17,24 @@ import { addressKey, planDays, sumMiles, type Base, type DayPlan, type JobInfo, 
  *
  * `network: false` uses only what's cached and marks the rest pending, so a
  * page can render without waiting on outside services.
+ *
+ * With the network, it's one batch: lookups start only before the budget
+ * runs out, and each request gives up after 8 s, so a batch ends within
+ * budget + 8 s (well inside the server's 60 s limit) whatever the services
+ * do. Lookups left over stay pending; the Mileage page runs batches until
+ * none are.
  */
-export type SyncResult = { inserted: number; updated: number; deleted: number; pending: number; failed: number };
+export const BATCH_MS = 25_000;
+
+export type SyncResult = {
+  inserted: number;
+  updated: number;
+  deleted: number;
+  pending: number;
+  failed: number;
+  /** Requests the map services answered this batch. None, with trips pending: they're busy, stop for now. */
+  lookups: number;
+};
 
 type GeoRow = { address_key: string; status: "ok" | "not_found"; lat: number | null; lon: number | null };
 
@@ -27,10 +43,8 @@ export async function syncDayTrips(
   clientId: number,
   opts: { network: boolean; tz: string; budgetMs?: number },
 ): Promise<SyncResult> {
-  const result: SyncResult = { inserted: 0, updated: 0, deleted: 0, pending: 0, failed: 0 };
-  // Lookups stop when the budget runs out; what's left stays pending for the
-  // next run, so one request never runs into the server's time limit.
-  const deadline = Date.now() + (opts.budgetMs ?? 30_000);
+  const result: SyncResult = { inserted: 0, updated: 0, deleted: 0, pending: 0, failed: 0, lookups: 0 };
+  const deadline = Date.now() + (opts.budgetMs ?? BATCH_MS);
   const online = () => opts.network && Date.now() < deadline;
 
   const [{ data: hours }, { data: manualDays }, { data: baseRows }, { data: existing }] = await Promise.all([
@@ -93,11 +107,13 @@ export async function syncDayTrips(
       .in("address_key", [...addresses.keys()]);
     for (const g of (cached ?? []) as GeoRow[]) geo.set(g.address_key, g);
   }
-  const turn = sharedNominatimTurn(admin);
+  const turn = sharedTurn(admin, deadline);
   if (opts.network) {
     for (const [key, address] of addresses) {
       if (geo.has(key) || !online()) continue;
       const g = await lookupAddress(address, turn);
+      if (g.status === "later") continue;
+      result.lookups++;
       if (g.status === "error") {
         geo.set(key, "error");
         continue;
@@ -128,8 +144,10 @@ export async function syncDayTrips(
     const hit = routeCache.get(`${from}|${to}`) ?? routeCache.get(`${to}|${from}`);
     if (hit !== undefined) return hit;
     if (!online()) return "pending";
-    const r = await drivingMiles(a, b);
-    if (!r) return "failed";
+    const r = await drivingMiles(a, b, turn);
+    if (r === "later") return "pending";
+    result.lookups++;
+    if (r === "failed") return "failed";
     routeCache.set(`${from}|${to}`, r.miles);
     await admin
       .from("route_cache")

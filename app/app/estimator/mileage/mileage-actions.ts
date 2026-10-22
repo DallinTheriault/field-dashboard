@@ -4,11 +4,11 @@ import { revalidatePath } from "next/cache";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { requireWriter } from "@/lib/estimator/auth";
 import { getTenantTimezone, dayKeyInTz } from "@/lib/dates";
-import { syncDayTrips, type SyncResult } from "@/lib/mileage/sync";
+import { BATCH_MS, syncDayTrips, type SyncResult } from "@/lib/mileage/sync";
 import { baseOn, daysBetween } from "@/lib/mileage/plan";
 import { milesFromBase, type PropertyMiles } from "@/lib/mileage/property-miles";
 import { checkServices, type ServiceCheck } from "@/lib/mileage/geo";
-import { sharedNominatimTurn } from "@/lib/mileage/throttle";
+import { sharedTurn } from "@/lib/mileage/throttle";
 
 type Result<T = undefined> = { ok: true; data?: T } | { ok: false; error: string };
 
@@ -28,15 +28,24 @@ function revalidate(jobIds: Array<number | null | undefined> = []) {
   for (const id of jobIds) if (id) revalidatePath(`/app/jobs/${id}`);
 }
 
-async function sync(clientId: number): Promise<SyncResult> {
-  return syncDayTrips(createAdminClient(), clientId, { network: true, tz: await getTenantTimezone() });
+/**
+ * Every action here ends well inside the server's 60 s limit: lookups start
+ * only within a budget, and each request gives up after 8 s. After a change
+ * (a base, days on site) a short batch covers the usual one or two days;
+ * anything left stays pending for the Mileage page's batches.
+ */
+const AFTER_CHANGE_MS = 10_000;
+const LOOKUP_MS = 15_000;
+
+async function sync(clientId: number, budgetMs = AFTER_CHANGE_MS): Promise<SyncResult> {
+  return syncDayTrips(createAdminClient(), clientId, { network: true, tz: await getTenantTimezone(), budgetMs });
 }
 
-/** Work out any trips that need it (the Mileage page calls this after it renders). */
+/** One batch of trips that need a lookup (the Mileage page runs these until none are left). */
 export async function syncTripsNow(): Promise<Result<SyncResult>> {
   const auth = await requireWriter();
   if (!auth.ok) return auth;
-  const r = await sync(auth.clientId);
+  const r = await sync(auth.clientId, BATCH_MS);
   if (r.inserted || r.updated || r.deleted) revalidate();
   return { ok: true, data: r };
 }
@@ -48,7 +57,7 @@ export async function propertyMilesNow(address: string): Promise<Result<Property
   const a = (address ?? "").trim();
   if (!a) return { ok: true, data: { status: "no_address", address: "" } };
   const today = dayKeyInTz(new Date(), await getTenantTimezone());
-  return { ok: true, data: await milesFromBase(createAdminClient(), auth.clientId, a, today) };
+  return { ok: true, data: await milesFromBase(createAdminClient(), auth.clientId, a, today, Date.now() + LOOKUP_MS) };
 }
 
 /** Ask each map service once, from today's base: can Field reach them? */
@@ -63,7 +72,7 @@ export async function checkMapServices(): Promise<Result<{ base: string; checks:
     (bases ?? []).map((b) => ({ id: b.id, address: b.address, effectiveFrom: String(b.effective_from) })),
   );
   if (!base) return { ok: false, error: "Add a base first." };
-  const checks = await checkServices(base.address, null, sharedNominatimTurn(admin));
+  const checks = await checkServices(base.address, null, sharedTurn(admin, Date.now() + LOOKUP_MS));
   return { ok: true, data: { base: base.address, checks } };
 }
 

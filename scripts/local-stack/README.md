@@ -12,7 +12,7 @@ for testing migrations and the app without touching prod. Plain processes, no Do
 | `gateway.mjs` | 54321 | one URL for all three, like Supabase's gateway |
 | stripe-mock | 12111 | Stripe's official mock API, answering from fixtures |
 | stripe shim | 12112 | In front of stripe-mock: a finalized invoice gets `open` and a hosted URL, as real Stripe returns. The app talks to this |
-| `geo-mock.mjs` | 12114 | Stands in for the map services mileage uses (Census, Nominatim, Valhalla, OSRM): the same address is always the same place, and scenarios can take any service down |
+| `geo-mock.mjs` | 12114 | Stands in for the map services mileage uses (Census, Nominatim, Valhalla): the same address is always the same place, and scenarios can take any service down or slow it |
 | `anthropic-mock.mjs` | 12113 | Stands in for the Claude API on receipt scans (no key, no cost). Scenarios script its replies and read what the app sent. Scans run inline (`SCAN_RUNNER=inline`), not in a Netlify background function |
 
 ```sh

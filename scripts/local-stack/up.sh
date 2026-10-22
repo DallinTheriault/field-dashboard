@@ -149,8 +149,7 @@ ANTHROPIC_BASE_URL=http://127.0.0.1:$ANTHROPIC_MOCK_PORT
 SCAN_RUNNER=inline
 GEO_CENSUS_URL=http://127.0.0.1:$GEO_MOCK_PORT/census
 GEO_NOMINATIM_URL=http://127.0.0.1:$GEO_MOCK_PORT/nominatim
-ROUTE_VALHALLA_URL=http://127.0.0.1:$GEO_MOCK_PORT/valhalla
-ROUTE_OSRM_URL=http://127.0.0.1:$GEO_MOCK_PORT/osrm"
+ROUTE_VALHALLA_URL=http://127.0.0.1:$GEO_MOCK_PORT/valhalla"
 if [ ! -e "$ENV_FILE" ] || grep -q "^# local-stack" "$ENV_FILE"; then
   { echo "# local-stack: written by scripts/local-stack/up.sh; safe to delete"; echo "$STACK_ENV"; } >"$ENV_FILE"
   echo "wrote .env.local for the local stack"

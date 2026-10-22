@@ -7,3 +7,5 @@ for p in /app /app/estimator/mileage /app/estimator/mileage/catch-up /app/jobs/1
   curl -s -o /dev/null "http://localhost:3000$p"
 done
 node "$SCEN/mileage.mjs"
+node "$SCEN/geo-throttle.mjs"
+node "$SCEN/mileage-batches.mjs"

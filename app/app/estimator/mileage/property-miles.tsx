@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { ExternalLink } from "lucide-react";
 import type { PropertyMiles as Miles } from "@/lib/mileage/property-miles";
 import { propertyMilesNow } from "./mileage-actions";
+import { MapCredit } from "./map-credit";
 
 /** "18.5 mi from your base · Check in Google Maps" for a property (owner/manager). */
 export function PropertyMiles({ address }: { address: string }) {
@@ -36,6 +37,7 @@ export function PropertyMiles({ address }: { address: string }) {
         <ExternalLink size={10} />
         Check in Google Maps
       </a>
+      <MapCredit inline />
     </span>
   );
 }
