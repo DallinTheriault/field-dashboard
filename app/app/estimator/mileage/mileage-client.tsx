@@ -120,7 +120,7 @@ export function MileageClient({
       </div>
 
       {working ? (
-        <div className="flex items-center gap-2 text-2xs text-bone-400">
+        <div className="flex items-center gap-2 text-2xs text-bone-400" data-testid="miles-working">
           <Loader2 size={12} className="animate-spin" />
           Working out miles…
         </div>

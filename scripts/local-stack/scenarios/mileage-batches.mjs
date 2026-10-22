@@ -67,6 +67,18 @@ const finished = (r) => {
 page.on("requestfinished", finished);
 page.on("requestfailed", finished);
 const slowest = () => Math.max(0, ...actions);
+/**
+ * Until the page's batches are done: nothing in flight and no progress line.
+ * (A batch writes its trips before its request returns, so the database can
+ * be done first.)
+ */
+async function settled(ms = 90_000) {
+  const end = Date.now() + ms;
+  for (let quiet = 0; quiet < 4 && Date.now() < end; ) {
+    quiet = started.size === 0 && (await page.getByTestId("miles-working").count()) === 0 ? quiet + 1 : 0;
+    await new Promise((r) => setTimeout(r, 500));
+  }
+}
 // Not "networkidle": a batch can keep a request open for half a minute.
 const open = async () => {
   await page.goto(`${APP}/app/estimator/mileage?y=2026`);
@@ -108,7 +120,7 @@ const all = await until(async () => {
   return t.length === 13 && t.every((x) => x.miles_status === "ok") ? t : null;
 }, 180_000);
 const firstMs = Date.now() - t0;
-await page.getByText("Working out miles…").waitFor({ state: "detached", timeout: 60_000 }).catch(() => {});
+await settled();
 let log = await mock.requests(t0);
 check("all 13 days get their miles without leaving the page", !!all && all.every((x) => Number(x.miles) > 0),
   `${firstMs} ms; ${(await trips("2026-01-01", "2026-12-31")).map((x) => x.miles_status).join(",")}`);
@@ -138,8 +150,7 @@ const slowDone = await until(async () => {
   const t = await trips("2026-08-03", "2026-08-08");
   return t.length === 6 && t.every((x) => x.miles_status === "ok");
 }, 240_000);
-// A batch writes its trips before its request returns: count requests once the page's loop is done.
-await page.getByText("Working out miles…").waitFor({ state: "detached", timeout: 60_000 }).catch(() => {});
+await settled();
 check("slow Valhalla: all six days still get miles, over several batches", !!slowDone && actions.length >= 2,
   `${Date.now() - t0} ms, ${actions.length} requests`);
 check("…and no request near the limit", slowest() < BATCH_BOUND_MS, `slowest ${slowest()} ms: ${actions.join(", ")}`);
@@ -155,7 +166,7 @@ const hung = await until(async () => {
   const t = await trips("2026-08-10", "2026-08-13");
   return t.length === 4 && t.every((x) => x.miles_status === "route_failed");
 }, 240_000);
-await page.getByText("Working out miles…").waitFor({ state: "detached", timeout: 60_000 }).catch(() => {});
+await settled();
 check("hanging Valhalla: each day says it couldn't calculate miles", !!hung, `${Date.now() - t0} ms`);
 check("…and every request still ends well inside the limit", slowest() < BATCH_BOUND_MS && slowest() < LIMIT_MS,
   `slowest ${slowest()} ms: ${actions.join(", ")}`);
