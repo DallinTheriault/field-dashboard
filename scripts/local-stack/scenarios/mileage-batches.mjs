@@ -138,6 +138,8 @@ const slowDone = await until(async () => {
   const t = await trips("2026-08-03", "2026-08-08");
   return t.length === 6 && t.every((x) => x.miles_status === "ok");
 }, 240_000);
+// A batch writes its trips before its request returns: count requests once the page's loop is done.
+await page.getByText("Working out miles…").waitFor({ state: "detached", timeout: 60_000 }).catch(() => {});
 check("slow Valhalla: all six days still get miles, over several batches", !!slowDone && actions.length >= 2,
   `${Date.now() - t0} ms, ${actions.length} requests`);
 check("…and no request near the limit", slowest() < BATCH_BOUND_MS, `slowest ${slowest()} ms: ${actions.join(", ")}`);
