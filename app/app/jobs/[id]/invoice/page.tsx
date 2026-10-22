@@ -137,22 +137,6 @@ export default async function NewJobInvoicePage({ params }: { params: Promise<{ 
         </div>
       )}
 
-      {(open.length > 0 || unpriced.length > 0) && (
-        <div className="panel px-4 py-3 space-y-1 text-2xs">
-          {open.length > 0 && (
-            <p className="text-bone-400">
-              {open.length} work line{open.length === 1 ? " isn't" : "s aren't"} done yet; the draft lists{" "}
-              {open.length === 1 ? "it" : "them"} to add on purpose.
-            </p>
-          )}
-          {unpriced.length > 0 && (
-            <p className="text-status-lead">
-              Needs a price before the invoice can be sent: {unpriced.map((t) => t.title).join(", ")}.
-            </p>
-          )}
-        </div>
-      )}
-
       <InvoiceBuilder
         jobId={jobId}
         work={work.map(taskRow)}
@@ -162,6 +146,8 @@ export default async function NewJobInvoicePage({ params }: { params: Promise<{ 
         minimum={Number(settings?.minimum_job_charge ?? 0)}
         entities={active.map((e) => ({ id: e.id, label: `${e.name} (${e.invoice_prefix})` }))}
         defaultEntityId={defaultEntity}
+        openCount={open.length}
+        unpriced={unpriced.map((t) => t.title)}
       />
     </div>
   );

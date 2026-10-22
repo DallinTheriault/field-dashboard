@@ -42,6 +42,8 @@ export function InvoiceBuilder({
   minimum,
   entities,
   defaultEntityId,
+  openCount,
+  unpriced,
 }: {
   jobId: number;
   work: InvoiceRow[];
@@ -51,6 +53,9 @@ export function InvoiceBuilder({
   minimum: number;
   entities: Array<{ id: number; label: string }>;
   defaultEntityId: number | null;
+  /** Work lines not done yet (listed on the draft to add on purpose), and lines still needing a price. */
+  openCount: number;
+  unpriced: string[];
 }) {
   const router = useRouter();
   const pricedWork = work.some((r) => r.amount > 0);
@@ -289,6 +294,14 @@ export function InvoiceBuilder({
               <span className="num text-bone-50" data-testid="preview-subtotal">{usd.format(subtotalOf(preview))}</span>
             </li>
           </ul>
+        )}
+        {openCount > 0 && (
+          <p className="text-2xs text-bone-400">
+            {openCount} line{openCount === 1 ? " isn't" : "s aren't"} done yet; the draft lists {openCount === 1 ? "it" : "them"} to add on purpose.
+          </p>
+        )}
+        {unpriced.length > 0 && (
+          <p className="text-2xs text-status-lead">Needs a price before the invoice can be sent: {unpriced.join(", ")}.</p>
         )}
       </section>
 

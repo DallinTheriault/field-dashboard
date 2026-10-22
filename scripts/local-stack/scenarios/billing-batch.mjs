@@ -99,6 +99,8 @@ await ed.getByLabel("Price each").fill("18");
 await ed.getByRole("button", { name: "Save" }).click();
 check("an expense can be edited", !!(await eventually(async () =>
   Number((await adminGet(`expenses?id=eq.${kit.id}&select=amount`))[0].amount) === 18)));
+// The database is written before the page hears back; wait for the page.
+await page.getByText("Expense updated").waitFor();
 await page.waitForLoadState("networkidle");
 await page.getByRole("button", { name: "Reassign Cash parts" }).click();
 await page.getByRole("button", { name: "Delete Cash parts" }).click();
