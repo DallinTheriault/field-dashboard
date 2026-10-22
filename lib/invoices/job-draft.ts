@@ -1,5 +1,5 @@
 import { formatQty, lineTotal, UNIT_SHORT, type LineUnit } from "@/lib/jobs/lines";
-import type { InvoiceRow } from "@/lib/estimator/expenses";
+import type { ExtraItem, InvoiceRow } from "@/lib/estimator/expenses";
 
 /**
  * Building an invoice from the job (slice 3). Pure: the server action reads
@@ -28,8 +28,20 @@ export function doneUnbilled(tasks: DraftTask[]): DraftTask[] {
   return tasks.filter((t) => t.status === "done" && billablePriced(t) && t.invoice_id === null).sort(bySort);
 }
 
+/**
+ * What a new draft bills from the job's lines: billable, priced, on no
+ * invoice, and done; on a completed job, every such line (the job page
+ * already calls the job ready to invoice).
+ */
+export function readyToBill(tasks: DraftTask[], jobCompleted: boolean): DraftTask[] {
+  return jobCompleted
+    ? tasks.filter((t) => billablePriced(t) && t.invoice_id === null).sort(bySort)
+    : doneUnbilled(tasks);
+}
+
 /** Billable and priced but not done yet: listed on the draft, added on purpose. */
-export function openUnbilled(tasks: DraftTask[]): DraftTask[] {
+export function openUnbilled(tasks: DraftTask[], jobCompleted = false): DraftTask[] {
+  if (jobCompleted) return [];
   return tasks.filter((t) => t.status === "open" && billablePriced(t) && t.invoice_id === null).sort(bySort);
 }
 
@@ -68,11 +80,127 @@ export function invoiceTotals(rows: Array<Pick<InvoiceRow, "amount">>, taxRatePc
   return { subtotalCents, taxCents, totalCents: subtotalCents + taxCents };
 }
 
-/** The task and expense ids a set of rows bills, i.e. what the draft claims. */
-export function claimsOf(rows: InvoiceRow[]): { taskIds: number[]; expenseIds: number[] } {
+/** The task, expense and hour ids a set of rows bills, i.e. what the draft claims. */
+export function claimsOf(rows: InvoiceRow[]): { taskIds: number[]; expenseIds: number[]; hourIds: number[] } {
   const taskIds = rows.flatMap((r) => (Number.isInteger(r.task_id) ? [r.task_id as number] : []));
   const expenseIds = rows.flatMap((r) => (Number.isInteger(r.extra_expense_id) ? [r.extra_expense_id as number] : []));
-  return { taskIds: [...new Set(taskIds)], expenseIds: [...new Set(expenseIds)] };
+  const hourIds = rows.flatMap((r) => (Array.isArray(r.time_entry_ids) ? r.time_entry_ids.filter(Number.isInteger) : []));
+  return { taskIds: [...new Set(taskIds)], expenseIds: [...new Set(expenseIds)], hourIds: [...new Set(hourIds)] };
+}
+
+// --- Hours, minimum charge -------------------------------------------------------------
+
+const round2 = (n: number) => Math.round((n + 1e-9) * 100) / 100;
+
+export type HourEntry = { id: number; hours: number };
+
+/** "0.5", "2", "1.25": hours as an invoice line writes them (v103 hours_label). */
+export function hoursLabel(hours: number): string {
+  return String(Math.round(hours * 100) / 100);
+}
+
+export function totalHours(entries: HourEntry[]): number {
+  return Math.round(entries.reduce((s, e) => s + e.hours, 0) * 10000) / 10000;
+}
+
+/**
+ * Logged hours as one labor line: total hours × the general or skilled rate.
+ * The line lists the hours it bills, so the draft claims them and the
+ * database re-prices it if one changes before the invoice goes out.
+ */
+export function laborRow(entries: HourEntry[], rate: number, skilled: boolean): InvoiceRow | null {
+  if (entries.length === 0 || !(rate > 0)) return null;
+  const hours = totalHours(entries);
+  return {
+    description: skilled ? "Skilled labor" : "Labor",
+    qtyLabel: `${hoursLabel(hours)} hr × $${rate.toFixed(2)}/hr`,
+    amount: round2(hours * rate),
+    time_entry_ids: entries.map((e) => e.id).sort((a, b) => a - b),
+    rate,
+    kind: "labor",
+  };
+}
+
+export const MINIMUM_LINE = "Minimum trip charge";
+
+/** The minimum charge line; it covers (and claims) the job's logged hours. */
+export function minimumRow(minimum: number, hourIds: number[]): InvoiceRow {
+  return {
+    description: MINIMUM_LINE,
+    qtyLabel: null,
+    amount: round2(minimum),
+    time_entry_ids: [...hourIds].sort((a, b) => a - b),
+    kind: "minimum",
+  };
+}
+
+/** "3 × $95.00" → "× 3"; "1.5 hr × $85.00/hr" → "1.5 hr": the count without the price. */
+function countOnly(qtyLabel: string | null | undefined): string | null {
+  if (!qtyLabel) return null;
+  const head = qtyLabel.split(" × ")[0].trim();
+  if (!qtyLabel.includes(" × ")) return qtyLabel;
+  return /^[\d.]+$/.test(head) ? `× ${head}` : head;
+}
+
+/** A row at $0.00 because the minimum charge covers it; it keeps its claims. */
+export function coveredRow(r: InvoiceRow): InvoiceRow {
+  return {
+    ...r,
+    description: r.extra_expense_id !== undefined ? r.description.replace(/^Additional materials[^:]*: /, "") : r.description,
+    qtyLabel: countOnly(r.qtyLabel),
+    amount: 0,
+    covered: true,
+  };
+}
+
+export type PartUsed = { id: number; description: string; qty: number | null };
+
+/** A part listed at $0.00 on a minimum invoice. Bill-to-customer parts are claimed so they're never billed later. */
+export function partRow(p: PartUsed, claim: boolean): InvoiceRow {
+  return {
+    description: p.description,
+    qtyLabel: p.qty !== null && p.qty !== 1 ? `× ${p.qty}` : null,
+    amount: 0,
+    covered: true,
+    ...(claim ? { extra_expense_id: p.id } : {}),
+  };
+}
+
+/**
+ * A minimum invoice: each work line and each part used at $0.00, then one
+ * minimum charge line. Parts stay job costs; they just aren't billed.
+ */
+export function minimumRows(input: {
+  work: DraftTask[];
+  billToCustomer: Array<Pick<ExtraItem, "id" | "description" | "qty">>;
+  included: PartUsed[];
+  hourIds: number[];
+  minimum: number;
+}): InvoiceRow[] {
+  return [
+    ...input.work.map((t) => coveredRow(taskRow(t))),
+    ...input.billToCustomer.map((x) => partRow(x, true)),
+    ...input.included.map((p) => partRow(p, false)),
+    minimumRow(input.minimum, input.hourIds),
+  ];
+}
+
+/**
+ * "Add minimum trip charge" on a draft: every other line at $0.00 (each keeps
+ * what it claims), then the minimum, carrying any hours a minimum line
+ * already covered.
+ */
+export function applyMinimum(rows: InvoiceRow[], minimum: number): InvoiceRow[] {
+  const hourIds = rows.filter((r) => r.kind === "minimum").flatMap((r) => r.time_entry_ids ?? []);
+  return [...rows.filter((r) => r.kind !== "minimum").map(coveredRow), minimumRow(minimum, hourIds)];
+}
+
+export function hasMinimum(rows: InvoiceRow[]): boolean {
+  return rows.some((r) => r.kind === "minimum");
+}
+
+export function subtotalOf(rows: Array<Pick<InvoiceRow, "amount">>): number {
+  return invoiceTotals(rows, 0).subtotalCents / 100;
 }
 
 /** Dollars short of the minimum job charge, or null when it's met or unset. */

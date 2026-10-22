@@ -57,7 +57,7 @@ export async function jobsWithoutSiteDays(supabase: SupabaseClient, year: number
       const end = j.end_datetime ? dayKeyInTz(j.end_datetime, tz) : null;
       return {
         id: j.id,
-        label: [j.job_number, jobContactName(j) ?? `Job #${j.id}`].filter(Boolean).join(" "),
+        label: [j.job_number ?? `Job #${j.id}`, jobContactName(j)].filter(Boolean).join(" "),
         address: jobAddress(j),
         status: j.status,
         archived: !!j.archived_at,

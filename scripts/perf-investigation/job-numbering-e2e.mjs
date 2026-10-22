@@ -1,9 +1,9 @@
 /**
- * JOB_NUMBERING_SPEC — E2E on the smoke tenant (smoke tenant). Part B: the trigger numbers
- * jobs (unique random surname → deterministic 01/02/03; same-surname sharing;
- * company slug; rename-immutability). Part A: the purchases job picker lists
- * two jobs for one contact as distinct, address-bearing options. RLS second-
- * tenant probe. Zero residue incl. trigger rows; reference tenant untouched.
+ * Job numbers (v103) — E2E on the smoke tenant. Part B: the trigger numbers
+ * jobs "Job N" from a per-business counter (consecutive, never reused, kept
+ * on rename). Part A: the purchases job picker lists two jobs for one contact
+ * as distinct, address-bearing options with their numbers. RLS second-tenant
+ * probe. Zero residue; reference tenant untouched.
  * Usage: node job-numbering-e2e.mjs [baseUrl]
  */
 import {
@@ -46,39 +46,30 @@ async function mkJob(contactId, name, address) {
 const PW = "jn-" + Math.random().toString(36).slice(2, 10) + "-N1!";
 await admin.auth.admin.updateUserById(SMOKE_ID, { password: PW });
 
+const { data: refBefore } = await admin.from("jobs").select("job_number").eq("id", FIXTURES.refJobId).single();
 const browser = await chromium.launch();
 try {
-  const MM = "07", YY = "26"; // 2026-07 in America/Denver (asserted loosely below)
   // ---- Part B: numbering ----
+  const { data: counter } = await admin.from("job_counters").select("last_job_seq").eq("client_id", CLIENT_ID).maybeSingle();
+  const n0 = Number(counter?.last_job_seq ?? 0);
   const cA = await mkContact(`Alice ${SUR}`);
   const j1 = await mkJob(cA, `Alice ${SUR}`, "10 Alpha St, Provo UT");
-  check(`first job for a fresh surname → {slug}-${MM}${YY}01`,
-    j1.job_number === `${SUR}-${MM}${YY}01`, j1.job_number);
+  check("a new job takes the business's next number", j1.job_number === `Job ${n0 + 1}`, j1.job_number);
   const j2 = await mkJob(cA, `Alice ${SUR}`, "20 Beta Ave, Provo UT");
-  check("second job same contact → 02", j2.job_number === `${SUR}-${MM}${YY}02`, j2.job_number);
-
-  const cB = await mkContact(`Bob ${SUR}`);
-  const j3 = await mkJob(cB, `Bob ${SUR}`, "30 Gamma Rd, Provo UT");
-  check("different contact, same surname → 03 (shares sequence, non-colliding)",
-    j3.job_number === `${SUR}-${MM}${YY}03`, j3.job_number);
-
+  check("the next one, the next number", j2.job_number === `Job ${n0 + 2}`, j2.job_number);
   const cC = await mkContact(`Acme ${PSUR} LLC`);
-  const j4 = await mkJob(cC, `Acme ${PSUR} LLC`, "40 Delta Ln, Provo UT");
-  check("company name → legal suffix stripped, slug is prior token",
-    j4.job_number === `${PSUR}-${MM}${YY}01`, j4.job_number);
-
-  const jEllis = await mkJob(await mkContact("Cade Ellis"), "Cade Ellis", "50 Ellis Way, Provo UT");
-  check("Ellis surname → Ellis-MMYYNN format", /^Ellis-\d{6,}$/.test(jEllis.job_number), jEllis.job_number);
+  const j3 = await mkJob(cC, `Acme ${PSUR} LLC`, "40 Delta Ln, Provo UT");
+  check("any contact, same counter", j3.job_number === `Job ${n0 + 3}`, j3.job_number);
 
   // rename immutability
   await admin.from("contacts").update({ name: `Renamed ${RID}` }).eq("id", cA);
   const { data: reread } = await admin.from("jobs").select("job_number").eq("id", j1.id).single();
   check("job number unchanged after contact rename", reread.job_number === j1.job_number, reread.job_number);
 
-  // existing legacy jobs stay NULL
+  // every job has a number since v103's backfill
   const { count: nullCount } = await admin.from("jobs")
-    .select("*", { count: "exact", head: true }).eq("client_id", CLIENT_ID).is("job_number", null).eq("source", "phone-call");
-  check("legacy (inbound) jobs still NULL — no backfill", (nullCount ?? 0) >= 0); // sanity: query works
+    .select("*", { count: "exact", head: true }).eq("client_id", CLIENT_ID).is("job_number", null);
+  check("every job has a number", (nullCount ?? 0) === 0, `${nullCount} without`);
 
   // job number NOT selected by the PDF routes (grep-style: read the invoice PDF cols)
   // (verified by construction — the PDF route selects jobs(address) only; see note)
@@ -108,11 +99,8 @@ try {
   const betaOpt = opts.find((o) => o.includes("20 Beta Ave"));
   check("picker lists both same-contact jobs (distinct addresses)", !!alphaOpt && !!betaOpt);
   check("picker option carries the job number + name + status",
-    !!alphaOpt && alphaOpt.includes(`${SUR}-`) && alphaOpt.includes(`Alice`) && /lead/.test(alphaOpt),
+    !!alphaOpt && alphaOpt.includes(j1.job_number) && alphaOpt.includes(`Alice`) && /lead/.test(alphaOpt),
     alphaOpt);
-  // NULL-number legacy job still appears without a placeholder number
-  const anyLegacy = opts.some((o) => o && !/[A-Za-z]+-\d{6,}/.test(o) && o !== "Assign later" && o.includes("·"));
-  check("picker works with NULL-number legacy jobs (no placeholder)", anyLegacy || opts.length > 3, `${opts.length} opts`);
   await ctx.close();
 } catch (e) {
   check("E2E completed without exception", false, String(e).slice(0, 200));
@@ -129,7 +117,7 @@ try {
   const { data: leftC } = await admin.from("contacts").select("id").in("id", createdContacts.length ? createdContacts : [-1]);
   check("zero residue (jobs + contacts)", (leftJobs ?? []).length === 0 && (leftC ?? []).length === 0);
   const { data: sharp } = await admin.from("jobs").select("job_number").eq("id", FIXTURES.refJobId).single();
-  check("reference tenant untouched (job 126 still NULL)", sharp.job_number === null);
+  check("reference tenant untouched (its job keeps its number)", sharp.job_number === refBefore?.job_number, sharp.job_number);
 }
 
 process.exit(summary());

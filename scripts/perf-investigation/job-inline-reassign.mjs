@@ -90,7 +90,7 @@ try {
     /locked/i.test(await page.locator("li", { hasText: `Billed trim ${RID}` }).first().innerText()) &&
     (await page.locator("li", { hasText: `Billed trim ${RID}` }).first().innerText()).includes(inv.invoice_number));
 
-  // --- 1. inline reassignment: stock -> in bid, the named case ---
+  // --- 1. inline reassignment: stock -> included in my price, the named case ---
   const stockRow = page.getByRole("button", { name: `Reassign Ladder rental ${RID}` });
   check("expense rows are tappable for owner/manager", (await stockRow.count()) === 1);
   check("row starts collapsed", (await stockRow.getAttribute("aria-expanded")) === "false");
@@ -105,23 +105,23 @@ try {
   await stockRow.click();
   check("tapping expands the assignment control",
     (await stockRow.getAttribute("aria-expanded")) === "true");
-  for (const label of ["In bid", "Extra", "Internal", "Stock"]) {
+  for (const label of ["Included in my price", "Bill to customer", "Internal", "Stock"]) {
     check(`control offers "${label}"`,
       (await page.getByRole("button", { name: `Assign to ${label}`, exact: true }).count()) === 1);
   }
   const applyBtn = page.getByRole("button", { name: "Apply" });
   check("Apply is disabled until a different destination is chosen",
     await applyBtn.isDisabled());
-  await page.getByRole("button", { name: "Assign to In bid", exact: true }).click();
+  await page.getByRole("button", { name: "Assign to Included in my price", exact: true }).click();
   check("chosen destination is marked pressed",
-    (await page.getByRole("button", { name: "Assign to In bid", exact: true }).getAttribute("aria-pressed")) === "true");
+    (await page.getByRole("button", { name: "Assign to Included in my price", exact: true }).getAttribute("aria-pressed")) === "true");
   check("Apply becomes available once the choice differs", await applyBtn.isEnabled());
   await applyBtn.click();
 
   // --- 3/4. toast + immediate recalculation, no reload ---
   await page.getByRole("status").waitFor({ timeout: 10000 });
   const toast = (await page.getByRole("status").innerText()).trim();
-  check("a toast confirms the move", /moved to in bid/i.test(toast), toast);
+  check("a toast confirms the move", /moved to included in my price/i.test(toast), toast);
 
   await splitLine.filter({ hasText: usd(140) }).waitFor({ timeout: 10000 });
   const afterSplit = await splitLine.innerText();

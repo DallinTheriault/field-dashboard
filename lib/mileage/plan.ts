@@ -13,7 +13,7 @@ export type SiteVisit = { date: string; jobId: number };
 
 export type JobInfo = {
   id: number;
-  /** "J-2026-012 Pat Rivera": job number and name, for the trip's purpose. */
+  /** "Job 12 Pat Rivera": job number and name, for the trip's purpose. */
   label: string;
   /** Street address to drive to (no unit). */
   address: string | null;

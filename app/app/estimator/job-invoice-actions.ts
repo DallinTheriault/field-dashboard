@@ -11,11 +11,16 @@ import {
 } from "@/lib/estimator/expenses";
 import { getEstimatorStripe, STRIPE_NOT_CONFIGURED } from "@/lib/estimator/stripe";
 import {
+  applyMinimum,
   claimsOf,
-  doneUnbilled,
+  coveredRow,
+  hasMinimum,
   invoiceTotals,
+  laborRow,
+  minimumRows,
   needingPrice,
   pickBillingEntity,
+  readyToBill,
   taskRow,
   type DraftTask,
 } from "@/lib/invoices/job-draft";
@@ -89,16 +94,77 @@ async function markupPct(supabase: Supabase): Promise<number> {
   return Number(data?.material_markup_pct ?? 0);
 }
 
+async function pricing(supabase: Supabase) {
+  const { data } = await supabase
+    .from("pricing_settings")
+    .select("material_markup_pct, default_hourly_rate, skilled_hourly_rate, minimum_job_charge")
+    .maybeSingle();
+  const num = (v: unknown) => (v === null || v === undefined ? null : Number(v));
+  return {
+    markup: Number(data?.material_markup_pct ?? 0),
+    generalRate: num(data?.default_hourly_rate),
+    skilledRate: num(data?.skilled_hourly_rate),
+    minimum: Number(data?.minimum_job_charge ?? 0),
+  };
+}
+
+/** Logged hours on the job that no invoice has billed or covered. */
+async function unbilledHours(supabase: Supabase, jobId: number) {
+  const { data } = await supabase
+    .from("time_entries")
+    .select("id, hours")
+    .eq("job_id", jobId)
+    .is("invoice_id", null)
+    .is("covered_at", null)
+    .order("id");
+  return (data ?? []).map((h) => ({ id: Number(h.id), hours: Number(h.hours) }));
+}
+
+/** Receipt lines on the job no invoice has claimed: bill-to-customer and included-in-my-price. */
+async function unbilledParts(supabase: Supabase, jobId: number) {
+  const { data } = await supabase
+    .from("expenses")
+    .select("id, description, qty, assignment")
+    .eq("job_id", jobId)
+    .in("assignment", ["job_extra", "job_in_bid"])
+    .is("invoiced_on", null)
+    .order("id");
+  return (data ?? []).map((e) => ({
+    id: Number(e.id),
+    description: String(e.description),
+    qty: e.qty === null ? null : Number(e.qty),
+    assignment: e.assignment as "job_extra" | "job_in_bid",
+  }));
+}
+
+/**
+ * What the builder decided. Itemized: the job's ready lines, the logged hours
+ * (when billed) as one labor line, and the ticked receipt lines at cost.
+ * Minimum: every work line and part at $0.00 plus the minimum charge.
+ * Typed lines become done work lines on the job first.
+ */
+export type InvoicePlan = {
+  mode: "itemized" | "minimum";
+  billHours: boolean;
+  skilled: boolean;
+  /** Receipt lines to bill (itemized): ticked ones. The rest count as included in the price. */
+  billPartIds: number[];
+  typedLines: string[];
+};
+
 function needsPriceError(tasks: DraftTask[], invoiceId: number | null): string | null {
   const waiting = needingPrice(tasks, invoiceId);
   if (waiting.length === 0) return null;
   return `Still needs a price: ${waiting.map((t) => `"${t.title}"`).join(", ")}. Price it on the job or mark it not billable.`;
 }
 
-/** Create a draft invoice from the job's done lines and uninvoiced extras. */
+/**
+ * Create a draft invoice from the job. Without a plan: its ready lines and
+ * uninvoiced extras (as before). With one: as the builder decided.
+ */
 export async function createInvoiceFromJob(
   jobId: number,
-  opts: { billingEntityId?: number | null; taxRatePct?: number; dueTerms?: string } = {},
+  opts: { billingEntityId?: number | null; taxRatePct?: number; dueTerms?: string; plan?: InvoicePlan } = {},
 ): Promise<Result<{ invoiceId: number; invoiceNumber: string }>> {
   const auth = await requireWriter();
   if (!auth.ok) return { ok: false, error: auth.error };
@@ -109,19 +175,26 @@ export async function createInvoiceFromJob(
     return { ok: false, error: "Tax rate must be between 0 and 30%." };
   }
 
-  const [{ data: job }, tasks, { data: estimates }, { data: entities }, extras, markup] = await Promise.all([
+  const plan = opts.plan;
+  const typed = (plan?.typedLines ?? []).map((l) => String(l ?? "").trim()).filter(Boolean);
+  if (typed.length > 20 || typed.some((l) => l.length > 200)) {
+    return { ok: false, error: "Keep typed lines to 20, each under 200 characters." };
+  }
+
+  const [{ data: job }, { data: estimates }, { data: entities }, price] = await Promise.all([
     supabase
       .from("jobs")
-      .select("id, name, email, phone, contact_id, bill_to_contact_id, property_id, billing_entity_id")
+      .select("id, name, email, phone, status, contact_id, bill_to_contact_id, property_id, billing_entity_id")
       .eq("id", jobId)
       .maybeSingle(),
-    jobTasks(supabase, jobId),
     supabase.from("estimates").select("billing_entity_id").eq("job_id", jobId).order("version", { ascending: false }),
     supabase.from("billing_entities").select("id, is_default, active"),
-    loadExtras(supabase, jobId),
-    markupPct(supabase),
+    pricing(supabase),
   ]);
   if (!job) return { ok: false, error: "Job not found." };
+  if (plan?.mode === "minimum" && !(price.minimum > 0)) {
+    return { ok: false, error: "Set your minimum job charge in Business › Pricing first." };
+  }
 
   const active = (entities ?? []) as Array<{ id: number; is_default: boolean; active: boolean }>;
   const entityId =
@@ -163,13 +236,87 @@ export async function createInvoiceFromJob(
     }
   }
 
-  const rows: InvoiceRow[] = [
-    ...doneUnbilled(tasks).map(taskRow),
-    ...buildExtraInvoiceRows(extras, markup).rows,
-  ];
+  // Typed lines become done work lines on the job ($0.00, billable), so the
+  // draft claims them like any other line.
+  const typedIds: number[] = [];
+  if (typed.length > 0) {
+    const { data: last } = await supabase
+      .from("tasks")
+      .select("sort_order")
+      .eq("job_id", jobId)
+      .order("sort_order", { ascending: false })
+      .limit(1);
+    const start = Number(last?.[0]?.sort_order ?? 0) + 1;
+    const { data: made, error: tErr } = await supabase
+      .from("tasks")
+      .insert(
+        typed.map((title, i) => ({
+          client_id: clientId,
+          job_id: jobId,
+          title,
+          status: "done",
+          sort_order: start + i,
+          qty: 1,
+          unit: "each",
+          unit_price: 0,
+          billable: true,
+        })),
+      )
+      .select("id");
+    if (tErr) return { ok: false, error: tErr.message };
+    typedIds.push(...(made ?? []).map((t) => Number(t.id)));
+  }
+
+  // Receipt lines: ticked ones are billed to the customer, unticked ones are
+  // included in the price, and the receipt records follow what the invoice does.
+  const switched: Array<{ id: number; from: "job_extra" | "job_in_bid" }> = [];
+  const undo = async () => {
+    if (typedIds.length) await supabase.from("tasks").delete().in("id", typedIds);
+    for (const s of switched) await supabase.from("expenses").update({ assignment: s.from }).eq("id", s.id);
+  };
+  const parts = await unbilledParts(supabase, jobId);
+  if (plan && plan.mode === "itemized") {
+    const bill = new Set((plan.billPartIds ?? []).filter(Number.isInteger));
+    for (const p of parts) {
+      const want = bill.has(p.id) ? "job_extra" : "job_in_bid";
+      if (want === p.assignment) continue;
+      const { error: aErr } = await supabase.from("expenses").update({ assignment: want }).eq("id", p.id).is("invoiced_on", null);
+      if (aErr) {
+        await undo();
+        return { ok: false, error: aErr.message };
+      }
+      switched.push({ id: p.id, from: p.assignment });
+      p.assignment = want;
+    }
+  }
+
+  const [tasks, hours, extras] = await Promise.all([
+    jobTasks(supabase, jobId),
+    unbilledHours(supabase, jobId),
+    loadExtras(supabase, jobId),
+  ]);
+  const work = readyToBill(tasks, job.status === "completed");
+  let rows: InvoiceRow[];
+  if (plan?.mode === "minimum") {
+    rows = minimumRows({
+      work,
+      billToCustomer: extras,
+      included: parts.filter((p) => p.assignment === "job_in_bid"),
+      hourIds: hours.map((h) => h.id),
+      minimum: price.minimum,
+    });
+  } else {
+    const rate = plan?.skilled ? price.skilledRate : price.generalRate;
+    const labor = plan?.billHours ? laborRow(hours, rate ?? 0, !!plan.skilled) : null;
+    if (plan?.billHours && hours.length > 0 && !labor) {
+      await undo();
+      return { ok: false, error: `Set your ${plan.skilled ? "skilled" : "general"} hourly rate in Business › Pricing first.` };
+    }
+    rows = [...work.map(taskRow), ...(labor ? [labor] : []), ...buildExtraInvoiceRows(extras, price.markup).rows];
+  }
   const totals = invoiceTotals(rows, taxRatePct);
 
-  // The RPC claims exactly the lines and extras the rows carry.
+  // The RPC claims exactly the lines, extras and hours the rows carry.
   const { data, error } = await supabase.rpc("invoice_create_from_job", {
     p: {
       client_id: clientId,
@@ -189,7 +336,10 @@ export async function createInvoiceFromJob(
       due_terms: (opts.dueTerms ?? "").trim() || "Due on receipt",
     },
   });
-  if (error || !data) return { ok: false, error: error?.message ?? "Invoice creation failed." };
+  if (error || !data) {
+    await undo();
+    return { ok: false, error: error?.message ?? "Invoice creation failed." };
+  }
 
   // The job remembers its letterhead for next time.
   if (job.billing_entity_id !== entityId) {
@@ -238,7 +388,13 @@ async function draftInvoice(supabase: Supabase, invoiceId: number) {
  */
 export async function updateDraftInvoiceRows(
   invoiceId: number,
-  rows: Array<{ description: string; qtyLabel?: string | null; amount: number; task_id?: number; extra_expense_id?: number }>,
+  rows: Array<
+    Pick<InvoiceRow, "task_id" | "extra_expense_id" | "time_entry_ids" | "rate" | "kind" | "covered"> & {
+      description: string;
+      qtyLabel?: string | null;
+      amount: number;
+    }
+  >,
 ): Promise<Result> {
   const auth = await requireWriter();
   if (!auth.ok) return { ok: false, error: auth.error };
@@ -258,9 +414,30 @@ export async function updateDraftInvoiceRows(
       amount: Math.round(amount * 100) / 100,
       ...(Number.isInteger(r.task_id) ? { task_id: Number(r.task_id) } : {}),
       ...(Number.isInteger(r.extra_expense_id) ? { extra_expense_id: Number(r.extra_expense_id) } : {}),
+      ...(Array.isArray(r.time_entry_ids)
+        ? { time_entry_ids: [...new Set(r.time_entry_ids.map(Number).filter(Number.isInteger))] }
+        : {}),
+      ...(Number.isFinite(Number(r.rate)) && Number(r.rate) > 0 ? { rate: Number(r.rate) } : {}),
+      ...(r.kind === "labor" || r.kind === "minimum" ? { kind: r.kind } : {}),
+      ...(r.covered === true ? { covered: true } : {}),
     });
   }
   return setDraft(auth.supabase, invoiceId, clean, Number(d.inv.tax_rate_pct ?? 0));
+}
+
+/**
+ * "Add minimum trip charge": every other line on the draft goes to $0.00
+ * (keeping what it claims) and the minimum from pricing settings is added.
+ */
+export async function applyMinimumCharge(invoiceId: number): Promise<Result> {
+  const auth = await requireWriter();
+  if (!auth.ok) return { ok: false, error: auth.error };
+  const d = await draftInvoice(auth.supabase, invoiceId);
+  if ("error" in d) return { ok: false, error: d.error as string };
+  const { minimum } = await pricing(auth.supabase);
+  if (!(minimum > 0)) return { ok: false, error: "Set your minimum job charge in Business › Pricing first." };
+  const rows = applyMinimum((d.inv.line_items ?? []) as InvoiceRow[], minimum);
+  return setDraft(auth.supabase, invoiceId, rows, Number(d.inv.tax_rate_pct ?? 0));
 }
 
 /** Add job lines (done or not) and extras that aren't on any invoice yet. */
@@ -288,10 +465,17 @@ export async function addToDraftInvoice(
   if (unpriced) return { ok: false, error: `"${unpriced.title}" needs a price first.` };
   const extras = await loadExtras(supabase, d.inv.job_id, expenseIds);
 
-  const rows: InvoiceRow[] = [
-    ...((d.inv.line_items ?? []) as InvoiceRow[]),
+  // On a minimum invoice, what's added is covered by the minimum ($0.00).
+  const current = (d.inv.line_items ?? []) as InvoiceRow[];
+  const minimum = hasMinimum(current);
+  const added = [
     ...tasks.sort((a, b) => a.sort_order - b.sort_order).map(taskRow),
     ...buildExtraInvoiceRows(extras, await markupPct(supabase)).rows,
+  ].map((r) => (minimum ? coveredRow(r) : r));
+  const rows: InvoiceRow[] = [
+    ...current.filter((r) => r.kind !== "minimum"),
+    ...added,
+    ...current.filter((r) => r.kind === "minimum"),
   ];
   return setDraft(supabase, invoiceId, rows, Number(d.inv.tax_rate_pct ?? 0));
 }
@@ -317,7 +501,14 @@ export async function refreshDraftExtras(invoiceId: number): Promise<Result> {
     loadExtras(supabase, d.inv.job_id),
   ]);
   const extras = [...carriedNow, ...fresh.filter((f) => !carried.includes(f.id))];
-  const rows = [...withoutExtraRows(current), ...buildExtraInvoiceRows(extras, await markupPct(supabase)).rows];
+  // Extras the minimum covers stay at $0.00 (and on a minimum invoice, so do new ones).
+  const minimum = hasMinimum(current);
+  const covered = new Set(current.filter((r) => r.covered).map((r) => r.extra_expense_id));
+  const rebuilt = buildExtraInvoiceRows(extras, await markupPct(supabase)).rows.map((r) =>
+    minimum || covered.has(r.extra_expense_id) ? coveredRow(r) : r,
+  );
+  const rest = withoutExtraRows(current);
+  const rows = [...rest.filter((r) => r.kind !== "minimum"), ...rebuilt, ...rest.filter((r) => r.kind === "minimum")];
   return setDraft(supabase, invoiceId, rows, Number(d.inv.tax_rate_pct ?? 0));
 }
 

@@ -64,7 +64,7 @@ try {
   console.log("shot: expanded item");
 
   await page.goto(`${BASE}/app/jobs/${job.id}`, { waitUntil: "domcontentloaded" });
-  await page.getByText("Job expenses").waitFor({ timeout: 10000 });
+  await page.getByText("· money you spent").waitFor({ timeout: 10000 });
   await page.screenshot({ path: `${OUT}/microfix-job-capture.png`, fullPage: true });
   console.log("shot: job capture list");
 

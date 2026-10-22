@@ -15,9 +15,7 @@ import {
 import { cn } from "@/lib/cn";
 import { activeHref } from "./nav-active";
 import { Logo } from "@/components/ui/logo";
-import packageJson from "../../package.json";
 
-const APP_VERSION = `v${packageJson.version}`;
 
 export type FeatureFlags = {
   calendar: boolean;
@@ -113,8 +111,7 @@ export function Sidebar({
             <span className="font-medium uppercase tracking-wide">Admin</span>
           </Link>
         )}
-        <div className="flex items-center justify-between">
-          <span className="text-2xs text-bone-400 font-mono">{APP_VERSION}</span>
+        <div className="flex items-center justify-end">
           <span className="text-2xs text-bone-400">field</span>
         </div>
       </div>

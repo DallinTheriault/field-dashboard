@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Clock, Plus, Trash2 } from "lucide-react";
+import { Clock, Lock, Plus, Trash2 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { syncTripsNow } from "./mileage/mileage-actions";
 
@@ -10,7 +10,19 @@ type TimeEntry = {
   entry_date: string;
   hours: number;
   note: string | null;
+  /** Where the hours stand on invoices: final once their invoice went out. */
+  billing: { label: string; locked: boolean } | null;
 };
+
+type EntryInvoice = { invoice_number: string | null; status: string; stripe_invoice_id: string | null } | null;
+
+function billingOf(invoiceId: number | null, coveredAt: string | null, inv: EntryInvoice): TimeEntry["billing"] {
+  if (!invoiceId) return coveredAt ? { label: "settled", locked: false } : null;
+  const number = inv?.invoice_number ?? "an invoice";
+  const wentOut = !!inv && inv.status !== "voided" && (inv.status !== "draft" || !!inv.stripe_invoice_id);
+  if (!wentOut) return { label: `on draft ${number}`, locked: false };
+  return { label: coveredAt ? `covered by ${number}` : `billed on ${number}`, locked: true };
+}
 
 type ActualMaterial = {
   id: number;
@@ -55,7 +67,7 @@ export function JobActuals({ clientId, jobId }: { clientId: number; jobId: numbe
     const [{ data: time }, { data: mats }, { data: est }] = await Promise.all([
       supabase
         .from("time_entries")
-        .select("id, entry_date, hours, note")
+        .select("id, entry_date, hours, note, invoice_id, covered_at, invoice:invoices!time_entries_invoice_same_tenant(invoice_number, status, stripe_invoice_id)")
         .eq("job_id", jobId)
         .order("entry_date", { ascending: false })
         .order("id", { ascending: false }),
@@ -74,7 +86,13 @@ export function JobActuals({ clientId, jobId }: { clientId: number; jobId: numbe
         .maybeSingle(),
     ]);
     setEntries(
-      (time ?? []).map((t) => ({ ...t, hours: Number(t.hours) })),
+      (time ?? []).map((t) => ({
+        id: t.id,
+        entry_date: t.entry_date,
+        note: t.note,
+        hours: Number(t.hours),
+        billing: billingOf(t.invoice_id, t.covered_at, t.invoice as unknown as EntryInvoice),
+      })),
     );
     setMaterials(
       (mats ?? []).map((m) => ({
@@ -131,7 +149,9 @@ export function JobActuals({ clientId, jobId }: { clientId: number; jobId: numbe
   }
 
   async function removeTime(id: number) {
-    await supabase.from("time_entries").delete().eq("id", id);
+    setErr(null);
+    const { error } = await supabase.from("time_entries").delete().eq("id", id);
+    if (error) setErr(error.message);
     load();
     void syncTripsNow();
   }
@@ -224,14 +244,22 @@ export function JobActuals({ clientId, jobId }: { clientId: number; jobId: numbe
                 <span className="flex-1 text-2xs text-bone-400 truncate">
                   {e.note ?? ""}
                 </span>
-                <button
-                  type="button"
-                  onClick={() => removeTime(e.id)}
-                  className="text-bone-500 hover:text-status-danger p-1"
-                  aria-label="Delete entry"
-                >
-                  <Trash2 size={12} />
-                </button>
+                {e.billing && (
+                  <span className="flex items-center gap-1 text-2xs text-bone-500 shrink-0" data-testid="hours-billing">
+                    {e.billing.locked && <Lock size={9} />}
+                    {e.billing.label}
+                  </span>
+                )}
+                {!e.billing?.locked && (
+                  <button
+                    type="button"
+                    onClick={() => removeTime(e.id)}
+                    className="text-bone-500 hover:text-status-danger p-1"
+                    aria-label="Delete entry"
+                  >
+                    <Trash2 size={12} />
+                  </button>
+                )}
               </li>
             ))}
           </ul>

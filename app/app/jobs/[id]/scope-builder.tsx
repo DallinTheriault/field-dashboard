@@ -280,7 +280,8 @@ export function ScopeBuilder({
   return (
     <div className="panel px-4 py-3 mb-5" data-testid="scope">
       <div className="label-eyebrow mb-2 flex items-baseline gap-1.5">
-        {pricing ? "Scope" : "Tasks"}
+        {pricing ? "Work" : "Tasks"}
+        {pricing && <span className="normal-case tracking-normal font-normal">· what you&apos;re billing for</span>}
         {lines.length > 0 && (
           <span className="normal-case tracking-normal font-normal">· {open.length} open</span>
         )}
@@ -500,9 +501,10 @@ function CustomLine({
           value={title}
           onChange={(e) => setTitle(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && add()}
-          placeholder={pricing ? "Custom line (e.g. Haul debris)" : "Add a task (e.g. Fix dishwasher latch)"}
+          placeholder={pricing ? "Add work (e.g. Replaced fill valve)" : "Add a task (e.g. Fix dishwasher latch)"}
           className="flex-1 min-w-0 min-h-[44px]"
           aria-label="Custom line title"
+          id="add-work"
         />
         <button type="button" onClick={add} className="btn-primary shrink-0 min-h-[44px] min-w-[44px]">
           <Plus size={14} />

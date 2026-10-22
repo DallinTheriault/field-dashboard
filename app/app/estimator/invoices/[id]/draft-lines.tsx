@@ -4,25 +4,22 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Loader2, Plus, X } from "lucide-react";
 import { updateDraftInvoiceRows } from "../../job-invoice-actions";
+import type { InvoiceRow } from "@/lib/estimator/expenses";
 
 const usd = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" });
 const round2 = (n: number) => Math.round((n + 1e-9) * 100) / 100;
 
-export type DraftRow = {
-  description: string;
-  qtyLabel: string | null;
-  amount: number;
-  extra_expense_id?: number;
-  task_id?: number;
-};
+export type DraftRow = InvoiceRow;
+
+/** What a row claims and how the database keeps it in step; carried through edits untouched. */
+type RowMeta = Pick<InvoiceRow, "extra_expense_id" | "task_id" | "time_entry_ids" | "rate" | "kind" | "covered">;
 
 type Line = {
   key: number;
   description: string;
   qtyLabel: string | null;
   amountStr: string;
-  extraExpenseId?: number;
-  taskId?: number;
+  meta: RowMeta;
   /** User-added adjustment lines get an editable description. */
   isNew: boolean;
 };
@@ -53,8 +50,14 @@ export function DraftLines({
       description: r.description,
       qtyLabel: r.qtyLabel,
       amountStr: r.amount.toFixed(2),
-      extraExpenseId: r.extra_expense_id,
-      taskId: r.task_id,
+      meta: {
+        extra_expense_id: r.extra_expense_id,
+        task_id: r.task_id,
+        time_entry_ids: r.time_entry_ids,
+        rate: r.rate,
+        kind: r.kind,
+        covered: r.covered,
+      },
       isNew: false,
     })),
   );
@@ -85,8 +88,7 @@ export function DraftLines({
         description: l.description,
         qtyLabel: l.qtyLabel,
         amount: parseFloat(l.amountStr),
-        extra_expense_id: l.extraExpenseId,
-        task_id: l.taskId,
+        ...l.meta,
       })),
     );
     setBusy(false);
@@ -177,7 +179,7 @@ export function DraftLines({
           onClick={() => {
             setLines((prev) => [
               ...prev,
-              { key: ++lineKey, description: "", qtyLabel: null, amountStr: "", isNew: true },
+              { key: ++lineKey, description: "", qtyLabel: null, amountStr: "", meta: {}, isNew: true },
             ]);
             setDirty(true);
           }}

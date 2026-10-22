@@ -1,4 +1,3 @@
-import { Search } from "lucide-react";
 import Link from "next/link";
 import { cn } from "@/lib/cn";
 import { Logo } from "@/components/ui/logo";
@@ -78,40 +77,11 @@ export function Topbar({
           </div>
         )}
 
-        {/* Desktop search */}
-        <div className="hidden md:block flex-1 max-w-md ml-2">
-          <label className="relative block">
-            <span className="sr-only">Search</span>
-            <Search
-              size={14}
-              strokeWidth={2}
-              className="absolute left-2.5 top-1/2 -translate-y-1/2 text-bone-400 pointer-events-none"
-            />
-            <input
-              type="text"
-              placeholder="Search calls, jobs, customers…"
-              className="!bg-ink-1 !border-line pl-8 pr-16 h-8 text-xs w-full"
-            />
-            <kbd className="absolute right-2 top-1/2 -translate-y-1/2 text-[10px] font-mono text-bone-400 border border-line-strong rounded-xs px-1.5 py-0.5 bg-ink-2">
-              ⌘K
-            </kbd>
-          </label>
-        </div>
-
         {/* Spacer pushes right cluster to the edge */}
         <div className="flex-1" />
 
         {/* Right cluster */}
         <div className="flex items-center gap-1 shrink-0">
-          {/* Mobile-only search icon */}
-          <button
-            type="button"
-            aria-label="Search"
-            className="md:hidden btn-ghost h-8 w-8 px-0"
-          >
-            <Search size={15} strokeWidth={1.8} />
-          </button>
-
           <ThemeToggle />
           <NotificationDropdown />
 
