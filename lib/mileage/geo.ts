@@ -5,10 +5,16 @@
  *              Nominatim, but only on an exact house-number match (never a
  *              street or a town centre: an address that won't place is
  *              flagged, not guessed)
- *   routing    Valhalla (FOSSGIS), with the OSRM demo server as the backup
+ *   routing    Valhalla (FOSSGIS) only; when it fails the day says so and
+ *              takes typed miles
  *
- * Callers cache every answer (lib/mileage/sync.ts), so each address and each
- * pair of points is looked up once. Server only.
+ * Their terms allow at most one request a second from the whole app, so every
+ * request first waits its turn (lib/mileage/throttle.ts shares the turns
+ * across servers). Callers cache every answer (lib/mileage/sync.ts), so each
+ * address and each pair of points is looked up once. Server only.
+ *
+ * GEO_NOMINATIM_URL=off turns Nominatim off (its policy: an app must stop
+ * when asked, without a software update): addresses use Census only.
  */
 
 export type Point = { lat: number; lon: number };
@@ -17,21 +23,28 @@ export type Geocode =
   | { status: "ok"; point: Point; matched: string; source: "census" | "nominatim" }
   | { status: "not_found" }
   /** The services couldn't be reached: try again later, don't cache. */
-  | { status: "error" };
+  | { status: "error" }
+  /** No turn came before the caller's deadline: left for the next batch. */
+  | { status: "later" };
 
-export type Route = { miles: number; source: "valhalla" | "osrm" };
+export type Route = { miles: number; source: "valhalla" };
 
-/** Identifies the app to every service (Nominatim's policy requires it). */
+export type GeoService = "census" | "nominatim" | "valhalla";
+
+/** Identifies the app to every service (Nominatim's and FOSSGIS's terms require it). */
 export const USER_AGENT = "FieldApp/1.0 (+https://app.getfield.co)";
 const UA = USER_AGENT;
-const TIMEOUT_MS = 8000;
-const METERS_PER_MILE = 1609.344;
+/** No request runs longer than this, so a batch ends at most this long after its deadline. */
+export const TIMEOUT_MS = 8000;
 
 // Overridable for the local stack (scripts/local-stack/geo-mock.mjs).
 const CENSUS = () => process.env.GEO_CENSUS_URL ?? "https://geocoding.geo.census.gov/geocoder";
 const NOMINATIM = () => process.env.GEO_NOMINATIM_URL ?? "https://nominatim.openstreetmap.org";
 const VALHALLA = () => process.env.ROUTE_VALHALLA_URL ?? "https://valhalla1.openstreetmap.de";
-const OSRM = () => process.env.ROUTE_OSRM_URL ?? "https://router.project-osrm.org";
+
+export function nominatimOff(): boolean {
+  return NOMINATIM().trim().toLowerCase() === "off";
+}
 
 async function getJson(url: string, init?: RequestInit): Promise<unknown> {
   const res = await fetch(url, {
@@ -45,18 +58,25 @@ async function getJson(url: string, init?: RequestInit): Promise<unknown> {
 }
 
 /**
- * Nominatim's policy: at most one request a second. Callers pass a turn that
- * waits for a slot shared by every server (lib/mileage/throttle.ts); this
- * in-process spacing is the fallback when there's none.
+ * At most one request a second to each service. A turn waits for the
+ * service's next slot and says whether to go: false when the slot wouldn't
+ * come before the caller's deadline (none is taken then, and nothing is sent).
+ * Callers pass turns shared by every server (lib/mileage/throttle.ts); this
+ * in-process spacing is the fallback when there are none.
  */
-export const NOMINATIM_GAP_MS = 1100;
-export type WaitTurn = () => Promise<void>;
-let nominatimNext = 0;
-export const localTurn: WaitTurn = async () => {
-  const wait = nominatimNext - Date.now();
-  nominatimNext = Math.max(Date.now(), nominatimNext) + NOMINATIM_GAP_MS;
-  if (wait > 0) await new Promise((r) => setTimeout(r, wait));
-};
+export const GAP_MS = 1100;
+export type Turn = (service: GeoService) => Promise<boolean>;
+const localNext: Record<GeoService, number> = { census: 0, nominatim: 0, valhalla: 0 };
+export function localTurn(deadline: number): Turn {
+  return async (service) => {
+    const now = Date.now();
+    const wait = Math.max(0, localNext[service] - now);
+    if (now >= deadline || now + wait > deadline) return false;
+    localNext[service] = Math.max(now, localNext[service]) + GAP_MS;
+    if (wait > 0) await new Promise((r) => setTimeout(r, wait));
+    return true;
+  };
+}
 
 async function census(address: string): Promise<Geocode> {
   const q = new URLSearchParams({ address, benchmark: "Public_AR_Current", format: "json" });
@@ -73,10 +93,9 @@ export function houseNumber(address: string): string | null {
   return address.trim().match(/^(\d+[A-Za-z]?)\b/)?.[1]?.toLowerCase() ?? null;
 }
 
-async function nominatim(address: string, waitTurn: WaitTurn): Promise<Geocode> {
+async function nominatim(address: string): Promise<Geocode> {
   const want = houseNumber(address);
   if (!want) return { status: "not_found" };
-  await waitTurn();
   const q = new URLSearchParams({ q: address, format: "json", addressdetails: "1", limit: "3", countrycodes: "us" });
   const rows = (await getJson(`${NOMINATIM()}/search?${q}`)) as Array<{
     lat: string;
@@ -95,11 +114,12 @@ async function nominatim(address: string, waitTurn: WaitTurn): Promise<Geocode> 
 }
 
 /**
- * Not found only when both services answered and neither placed it; if either
+ * Not found only when every service asked answered and none placed it; if one
  * couldn't be reached, it's an error to retry later, never cached as missing.
  */
-export async function lookupAddress(address: string, waitTurn: WaitTurn = localTurn): Promise<Geocode> {
+export async function lookupAddress(address: string, turn: Turn): Promise<Geocode> {
   let censusAnswered = false;
+  if (!(await turn("census"))) return { status: "later" };
   try {
     const c = await census(address);
     if (c.status === "ok") return c;
@@ -107,8 +127,10 @@ export async function lookupAddress(address: string, waitTurn: WaitTurn = localT
   } catch (e) {
     console.error("[mileage] census geocoder failed", e instanceof Error ? e.message : e);
   }
+  if (nominatimOff() || !houseNumber(address)) return censusAnswered ? { status: "not_found" } : { status: "error" };
+  if (!(await turn("nominatim"))) return { status: "later" };
   try {
-    const n = await nominatim(address, waitTurn);
+    const n = await nominatim(address);
     if (n.status === "ok") return n;
     return censusAnswered ? { status: "not_found" } : { status: "error" };
   } catch (e) {
@@ -136,29 +158,15 @@ async function valhalla(a: Point, b: Point): Promise<number> {
   return miles;
 }
 
-async function osrm(a: Point, b: Point): Promise<number> {
-  const j = (await getJson(`${OSRM()}/route/v1/driving/${a.lon},${a.lat};${b.lon},${b.lat}?overview=false`)) as {
-    code?: string;
-    routes?: Array<{ distance: number }>;
-  };
-  const meters = j.routes?.[0]?.distance;
-  if (j.code !== "Ok" || typeof meters !== "number") throw new Error(j.code ?? "no route");
-  return meters / METERS_PER_MILE;
-}
-
-/** Driving miles from a to b: Valhalla, then OSRM when Valhalla is down. Null when both fail. */
-export async function drivingMiles(a: Point, b: Point): Promise<Route | null> {
+/** Driving miles from a to b. "failed" when Valhalla can't answer; "later" when no turn came in time. */
+export async function drivingMiles(a: Point, b: Point, turn: Turn): Promise<Route | "failed" | "later"> {
+  if (!(await turn("valhalla"))) return "later";
   try {
     return { miles: await valhalla(a, b), source: "valhalla" };
   } catch (e) {
     console.error("[mileage] valhalla failed", e instanceof Error ? e.message : e);
+    return "failed";
   }
-  try {
-    return { miles: await osrm(a, b), source: "osrm" };
-  } catch (e) {
-    console.error("[mileage] osrm failed", e instanceof Error ? e.message : e);
-  }
-  return null;
 }
 
 /** Cache key for a point: 5 decimal places (about a metre). */
@@ -166,22 +174,26 @@ export function pointKey(p: Point): string {
   return `${p.lat.toFixed(5)},${p.lon.toFixed(5)}`;
 }
 
-export type ServiceCheck = { service: "census" | "nominatim" | "valhalla" | "osrm"; ok: boolean; ms: number; detail: string };
+export type ServiceCheck = { service: GeoService; state: "ok" | "failed" | "busy" | "off"; ms: number; detail: string };
 
 /**
  * Asks each service once, to show the app can reach them: both geocoders
- * look up `address`, both routers drive from it to `to`.
+ * look up `address`, Valhalla drives from it to `to`.
  */
-export async function checkServices(address: string, to: Point | null, waitTurn: WaitTurn = localTurn): Promise<ServiceCheck[]> {
+export async function checkServices(address: string, to: Point | null, turn: Turn): Promise<ServiceCheck[]> {
   const out: ServiceCheck[] = [];
-  const time = async (service: ServiceCheck["service"], fn: () => Promise<string>) => {
+  const time = async (service: GeoService, fn: () => Promise<string>) => {
+    if (!(await turn(service))) {
+      out.push({ service, state: "busy", ms: 0, detail: "busy, try again in a minute" });
+      return;
+    }
     const start = Date.now();
     try {
-      out.push({ service, ok: true, ms: Date.now() - start, detail: await fn() });
+      const detail = await fn();
+      out.push({ service, state: "ok", ms: Date.now() - start, detail });
     } catch (e) {
-      out.push({ service, ok: false, ms: Date.now() - start, detail: e instanceof Error ? e.message : String(e) });
+      out.push({ service, state: "failed", ms: Date.now() - start, detail: e instanceof Error ? e.message : String(e) });
     }
-    out[out.length - 1].ms = Date.now() - start;
   };
   const found: { point: Point | null } = { point: null };
   await time("census", async () => {
@@ -189,18 +201,21 @@ export async function checkServices(address: string, to: Point | null, waitTurn:
     if (c.status === "ok") found.point = c.point;
     return c.status === "ok" ? `found: ${c.matched}` : "answered: no match";
   });
-  await time("nominatim", async () => {
-    const n = await nominatim(address, waitTurn);
-    if (n.status === "ok") found.point ??= n.point;
-    return n.status === "ok" ? `found: ${n.matched}` : "answered: no exact house-number match";
-  });
+  if (nominatimOff()) {
+    out.push({ service: "nominatim", state: "off", ms: 0, detail: "turned off; addresses use the Census geocoder only" });
+  } else {
+    await time("nominatim", async () => {
+      const n = await nominatim(address);
+      if (n.status === "ok") found.point ??= n.point;
+      return n.status === "ok" ? `found: ${n.matched}` : "answered: no exact house-number match";
+    });
+  }
   const a = found.point;
   const b = to ?? (a ? { lat: a.lat + 0.02, lon: a.lon + 0.02 } : null);
   if (!a || !b) {
-    for (const service of ["valhalla", "osrm"] as const) out.push({ service, ok: false, ms: 0, detail: "no point to route from" });
+    out.push({ service: "valhalla", state: "failed", ms: 0, detail: "no point to route from" });
     return out;
   }
   await time("valhalla", async () => `${(await valhalla(a, b)).toFixed(2)} mi`);
-  await time("osrm", async () => `${(await osrm(a, b)).toFixed(2)} mi`);
   return out;
 }

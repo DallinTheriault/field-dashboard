@@ -2,7 +2,7 @@ import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { drivingMiles, lookupAddress, pointKey, type Point } from "./geo";
 import { addressKey, baseOn, mapsUrl } from "./plan";
-import { sharedNominatimTurn } from "./throttle";
+import { sharedTurn } from "./throttle";
 
 export type PropertyMiles =
   | { status: "ok"; miles: number; base: string; url: string }
@@ -13,14 +13,16 @@ export type PropertyMiles =
 /**
  * Driving miles one way from the base in effect on `date` to an address, for
  * checking a property against Google Maps. Uses the same caches as the trips,
- * and fills them.
+ * and fills them. Lookups start only before `deadline`.
  */
 export async function milesFromBase(
   admin: SupabaseClient,
   clientId: number,
   address: string,
   date: string,
+  deadline: number,
 ): Promise<PropertyMiles> {
+  const turn = sharedTurn(admin, deadline);
   const { data: bases } = await admin.from("mileage_bases").select("id, address, effective_from").eq("client_id", clientId);
   const base = baseOn(
     date,
@@ -38,8 +40,8 @@ export async function milesFromBase(
       .eq("address_key", key)
       .maybeSingle();
     if (hit) return hit.status === "ok" ? { lat: Number(hit.lat), lon: Number(hit.lon) } : "not_found";
-    const g = await lookupAddress(addr, sharedNominatimTurn(admin));
-    if (g.status === "error") return "error";
+    const g = await lookupAddress(addr, turn);
+    if (g.status === "error" || g.status === "later") return "error";
     await admin.from("geocode_cache").upsert(
       {
         client_id: clientId,
@@ -71,8 +73,8 @@ export async function milesFromBase(
     .or(`and(from_point.eq.${from},to_point.eq.${to}),and(from_point.eq.${to},to_point.eq.${from})`)
     .limit(1);
   if (cached?.[0]) return { status: "ok", miles: Math.round(Number(cached[0].miles) * 10) / 10, base: base.address, url };
-  const r = await drivingMiles(a, b);
-  if (!r) return { status: "failed", base: base.address, url };
+  const r = await drivingMiles(a, b, turn);
+  if (typeof r === "string") return { status: "failed", base: base.address, url };
   await admin
     .from("route_cache")
     .upsert({ client_id: clientId, from_point: from, to_point: to, miles: Math.round(r.miles * 100) / 100, source: r.source }, {

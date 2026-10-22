@@ -83,9 +83,14 @@ await bases.getByRole("button", { name: "Save base" }).click();
 await bases.getByText(BASE_B).waitFor();
 const svc = page.getByTestId("service-check");
 await svc.getByRole("button", { name: "Check map services" }).click();
-await svc.locator('li[data-service="osrm"]').waitFor({ timeout: 30_000 });
-check("Check map services reaches all four from today's base", (await svc.locator('li[data-ok="yes"]').count()) === 4,
-  await svc.innerText());
+await svc.locator('li[data-service="valhalla"]').waitFor({ timeout: 30_000 });
+check("Check map services reaches all three from today's base (no routing backup)",
+  (await svc.locator('li[data-state="ok"]').count()) === 3 && (await svc.locator("li[data-service]").count()) === 3, await svc.innerText());
+const credit = page.getByTestId("map-credit");
+check("the Mileage page credits OpenStreetMap, with a Fix the map link", (await credit.count()) === 1 &&
+  (await credit.getByRole("link", { name: "OpenStreetMap contributors" }).getAttribute("href")) === "https://www.openstreetmap.org/copyright" &&
+  (await credit.getByRole("link", { name: "Fix the map" }).getAttribute("href")) === "https://www.openstreetmap.org/fixthemap" &&
+  (await credit.innerText()).includes("(ODbL)"));
 const baseRows = await adminGet("mileage_bases?client_id=eq.8&order=effective_from&select=*");
 check("two bases, each from its date", baseRows.length === 2 && baseRows[0].effective_from === "2026-01-01" && baseRows[1].effective_from === "2026-09-27");
 
@@ -180,32 +185,38 @@ await page.locator("summary", { hasText: /removed trip/ }).click();
 await page.locator('li[data-date="2026-10-01"]').getByRole("button", { name: "Put back automatic trip" }).click();
 check("Put back makes it automatic again", !!(await until(async () => (await dayTrips("2026-10-01"))[0]?.kind === "auto" && (await dayTrips("2026-10-01"))[0]?.miles !== null)));
 
-// --- When the map services fail -----------------------------------------------------------------------
+// --- When the routing service fails: no backup; the day says so and takes typed miles -------------------
 await geo.script({ valhallaDown: true });
+const routedBefore = (await geo.requests()).length;
 const j4 = await mk("Dee Detour", "400 Birch St, Sandy, UT 84093");
 await hours(j4.id, "2026-10-05");
 await mileagePage();
-const p4 = await pointOf("400 Birch St, Sandy, UT 84093");
-const osrmRows = await adminGet(`route_cache?client_id=eq.8&source=eq.osrm&select=*`);
-check("Valhalla down: OSRM works it out", (await dayTrips("2026-10-05"))[0]?.miles_status === "ok" &&
-  osrmRows.some((r) => r.from_point === p4.key || r.to_point === p4.key));
+const needs = page.getByTestId("needs-miles");
+check("Valhalla down: the trip says so, and offers to type the miles",
+  (await dayTrips("2026-10-05"))[0]?.miles_status === "route_failed" &&
+  (await needs.locator('li[data-date="2026-10-05"]').getByText("Couldn't calculate miles, try again later.").count()) === 1 &&
+  (await needs.locator('li[data-date="2026-10-05"]').getByLabel("Type the miles").count()) === 1);
+check("…with no other router asked", (await geo.requests()).slice(routedBefore).every((r) => ["census", "nominatim", "valhalla"].includes(r.service)));
+const j5 = await mk("Eve Offline", "500 Cedar St, Draper, UT 84020");
+await hours(j5.id, "2026-10-06");
+await mileagePage();
+const d6 = page.getByTestId("needs-miles").locator('li[data-date="2026-10-06"]');
+await d6.getByLabel("Type the miles").fill("8.5");
+await d6.getByRole("button", { name: "Save miles" }).click();
+check("…typing the miles saves them, and they stay", !!(await until(async () => {
+  const x = (await dayTrips("2026-10-06"))[0];
+  return x?.kind === "edited" && Number(x.miles) === 8.5;
+})));
+await geo.script({ valhallaDown: false });
+await page.getByTestId("needs-miles").getByRole("button", { name: "Try again" }).click();
+check("…and Try again works it out once Valhalla is back", !!(await until(async () => (await dayTrips("2026-10-05"))[0]?.miles_status === "ok")));
+check("the typed day stays as typed", Number((await dayTrips("2026-10-06"))[0]?.miles) === 8.5);
 await owner.patch(`jobs?id=eq.${j4.id}`, { address: "410 Birch St, Sandy, UT 84093" });
 await mileagePage();
 const moved = (await dayTrips("2026-10-05"))[0];
 check("changing a job's address recalculates its automatic trip", moved?.destination === "410 Birch St, Sandy, UT 84093" &&
   moved?.miles_status === "ok");
-await geo.script({ valhallaDown: true, osrmDown: true });
-const j5 = await mk("Eve Offline", "500 Cedar St, Draper, UT 84020");
-await hours(j5.id, "2026-10-06");
-await mileagePage();
-const needs = page.getByTestId("needs-miles");
-check("both down: the trip says so, and offers to type the miles",
-  (await dayTrips("2026-10-06"))[0]?.miles_status === "route_failed" &&
-  (await needs.locator('li[data-date="2026-10-06"]').getByText("Couldn't calculate miles, try again later.").count()) === 1 &&
-  (await needs.locator('li[data-date="2026-10-06"]').getByLabel("Type the miles").count()) === 1);
-await geo.script({ valhallaDown: false, osrmDown: false });
-await needs.getByRole("button", { name: "Try again" }).click();
-check("…and Try again works it out once they're back", !!(await until(async () => (await dayTrips("2026-10-06"))[0]?.miles_status === "ok")));
+check("every cached route came from Valhalla", (await adminGet("route_cache?client_id=eq.8&source=neq.valhalla&select=*")).length === 0);
 
 const j6 = await mk("Fay Various", "Pre-Field work, Various Properties");
 await hours(j6.id, "2026-10-07");
@@ -283,6 +294,7 @@ await pm.waitFor({ timeout: 20_000 }).catch(() => {});
 const href = await pm.getByRole("link", { name: "Check in Google Maps" }).getAttribute("href").catch(() => null);
 check("a job's property shows its miles from the base, with a Google Maps link", (await pm.getByText(/mi from your base, one way/).count()) === 1 &&
   !!href && new URL(href).searchParams.get("origin") === BASE_B && new URL(href).searchParams.get("travelmode") === "driving");
+check("…and the OpenStreetMap credit", (await pm.getByTestId("map-credit").getByRole("link", { name: "Fix the map" }).count()) === 1);
 
 // --- Never billed -------------------------------------------------------------------------------------
 for (const [label, path] of [["the invoice builder", `/app/jobs/${j3.id}/invoice`], ["the estimate builder", `/app/estimator/new?job=${j3.id}`]]) {

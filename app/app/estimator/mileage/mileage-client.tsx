@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState, useTransition } from "react";
+import { useCallback, useEffect, useRef, useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { CalendarCheck, Download, ExternalLink, Home, Loader2, Pencil, Plus, RotateCcw, Trash2, TriangleAlert } from "lucide-react";
@@ -18,6 +18,7 @@ import {
   syncTripsNow,
   updateTrip,
 } from "./mileage-actions";
+import { MapCredit } from "./map-credit";
 
 const usd = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" });
 const num1 = new Intl.NumberFormat("en-US", { maximumFractionDigits: 1 });
@@ -59,26 +60,48 @@ export function MileageClient({
   const attention = live.filter((t) => t.miles === null && t.status !== "pending");
   const pendingCount = live.filter((t) => t.status === "pending").length;
 
-  // Work out trips that need a lookup, then show them. A big first run is
-  // done in rounds (each request has a time budget), at most five per visit.
-  const rounds = useRef(0);
+  // Work out trips that need a lookup, one batch per request (each ends well
+  // inside the server's time limit), showing them as they land. Stops when
+  // none are pending, or when a batch got no answers (the services are busy
+  // or down): "Try again" or the next visit picks up from there.
+  const alive = useRef(true);
+  const running = useRef(false);
+  const [stalled, setStalled] = useState(false);
   useEffect(() => {
-    if (pendingCount === 0 || rounds.current >= 5) return;
-    rounds.current++;
+    alive.current = true;
+    return () => {
+      alive.current = false;
+    };
+  }, []);
+  const runBatches = useCallback(async () => {
+    if (running.current) return;
+    running.current = true;
     setWorking(true);
-    syncTripsNow().then(() => {
-      setWorking(false);
+    setStalled(false);
+    for (let i = 0; i < 50 && alive.current; i++) {
+      const r = await syncTripsNow();
+      if (!alive.current) break;
       router.refresh();
-    });
-  }, [pendingCount, router]);
+      if (!r.ok) {
+        setErr(r.error);
+        break;
+      }
+      if (!r.data || r.data.pending === 0) break;
+      if (r.data.lookups === 0) {
+        setStalled(true);
+        break;
+      }
+    }
+    running.current = false;
+    if (alive.current) setWorking(false);
+  }, [router]);
+  useEffect(() => {
+    if (pendingCount > 0) void runBatches();
+  }, [pendingCount, runBatches]);
 
-  const retry = async () => {
+  const retry = () => {
     setErr(null);
-    setWorking(true);
-    const r = await syncTripsNow();
-    setWorking(false);
-    if (!r.ok) setErr(r.error);
-    router.refresh();
+    void runBatches();
   };
 
   return (
@@ -96,11 +119,24 @@ export function MileageClient({
         </div>
       </div>
 
-      {(working || pendingCount > 0) && (
+      {working ? (
         <div className="flex items-center gap-2 text-2xs text-bone-400">
           <Loader2 size={12} className="animate-spin" />
           Working out miles…
         </div>
+      ) : (
+        stalled &&
+        pendingCount > 0 && (
+          <div className="flex items-center gap-2 text-2xs text-status-lead" data-testid="miles-stalled">
+            <span className="flex-1">
+              The map services are busy. {pendingCount} {pendingCount === 1 ? "trip still needs" : "trips still need"} miles.
+            </span>
+            <button type="button" onClick={retry} className="btn-ghost text-2xs min-h-[36px]">
+              <RotateCcw size={11} />
+              Try again
+            </button>
+          </div>
+        )
       )}
       {totals.unpricedMiles > 0 && (
         <p className="text-2xs text-status-lead">
@@ -213,6 +249,7 @@ export function MileageClient({
 
       <Bases bases={bases} onError={setErr} />
       <Rates rates={rates} onError={setErr} />
+      <MapCredit className="px-1" />
     </div>
   );
 }
@@ -531,7 +568,8 @@ function Bases({ bases, onError }: { bases: BaseRecord[]; onError: (m: string | 
 function ServiceCheckRow() {
   const [result, setResult] = useState<Awaited<ReturnType<typeof checkMapServices>> | null>(null);
   const [pending, start] = useTransition();
-  const NAMES = { census: "US Census geocoder", nominatim: "OpenStreetMap (Nominatim)", valhalla: "Valhalla routing", osrm: "OSRM routing (backup)" };
+  const NAMES = { census: "US Census geocoder", nominatim: "OpenStreetMap (Nominatim)", valhalla: "Valhalla routing" };
+  const SAID = { ok: "Reached", failed: "Couldn't reach", busy: "Didn't ask", off: "Not using" };
   return (
     <div className="px-4 py-3 border-t border-line-subtle space-y-2" data-testid="service-check">
       <button type="button" disabled={pending} onClick={() => start(async () => setResult(await checkMapServices()))} className="btn-ghost text-xs min-h-[36px]">
@@ -542,8 +580,14 @@ function ServiceCheckRow() {
       {result?.ok && result.data && (
         <ul className="space-y-1 text-2xs">
           {result.data.checks.map((c) => (
-            <li key={c.service} data-service={c.service} data-ok={c.ok ? "yes" : "no"} className={c.ok ? "text-bone-300" : "text-status-danger"}>
-              {c.ok ? "Reached" : "Couldn't reach"} {NAMES[c.service]} ({c.ms} ms): {c.detail}
+            <li
+              key={c.service}
+              data-service={c.service}
+              data-state={c.state}
+              className={c.state === "ok" || c.state === "off" ? "text-bone-300" : "text-status-danger"}
+            >
+              {SAID[c.state]} {NAMES[c.service]}
+              {c.state === "ok" || c.state === "failed" ? ` (${c.ms} ms)` : ""}: {c.detail}
             </li>
           ))}
         </ul>
