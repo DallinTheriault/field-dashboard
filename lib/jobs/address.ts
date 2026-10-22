@@ -73,7 +73,7 @@ export function toJobPick(
 ): JobPick {
   return {
     id: row.id,
-    name: jobContactName(row) ?? `Job #${row.id}`,
+    name: jobContactName(row) ?? row.job_number ?? `Job #${row.id}`,
     jobNumber: row.job_number ?? null,
     address: jobAddress(row),
     status: row.status ?? null,
@@ -101,7 +101,7 @@ const JOB_STATUS_SHORT: Record<string, string> = {
 export function jobPickLabel(j: JobPick): string {
   const parts: string[] = [];
   if (j.address) parts.push(j.address);
-  if (j.jobNumber) parts.push(j.jobNumber);
+  if (j.jobNumber && j.jobNumber !== j.name) parts.push(j.jobNumber);
   parts.push(j.name);
   if (j.status) parts.push(JOB_STATUS_SHORT[j.status] ?? j.status);
   if (j.billing) parts.push(BILLING_LABEL[j.billing].toLowerCase());

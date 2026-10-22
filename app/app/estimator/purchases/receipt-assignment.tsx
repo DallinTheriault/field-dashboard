@@ -128,13 +128,13 @@ export function ReceiptAssignment({
             ))}
           </select>
 
-          {/* In-bid vs billed extra, only for owner/manager on the Job path. */}
+          {/* Included in my price vs bill to customer, only for owner/manager on the Job path. */}
           {value.kind === "job" && canBillExtra && (
             <div className="flex flex-wrap gap-2">
               {(
                 [
-                  ["job_in_bid", "In the bid", "already covered by the quote"],
-                  ["job_extra", "Bill as extra", "added to the invoice at cost"],
+                  ["job_in_bid", "Included in my price", "not billed on its own"],
+                  ["job_extra", "Bill to customer", "added to the invoice at cost"],
                 ] as const
               ).map(([a, label, hint]) => (
                 <button

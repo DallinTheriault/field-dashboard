@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Check, Loader2, Lock, Plus, Receipt } from "lucide-react";
+import { Check, Loader2, Lock, Pencil, Plus, Receipt, Trash2 } from "lucide-react";
 import {
   ASSIGNMENT_LABELS,
   splitMaterials,
@@ -13,7 +13,12 @@ import {
   canReassignExpense,
 } from "@/lib/estimator/expense-roles";
 import type { Role } from "@/lib/permissions/roles";
-import { setExtraBilling, setItemAssignment } from "../../estimator/purchases/purchase-actions";
+import {
+  deleteExpenseItem,
+  setExtraBilling,
+  setItemAssignment,
+  updateExpenseItem,
+} from "../../estimator/purchases/purchase-actions";
 import { ScanReceipt } from "../../estimator/purchases/scan-receipt";
 import { PendingReceipts } from "../../estimator/purchases/pending-receipts";
 import type { PendingReceipt } from "@/lib/receipts/state";
@@ -27,6 +32,9 @@ export type JobExpenseItem = {
   id: number;
   description: string;
   amount: number;
+  /** For editing: quantity and price each (pre-tax). */
+  qty?: number;
+  unitPrice?: number;
   assignment: string;
   /** Invoice number when frozen onto a finalized invoice; null when editable. */
   lockedToInvoice?: string | null;
@@ -41,19 +49,19 @@ export type JobExpenseItem = {
 
 const CHIP_SHORT: Record<string, string> = {
   unassigned: "unassigned",
-  job_in_bid: "covered",
-  job_extra: "extra",
+  job_in_bid: "included",
+  job_extra: "bill to customer",
   job_internal: "internal",
   stock: "stock",
 };
 
 /** The four destinations offered inline, in the order the money moves:
- *  covered by the bid → billed on top → eaten → not this job's cost at all. */
+ *  included in my price → billed to the customer → eaten → not this job's cost at all. */
 const REASSIGN_ORDER: Assignment[] = ["job_in_bid", "job_extra", "job_internal", "stock"];
 
 const REASSIGN_LABELS: Record<string, string> = {
-  job_in_bid: "Covered by task price",
-  job_extra: "Extra",
+  job_in_bid: "Included in my price",
+  job_extra: "Bill to customer",
   job_internal: "Internal",
   stock: "Stock",
 };
@@ -62,15 +70,15 @@ const REASSIGN_LABELS: Record<string, string> = {
  *  consequence spelled out: stock makes the row vanish from the job, and
  *  internal silently moves money into the absorbed figure. */
 const MOVE_TOAST: Record<string, string> = {
-  job_in_bid: "Moved to covered by task price",
-  job_extra: "Moved to extra — billable",
+  job_in_bid: "Moved to included in my price",
+  job_extra: "Moved to bill to customer",
   job_internal: "Moved to internal — now absorbed",
   stock: "Moved to stock — off this job",
 };
 
 /**
  * Job-level expense capture (Business/job-expense handoff §2). Scan a receipt
- * or log a manual expense from inside the job; assignment defaults to in-bid
+ * or log a manual expense from inside the job; assignment defaults to included-in-my-price
  * and is changeable within the caller's role. Writes the SAME purchases +
  * expenses rows as the Expenses page — only the pre-filled job_id and entry
  * point differ. Deliberately shows NO margin, hours, variance, or totals:
@@ -162,7 +170,8 @@ export function JobExpenseCapture({
     <div className="panel px-4 py-3 mb-5 space-y-4">
       <div className="flex items-center gap-2">
         <Receipt size={13} className="text-field-500" />
-        <div className="label-eyebrow">Job expenses</div>
+        <div className="label-eyebrow">Expenses</div>
+        <span className="text-2xs text-bone-400">· money you spent</span>
       </div>
 
       {receiptAiEnabled && (
@@ -188,9 +197,9 @@ export function JobExpenseCapture({
       <div className="flex flex-wrap items-center gap-x-2 text-2xs text-bone-400 pt-2 border-t border-line-subtle">
         <span>Materials:</span>
         <span className="num text-bone-100">{usd.format(split.inBid)}</span>
-        <span>covered by task prices ·</span>
+        <span>included in my price ·</span>
         <span className="num text-bone-100">{usd.format(split.billed)}</span>
-        <span>billed ·</span>
+        <span>billed to customer ·</span>
         <span className="num text-status-lead">{usd.format(split.absorbed)}</span>
         <span>absorbed</span>
       </div>
@@ -210,6 +219,12 @@ export function JobExpenseCapture({
               onToggle={() => setOpenId((cur) => (cur === it.id ? null : it.id))}
               onPick={(a) => reassign(it, a)}
               onBilling={(patch) => billing(it, patch)}
+              onChanged={(msg) => {
+                setOpenId(null);
+                setToast(msg);
+                router.refresh();
+              }}
+              onError={setErr}
             />
           ))}
         </ul>
@@ -249,6 +264,8 @@ function ExpenseRow({
   onToggle,
   onPick,
   onBilling,
+  onChanged,
+  onError,
 }: {
   item: JobExpenseItem;
   canReassign: boolean;
@@ -258,6 +275,8 @@ function ExpenseRow({
   onToggle: () => void;
   onPick: (a: Assignment) => void;
   onBilling: (patch: { billMarkup?: boolean; attachReceipt?: boolean }) => void;
+  onChanged: (toast: string) => void;
+  onError: (msg: string | null) => void;
 }) {
   // Pending destination, discarded when the row collapses so reopening always
   // starts from what the item actually is.
@@ -373,6 +392,7 @@ function ExpenseRow({
           </button>
         </div>
       )}
+      {open && <EditExpense item={item} onChanged={onChanged} onError={onError} />}
       {open && item.assignment === "job_extra" && (
         <div className="flex flex-wrap gap-x-4 pb-2">
           <label className="flex items-center gap-2 text-sm text-bone-100 min-h-[44px]">
@@ -426,6 +446,83 @@ function AssignmentSelect({
   );
 }
 
+/** Fix or remove a logged item (owners and managers; never once it's on an invoice that went out). */
+function EditExpense({
+  item,
+  onChanged,
+  onError,
+}: {
+  item: JobExpenseItem;
+  onChanged: (toast: string) => void;
+  onError: (msg: string | null) => void;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [desc, setDesc] = useState(item.description);
+  const [price, setPrice] = useState(String(item.unitPrice ?? item.amount));
+  const [qty, setQty] = useState(String(item.qty ?? 1));
+  const [busy, setBusy] = useState(false);
+
+  async function save() {
+    onError(null);
+    setBusy(true);
+    const r = await updateExpenseItem(item.id, { description: desc, unitPrice: parseFloat(price), qty: parseFloat(qty) });
+    setBusy(false);
+    if (!r.ok) return onError(r.error);
+    setEditing(false);
+    onChanged("Expense updated");
+  }
+  async function remove() {
+    if (!window.confirm(`Delete "${item.description}"?`)) return;
+    onError(null);
+    setBusy(true);
+    const r = await deleteExpenseItem(item.id);
+    setBusy(false);
+    if (!r.ok) return onError(r.error);
+    onChanged("Expense deleted");
+  }
+
+  if (!editing) {
+    return (
+      <div className="flex gap-2 pb-2">
+        <button type="button" onClick={() => setEditing(true)} className="btn-ghost text-xs min-h-[36px]" aria-label={`Edit ${item.description}`}>
+          <Pencil size={11} />
+          Edit
+        </button>
+        <button
+          type="button"
+          onClick={remove}
+          disabled={busy}
+          className="btn-ghost text-xs min-h-[36px] text-status-danger"
+          aria-label={`Delete ${item.description}`}
+        >
+          {busy ? <Loader2 size={11} className="animate-spin" /> : <Trash2 size={11} />}
+          Delete
+        </button>
+      </div>
+    );
+  }
+  return (
+    <div className="space-y-2 pb-2" data-testid="edit-expense">
+      <input value={desc} onChange={(e) => setDesc(e.target.value)} aria-label="Item" className="w-full" />
+      <div className="flex flex-wrap items-center gap-2">
+        <label className="flex items-center gap-1">
+          <span className="text-2xs text-bone-400">$/ea</span>
+          <input inputMode="decimal" value={price} onChange={(e) => setPrice(e.target.value)} aria-label="Price each" className="w-20" />
+        </label>
+        <span className="text-bone-500">×</span>
+        <input inputMode="decimal" value={qty} onChange={(e) => setQty(e.target.value)} aria-label="Quantity" className="w-12" />
+        <button type="button" onClick={save} disabled={busy} className="btn-secondary text-xs min-h-[36px] ml-auto">
+          {busy ? <Loader2 size={11} className="animate-spin" /> : <Check size={11} />}
+          Save
+        </button>
+        <button type="button" onClick={() => setEditing(false)} className="btn-ghost text-xs min-h-[36px]">
+          Cancel
+        </button>
+      </div>
+    </div>
+  );
+}
+
 /* ---------- manual single expense ---------- */
 
 function ManualExpense({
@@ -471,11 +568,16 @@ function ManualExpense({
 
   return (
     <div className="space-y-2">
-      <div className="label-eyebrow text-bone-400">Log an expense</div>
+      <div className="label-eyebrow text-bone-400">Log expense</div>
+      <p className="text-2xs text-bone-500 -mt-1">
+        Money you spent with no receipt to scan: cash purchases, tools, fees. Work you&apos;re billing for goes under Add work.
+      </p>
       <input
+        id="log-expense"
         value={desc}
         onChange={(e) => setDesc(e.target.value)}
         placeholder="Item (e.g. Paint, 2 gal)"
+        aria-label="Expense item"
         className="w-full"
       />
       <div className="flex flex-wrap items-center gap-2">

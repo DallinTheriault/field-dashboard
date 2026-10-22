@@ -48,7 +48,7 @@ export function JobLinesPanel({
 
   const groups: Array<[string, AvailableLine[]]> = [
     ["Finished, not on this invoice", available.filter((a) => a.kind === "task" && a.done)],
-    ["Extras not on any invoice", available.filter((a) => a.kind === "extra")],
+    ["Bill-to-customer receipts not on any invoice", available.filter((a) => a.kind === "extra")],
     ["Not done yet", available.filter((a) => a.kind === "task" && !a.done)],
   ];
 

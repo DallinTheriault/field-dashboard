@@ -16,6 +16,7 @@ import { getCurrentUserRole } from "@/lib/permissions/current-role";
 import { requireMember } from "@/lib/estimator/auth";
 import { allStoragePathsFor, inTenantFolder } from "@/lib/estimator/receipt-paths";
 import { refreshDraftExtras } from "../job-invoice-actions";
+import { storeName } from "@/lib/estimator/store-names";
 
 /**
  * Ruling Q1c, precisely: an item stamped on a FINALIZED invoice (sent or
@@ -219,7 +220,8 @@ export async function saveScannedReceipt(input: {
     return { ok: false, error: "Receipt not found." };
   }
 
-  const vendor = (input.vendor ?? "").trim();
+  // Common stores save under one name ("The Home Depot" → "Home Depot").
+  const vendor = storeName((input.vendor ?? "").trim());
   if (!vendor) return { ok: false, error: "Who was the vendor?" };
   const items = (input.items ?? []).filter((r) => (r.description ?? "").trim());
   if (items.length === 0) return { ok: false, error: "Add at least one item." };
@@ -464,6 +466,45 @@ export async function deleteExpenseItem(itemId: number): Promise<Result> {
   if ((deleted ?? []).length === 0) {
     return { ok: false, error: "You don't have permission to delete items." };
   }
+  if (guard.refreshDraft) await refreshDraftExtras(guard.refreshDraft);
+  revalidatePath("/app/estimator/purchases");
+  if (item.job_id) revalidatePath(`/app/jobs/${item.job_id}`);
+  return { ok: true };
+}
+
+/**
+ * Edit one item's description, price and quantity. Not while it's on an
+ * invoice that went out (the database refuses too); on a draft, the draft's
+ * line follows.
+ */
+export async function updateExpenseItem(
+  itemId: number,
+  input: { description: string; unitPrice: number; qty: number },
+): Promise<Result> {
+  const description = String(input.description ?? "").trim();
+  const unitPrice = Number(input.unitPrice);
+  const qty = Number(input.qty);
+  if (!description) return { ok: false, error: "Describe the item." };
+  if (description.length > 300) return { ok: false, error: "Keep the description under 300 characters." };
+  if (!Number.isFinite(unitPrice) || unitPrice < 0) return { ok: false, error: "Price must be a number, 0 or more." };
+  if (!Number.isFinite(qty) || qty <= 0) return { ok: false, error: "Quantity must be more than 0." };
+  const supabase = await createClient();
+  const { data: item } = await supabase
+    .from("expenses")
+    .select("id, invoiced_on, job_id")
+    .eq("id", itemId)
+    .maybeSingle();
+  if (!item) return { ok: false, error: "Item not found." };
+  const guard = await invoiceGuard(supabase, item.invoiced_on);
+  if ("error" in guard) return { ok: false, error: guard.error };
+  const round2 = (n: number) => Math.round((n + 1e-9) * 100) / 100;
+  const { data: updated, error } = await supabase
+    .from("expenses")
+    .update({ description, unit_price: round2(unitPrice), qty, amount: round2(unitPrice * qty) })
+    .eq("id", itemId)
+    .select("id");
+  if (error) return { ok: false, error: error.message };
+  if ((updated ?? []).length === 0) return { ok: false, error: "You don't have permission to edit items." };
   if (guard.refreshDraft) await refreshDraftExtras(guard.refreshDraft);
   revalidatePath("/app/estimator/purchases");
   if (item.job_id) revalidatePath(`/app/jobs/${item.job_id}`);

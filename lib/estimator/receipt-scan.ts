@@ -4,6 +4,8 @@
  * and the defensive parse so both are unit-testable.
  */
 
+import { storeName } from "./store-names";
+
 export type ScanItem = {
   description: string;
   sku: string | null;
@@ -142,7 +144,7 @@ export function parseScanResponse(raw: string): ScanResult | null {
   }
 
   const result: ScanResult = {
-    vendor: str(o.vendor),
+    vendor: storeName(str(o.vendor)),
     date: normalizeDate(str(o.date)),
     subtotal: num(o.subtotal),
     tax: num(o.tax),

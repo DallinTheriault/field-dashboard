@@ -8,10 +8,12 @@ import {
   ChevronRight,
   FileText,
   Activity,
+  Receipt,
 } from "lucide-react";
 import { EstimateStatusChip } from "../../estimator/estimate-status";
 import { JobActuals } from "../../estimator/job-actuals";
 import { JobExpenseCapture } from "./job-expense-capture";
+import { WorkOrExpense } from "./work-or-expense";
 import { PropertyMiles } from "../../estimator/mileage/property-miles";
 import { SiteDaysDialog } from "../../estimator/mileage/site-days";
 import { daysBetween } from "@/lib/mileage/plan";
@@ -156,7 +158,7 @@ export default async function JobDetailPage({
       ? supabase
           .from("expenses")
           .select(
-            "id, description, amount, assignment, invoiced_on, bill_markup, attach_receipt, purchases(tax, subtotal), invoices(invoice_number, status, stripe_invoice_id)",
+            "id, description, amount, qty, unit_price, assignment, invoiced_on, bill_markup, attach_receipt, purchases(tax, subtotal), invoices(invoice_number, status, stripe_invoice_id)",
           )
           .eq("job_id", job.id)
           .order("id", { ascending: false })
@@ -248,6 +250,8 @@ export default async function JobDetailPage({
       id: e.id as number,
       description: e.description as string,
       amount: Number(e.amount),
+      qty: e.qty === null ? 1 : Number(e.qty),
+      unitPrice: e.unit_price === null ? Number(e.amount) : Number(e.unit_price),
       assignment: (e.assignment as string) ?? "unassigned",
       lockedToInvoice: frozen ? (inv?.invoice_number ?? "an invoice") : null,
       billMarkup: e.bill_markup as boolean,
@@ -330,7 +334,13 @@ export default async function JobDetailPage({
         <Briefcase size={13} className="text-field-500 shrink-0" />
         <span className="label-eyebrow">{job.job_number ?? `Job #${job.id}`}</span>
         <InlineStatusEdit jobId={job.id} currentStatus={job.status ?? "lead"} />
-        <BillingChip state={billing?.state} />
+        {billing?.state === "ready" ? (
+          <Link href={`/app/jobs/${job.id}/invoice`} prefetch={false} aria-label="Ready to invoice: create the invoice">
+            <BillingChip state={billing.state} />
+          </Link>
+        ) : (
+          <BillingChip state={billing?.state} />
+        )}
         <AssignmentChip member={assignedMember} />
       </div>
 
@@ -388,7 +398,18 @@ export default async function JobDetailPage({
           allTags={allTags}
           attachedTagIds={jobTags.map((t) => t.id)}
         />
-        <div className="ml-auto">
+        <div className="ml-auto flex items-center gap-2">
+          {estimatorOn && canSeeInternals && (billing?.state === "ready" || billing?.state === "part_paid") && (
+            <Link
+              href={`/app/jobs/${job.id}/invoice`}
+              prefetch={false}
+              className="btn-primary text-xs min-h-[44px]"
+              data-testid="create-invoice"
+            >
+              <Receipt size={13} />
+              Create invoice
+            </Link>
+          )}
           <JobOptionsMenu
             jobId={Number(job.id)}
             phone={job.phone ?? null}
@@ -416,6 +437,12 @@ export default async function JobDetailPage({
           note={billing.paidOutsideNote}
           canUndo={isOwner}
         />
+      )}
+
+      {/* Two different things, labeled so they can't be confused: work is
+          what the customer is billed for; an expense is money spent. */}
+      {(canSeeInternals || (estimatorOn && session)) && (
+        <WorkOrExpense canAddWork={canSeeInternals} canLogExpense={!!(estimatorOn && session)} />
       )}
 
       {/* Scope first: it's what gets built on the walkthrough, and it's the
@@ -454,8 +481,8 @@ export default async function JobDetailPage({
             {uninvoicedExtras} extra{uninvoicedExtras === 1 ? "" : "s"} not on any invoice
           </span>
           <span className="text-2xs text-bone-400">
-            billable materials waiting — they ride along when an invoice is
-            created, or hit &quot;Refresh extras&quot; on a draft.
+            bill-to-customer receipt lines waiting: they&apos;re offered when you
+            create an invoice, or hit &quot;Refresh extras&quot; on a draft.
           </span>
         </div>
       )}

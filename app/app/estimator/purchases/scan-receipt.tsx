@@ -508,7 +508,7 @@ export function ConfirmScan({
     if (!t) return "receipt";
     if (t.kind === "stock") return "stock";
     if (t.kind === "internal") return "absorbed";
-    if (t.kind === "job") return t.assignment === "job_extra" ? "billed" : "covered";
+    if (t.kind === "job") return t.assignment === "job_extra" ? "bill to customer" : "included";
     return "receipt";
   };
 

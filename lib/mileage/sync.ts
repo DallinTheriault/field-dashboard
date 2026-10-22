@@ -79,7 +79,7 @@ export async function syncDayTrips(
     const street = (j.property_id != null ? prop?.address : j.address)?.trim() || null;
     jobs.set(j.id, {
       id: j.id,
-      label: [j.job_number, jobContactName(j) ?? `Job #${j.id}`].filter(Boolean).join(" "),
+      label: [j.job_number ?? `Job #${j.id}`, jobContactName(j)].filter(Boolean).join(" "),
       address: street,
       propertyId: j.property_id ?? null,
       startMinute: j.start_datetime ? minuteOfDay(j.start_datetime, opts.tz) : null,

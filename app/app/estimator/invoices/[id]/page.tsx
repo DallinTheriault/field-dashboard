@@ -7,6 +7,7 @@ import { canViewSettings } from "@/lib/permissions/roles";
 import { InvoiceStatusChip } from "../invoice-status";
 import { InvoiceActionsBar } from "./invoice-actions-bar";
 import { DraftLines, type DraftRow } from "./draft-lines";
+import { MinimumChargeButton } from "./minimum-charge-button";
 import { JobLinesPanel, type AvailableLine } from "./job-lines-panel";
 import { SendPanel, type Attachment } from "./send-panel";
 import { PaymentsPanel } from "./payments-panel";
@@ -16,9 +17,9 @@ import { buildExtraInvoiceRows } from "@/lib/estimator/expenses";
 import {
   agreedTotal,
   belowMinimum,
-  doneUnbilled,
   needingPrice,
   openUnbilled,
+  readyToBill,
   taskRow,
   type DraftTask,
 } from "@/lib/invoices/job-draft";
@@ -58,7 +59,7 @@ export default async function InvoiceDetailPage({
   const { data: inv } = await supabase
     .from("invoices")
     .select(
-      "*, jobs(id, name, address), billing_entities(name, invoice_prefix), estimates:estimate_id(id), bill_to:contacts!invoices_bill_to_same_tenant(card_link_default)",
+      "*, jobs(id, name, address, status), billing_entities(name, invoice_prefix), estimates:estimate_id(id), bill_to:contacts!invoices_bill_to_same_tenant(card_link_default)",
     )
     .eq("id", invoiceId)
     .maybeSingle();
@@ -75,6 +76,7 @@ export default async function InvoiceDetailPage({
     id: number;
     name: string | null;
     address: string | null;
+    status: string | null;
   } | null;
   const entity = inv.billing_entities as unknown as { name: string } | null;
   const billTo = inv.bill_to as unknown as { card_link_default: boolean } | null;
@@ -88,6 +90,7 @@ export default async function InvoiceDetailPage({
   let available: AvailableLine[] = [];
   let needsPrice: Array<{ id: number; title: string }> = [];
   let shortfall: number | null = null;
+  let minimumCharge = 0;
   let agreed: { version: number; total: number } | null = null;
   let attachments: Attachment[] = [];
   if (sendable && job) {
@@ -145,9 +148,10 @@ export default async function InvoiceDetailPage({
       markup,
     ).rows;
 
+    const completed = job.status === "completed";
     available = [
-      ...doneUnbilled(tasks).map((t) => ({ t, done: true })),
-      ...openUnbilled(tasks).map((t) => ({ t, done: false })),
+      ...readyToBill(tasks, completed).map((t) => ({ t, done: true })),
+      ...openUnbilled(tasks, completed).map((t) => ({ t, done: false })),
     ].map(({ t, done }) => {
       const row = taskRow(t);
       return { kind: "task" as const, id: t.id, title: t.title, detail: row.qtyLabel, amount: row.amount, done };
@@ -163,7 +167,9 @@ export default async function InvoiceDetailPage({
       })),
     );
     needsPrice = needingPrice(tasks, invoiceId).map((t) => ({ id: t.id, title: t.title }));
-    shortfall = belowMinimum(Number(inv.total_cents), settings?.minimum_job_charge);
+    // Before tax: the minimum is what the work comes to.
+    shortfall = belowMinimum(Number(inv.subtotal_cents), settings?.minimum_job_charge);
+    minimumCharge = Number(settings?.minimum_job_charge ?? 0);
     agreed = agreedTotal(
       (estimates ?? []).map((e) => ({
         version: e.version,
@@ -261,9 +267,9 @@ export default async function InvoiceDetailPage({
             </div>
           )}
           {shortfall !== null && (
-            <div className="panel px-4 py-2.5 text-sm text-status-lead" data-testid="min-charge">
-              {usd.format(shortfall)} under your minimum job charge. It isn&apos;t added
-              automatically; add an adjustment line if it should apply.
+            <div className="panel px-4 py-2.5 text-sm text-status-lead space-y-2" data-testid="min-charge">
+              <div>{usd.format(shortfall)} under your minimum job charge (before tax).</div>
+              {editable && <MinimumChargeButton invoiceId={inv.id} minimum={minimumCharge} />}
             </div>
           )}
         </div>
@@ -274,7 +280,7 @@ export default async function InvoiceDetailPage({
           <DraftLines
             // Remount when the saved lines change (a line added from the job,
             // extras refreshed), so a later Save can't send a stale list.
-            key={JSON.stringify(rows.map((r) => [r.description, r.amount, r.task_id, r.extra_expense_id]))}
+            key={JSON.stringify(rows)}
             invoiceId={inv.id}
             rows={rows}
             taxRatePct={Number(inv.tax_rate_pct ?? 0)}

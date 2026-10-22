@@ -280,8 +280,8 @@ await jobRow.getByRole("button", { name: "Check" }).click();
 const jobForm = jobRow.getByTestId("confirm-scan");
 check("…the check screen starts on this job", (await jobForm.getByRole("button", { name: "A job" }).getAttribute("aria-pressed")) === "true" &&
   (await jobForm.getByLabel("Job", { exact: true }).inputValue()) === String(job.id));
-check("…and offers members no photo link or Bill as extra", (await jobRow.getByRole("link", { name: "View photo" }).count()) === 0 &&
-  (await jobForm.getByRole("button", { name: "Bill as extra" }).count()) === 0);
+check("…and offers members no photo link or Bill to customer", (await jobRow.getByRole("link", { name: "View photo" }).count()) === 0 &&
+  (await jobForm.getByRole("button", { name: "Bill to customer" }).count()) === 0);
 await jobForm.getByRole("button", { name: "Save", exact: true }).click();
 await mp.waitForTimeout(1500);
 const jobItems = await items(p.id);
@@ -290,7 +290,7 @@ check("one tap saves it onto the job", jobItems.length === 2 && jobItems.every((
 // --- 6. Scan again on a saved receipt: compare first ------------------------------------------------------
 const savedId = m1[0].purchase_id;
 const before = { p: await row(savedId), items: await items(savedId) };
-const NEW = { ...GOOD, vendor: "The Home Depot", total: 48.56, subtotal: 45.5, items: [...GOOD.items, { description: "Painter's tape", sku: null, qty: 1, unit_price: 3, amount: 3 }] };
+const NEW = { ...GOOD, vendor: "Lowe's Home Centers, LLC", total: 48.56, subtotal: 45.5, items: [...GOOD.items, { description: "Painter's tape", sku: null, qty: 1, unit_price: 3, amount: 3 }] };
 await mock.reset();
 await mock.script([text(NEW)]);
 await page.goto(`${APP}/app/estimator/purchases/${savedId}`);
@@ -300,8 +300,8 @@ await settled(savedId, asked);
 await page.reload();
 const cmp = page.getByTestId("scan-compare");
 const cell = async (r, i) => cmp.locator(`tr[data-row="${r}"] td`).nth(i).textContent();
-check("Scan again on a saved receipt shows the new read next to what was saved",
-  (await cell("Vendor", 1)) === "Home Depot" && (await cell("Vendor", 2)) === "The Home Depot" &&
+check("Scan again on a saved receipt shows the new read next to what was saved, under the store's usual name",
+  (await cell("Vendor", 1)) === "Home Depot" && (await cell("Vendor", 2)) === "Lowe's" &&
   (await cell("Total", 1)) === "$45.56" && (await cell("Total", 2)) === "$48.56" && (await cell("Items", 2)) === "3 · $45.50");
 const during = { p: await row(savedId), items: await items(savedId) };
 check("…and changes nothing yet", during.p.vendor === before.p.vendor && Number(during.p.total) === Number(before.p.total) &&
@@ -323,7 +323,7 @@ await page.getByTestId("scan-compare").getByRole("button", { name: "Use the new 
 await page.getByTestId("scan-compare").getByRole("button", { name: "Save the new read" }).click();
 await page.waitForTimeout(1500);
 const replaced = { p: await row(savedId), items: await items(savedId) };
-check("Use the new read, then Save: header and items replaced", replaced.p.vendor === "The Home Depot" && Number(replaced.p.total) === 48.56 &&
+check("Use the new read, then Save: header and items replaced", replaced.p.vendor === "Lowe's" && Number(replaced.p.total) === 48.56 &&
   replaced.items.length === 3 && !replaced.items.some((i) => before.items.some((b) => b.id === i.id)) && replaced.p.scan_status === null);
 
 // Lock: an item on an invoice can't be swapped out.
@@ -345,7 +345,7 @@ await page.getByTestId("scan-compare").getByRole("button", { name: "Save the new
 await page.getByText(/on an invoice, so its items can't be replaced/).waitFor({ timeout: 10_000 }).catch(() => {});
 check("…refused while an item is on an invoice, nothing changed",
   (await page.getByText(/on an invoice, so its items can't be replaced/).count()) === 1 && (await items(savedId)).length === 3 &&
-  (await row(savedId)).vendor === "The Home Depot");
+  (await row(savedId)).vendor === "Lowe's");
 
 // --- 7. Gates -------------------------------------------------------------------------------------------
 await adminCall("PATCH", "Clients?id=eq.8", { feature_receipt_ai_enabled: false });

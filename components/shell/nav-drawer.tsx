@@ -18,10 +18,8 @@ import {
 import { cn } from "@/lib/cn";
 import { activeHref } from "./nav-active";
 import { Logo } from "@/components/ui/logo";
-import packageJson from "../../package.json";
 import { NAV_DRAWER_OPEN_EVENT } from "./nav-drawer-trigger";
 
-const APP_VERSION = `v${packageJson.version}`;
 
 import type { FeatureFlags } from "./sidebar";
 
@@ -203,8 +201,7 @@ export function NavDrawer({
               Sign out
             </button>
           </form>
-          <div className="flex items-center justify-between px-1 pt-1">
-            <span className="text-2xs text-bone-500 font-mono">{APP_VERSION}</span>
+          <div className="flex items-center justify-end px-1 pt-1">
             <span className="text-2xs text-bone-500 font-mono">field</span>
           </div>
         </div>

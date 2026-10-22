@@ -64,7 +64,7 @@ try {
   const oPage = await oCtx.newPage();
   await oPage.goto(`${BASE}/app/jobs/${job.id}`, { waitUntil: "domcontentloaded" });
 
-  const oCap = await oPage.getByText("Job expenses").waitFor({ timeout: 8000 }).then(() => true).catch(() => false);
+  const oCap = await oPage.getByText("· money you spent").waitFor({ timeout: 8000 }).then(() => true).catch(() => false);
   check("owner: capture card present", oCap);
 
   // owner sees job_extra in the assignment options
@@ -92,7 +92,7 @@ try {
   const mPage = await mCtx.newPage();
   await mPage.goto(`${BASE}/app/jobs/${job.id}`, { waitUntil: "domcontentloaded" });
 
-  const mCap = await mPage.getByText("Job expenses").waitFor({ timeout: 8000 }).then(() => true).catch(() => false);
+  const mCap = await mPage.getByText("· money you spent").waitFor({ timeout: 8000 }).then(() => true).catch(() => false);
   check("member: capture card present", mCap);
 
   // member dropdown offers only the allowed set (no job_extra)

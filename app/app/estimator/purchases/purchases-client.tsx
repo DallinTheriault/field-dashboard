@@ -54,12 +54,12 @@ export type ExpenseItemRow = {
 };
 
 /** Compact assignment labels for the dense collapsed row — the full
- *  ASSIGNMENT_LABELS ("Job — extra (invoiced at cost)") starved the
+ *  ASSIGNMENT_LABELS ("Job — bill to customer (at cost)") starved the
  *  description column on phones. Full labels live in the expanded panel. */
 const ASSIGNMENT_SHORT: Record<string, string> = {
   unassigned: "unassigned",
-  job_in_bid: "covered",
-  job_extra: "extra",
+  job_in_bid: "included",
+  job_extra: "bill to customer",
   job_internal: "internal",
   stock: "stock",
 };

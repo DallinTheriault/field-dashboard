@@ -216,7 +216,7 @@ try {
   ]).select("id");
   created.expenses.push(...(looseSeed ?? []).map((r) => capture("expenses", r.id)));
   await page.goto(`${BASE}/app/jobs/${job.id}`, { waitUntil: "domcontentloaded" });
-  await page.getByText("Job expenses").waitFor({ timeout: 20000 });
+  await page.getByText("· money you spent").waitFor({ timeout: 20000 });
   const jobBody = await page.locator("body").innerText();
   check("job shows in bid / billed / absorbed with stock excluded",
     jobBody.includes("$89.98") && jobBody.includes("$25.00") && jobBody.includes("$12.25") &&
@@ -268,7 +268,7 @@ try {
   await page.getByRole("heading", { name: "Money" }).waitFor({ timeout: 20000 });
   const money = (await page.locator("body").innerText()).toLowerCase();
   check("Money shows absorbed, billed, in bid and stock for the year",
-    money.includes("absorbed") && money.includes("billed") && money.includes("in bid") &&
+    money.includes("absorbed") && money.includes("billed") && money.includes("included in my price") &&
     money.includes("stock by category"));
   await ctx.close();
 
@@ -287,7 +287,7 @@ try {
   }]);
   const mPage = await mCtx.newPage();
   await mPage.goto(`${BASE}/app/jobs/${job.id}`, { waitUntil: "domcontentloaded" });
-  await mPage.getByText("Job expenses").waitFor({ timeout: 20000 });
+  await mPage.getByText("· money you spent").waitFor({ timeout: 20000 });
   const mOpts = await mPage.locator('select[aria-label="Assignment"]').first()
     .locator("option").evaluateAll((os) => os.map((o) => o.value));
   check("member's assignment control offers no job_extra", !mOpts.includes("job_extra"), mOpts.join(","));

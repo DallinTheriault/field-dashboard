@@ -77,8 +77,8 @@ export type Assignment = (typeof ASSIGNMENTS)[number];
 
 export const ASSIGNMENT_LABELS: Record<Assignment, string> = {
   unassigned: "Unassigned",
-  job_in_bid: "Job — covered by task price",
-  job_extra: "Job — extra (invoiced at cost)",
+  job_in_bid: "Job — included in my price",
+  job_extra: "Job — bill to customer (at cost)",
   job_internal: "Job — internal (eaten)",
   stock: "Stock / company",
 };
@@ -113,6 +113,18 @@ export type InvoiceRow = {
   extra_expense_id?: number;
   /** Marks a row billed from a job line (task); the draft claims that task. */
   task_id?: number;
+  /**
+   * Logged hours this row bills (a labor line) or covers (the minimum
+   * charge); the draft claims them, and the database keeps a labor line in
+   * step with its hours while the invoice is a draft.
+   */
+  time_entry_ids?: number[];
+  /** Labor lines: the hourly rate the hours are billed at. */
+  rate?: number;
+  /** "labor": logged hours × rate. "minimum": the minimum trip charge. */
+  kind?: "labor" | "minimum";
+  /** On the invoice at $0.00 because the minimum charge covers it. */
+  covered?: boolean;
 };
 
 /**
