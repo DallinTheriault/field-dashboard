@@ -578,7 +578,7 @@ export async function createCardPayLink(
     readAt = withEmail[0].updated_at as string;
   }
 
-  const stripe = getEstimatorStripe();
+  const stripe = await getEstimatorStripe();
   if (!stripe) return { ok: false, error: STRIPE_NOT_CONFIGURED };
   const entity = inv.billing_entities as unknown as { name: string } | null;
 
@@ -728,7 +728,7 @@ export async function voidInvoice(invoiceId: number): Promise<Result> {
   if (inv.status === "paid") return { ok: false, error: "A paid invoice can't be voided." };
 
   if (inv.stripe_invoice_id) {
-    const stripe = getEstimatorStripe();
+    const stripe = await getEstimatorStripe();
     if (!stripe) return { ok: false, error: STRIPE_NOT_CONFIGURED };
     try {
       const s = await stripe.invoices.retrieve(inv.stripe_invoice_id);

@@ -2,13 +2,6 @@
 // See https://nextjs.org/docs/app/api-reference/file-conventions/instrumentation
 
 export async function register() {
-  if (process.env.NEXT_RUNTIME === "nodejs") {
-    await import("./sentry.server.config");
-  }
-  if (process.env.NEXT_RUNTIME === "edge") {
-    await import("./sentry.edge.config");
-  }
-
   // Standing perf instrumentation (PERF_SPEC) — env-gated, inert unless PERF_TRACE=1.
   // Catches Supabase traffic that bypasses the client factories (e.g. direct fetch).
   if (process.env.PERF_TRACE === "1" && process.env.NEXT_RUNTIME === "nodejs") {

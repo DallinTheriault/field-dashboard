@@ -1,4 +1,4 @@
-import Stripe from "stripe";
+import type Stripe from "stripe";
 
 /**
  * Stripe client for ESTIMATOR customer invoicing (Hosted Invoices).
@@ -10,10 +10,14 @@ import Stripe from "stripe";
  *
  * Unset key = feature cleanly disabled: actions return a helpful error and
  * the UI still supports manual (check/cash/Venmo) invoicing + PDFs.
+ *
+ * The SDK loads on first use: pages that only reference these actions (the
+ * job and invoice pages) don't load Stripe when a cold server starts.
  */
-export function getEstimatorStripe(): Stripe | null {
+export async function getEstimatorStripe(): Promise<Stripe | null> {
   const key = process.env.ESTIMATOR_STRIPE_SECRET_KEY;
   if (!key) return null;
+  const { default: Stripe } = await import("stripe");
   // Local testing only: point at stripe-mock (scripts/local-stack). Unset in
   // every deployed environment.
   const base = process.env.ESTIMATOR_STRIPE_API_BASE;
