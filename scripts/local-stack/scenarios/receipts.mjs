@@ -167,10 +167,13 @@ check("an API failure: Needs entry, the photo kept, no vendor", p.scan_status ==
 check("…metered as api_error, not parse_failed", (await meters(failId)).map((m) => m.status).join() === "api_error");
 await page.goto(`${APP}/app/estimator/purchases`);
 const failRow = page.getByTestId("receipts-to-check").locator(`li[data-receipt="${failId}"]`);
+// The list renders on the client; wait for the row before reading it.
+await failRow.getByText("Needs entry", { exact: true }).waitFor();
 check("…and the list says it the agreed way",
   (await failRow.getByText("Needs entry", { exact: true }).count()) === 1 &&
   (await failRow.getByText("Couldn't read this receipt right now. Your photo is saved. Type it in or tap Scan again later.").count()) === 1 &&
-  (await failRow.getByRole("button", { name: "Type it in" }).count()) === 1);
+  (await failRow.getByRole("button", { name: "Type it in" }).count()) === 1,
+  (await failRow.innerText({ timeout: 2000 }).catch(() => "(no row)")).replace(/\s+/g, " "));
 await mock.reset();
 const failAsked = (await row(failId)).scan_requested_at;
 await failRow.getByRole("button", { name: "Scan again" }).click();
@@ -204,8 +207,10 @@ const stale = (await adminCall("POST", "purchases", {
 })).body[0];
 await page.goto(`${APP}/app/estimator/purchases`);
 const staleRow = page.getByTestId("receipts-to-check").locator(`li[data-receipt="${stale.id}"]`);
+await staleRow.getByText("Needs entry", { exact: true }).waitFor();
 check("a scan that died shows as Needs entry, with Scan again", (await staleRow.getByText("Needs entry", { exact: true }).count()) === 1 &&
-  (await staleRow.getByRole("button", { name: "Scan again" }).count()) === 1);
+  (await staleRow.getByRole("button", { name: "Scan again" }).count()) === 1,
+  (await staleRow.innerText({ timeout: 2000 }).catch(() => "(no row)")).replace(/\s+/g, " "));
 await mock.reset();
 await staleRow.getByRole("button", { name: "Scan again" }).click();
 check("…and Scan again starts it over", (await settled(stale.id, stale.scan_requested_at)).scan_status === "ready");
