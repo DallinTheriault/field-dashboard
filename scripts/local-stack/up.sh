@@ -23,7 +23,8 @@ SECRET="$(jwt_secret)"
 ANON_KEY="$(sign_key anon)"
 SERVICE_KEY="$(sign_key service_role)"
 # Prod signs sessions with ES256, so the app verifies them in memory
-# (getClaims); match it unless LOCAL_JWT=hs256.
+# (getClaims); match it unless LOCAL_JWT=hs256. LOCAL_JWT_EXP=<seconds>
+# shortens sessions (default an hour, like prod) to test expiry and refresh.
 if [ "${LOCAL_JWT:-es256}" = es256 ]; then
   signing_keys_part verify > "$FIELDSTACK/jwt-verify.json"
   JWT_KEYS_ENV=(GOTRUE_JWT_KEYS="$(signing_keys_part auth)")
@@ -64,7 +65,7 @@ AUTH_ENV=(
   GOTRUE_DB_DRIVER=postgres GOTRUE_DB_NAMESPACE=auth
   DATABASE_URL="$(DB_URL_AS supabase_auth_admin)?search_path=auth&sslmode=disable"
   GOTRUE_DB_MIGRATIONS_PATH="$BIN/migrations"
-  GOTRUE_JWT_SECRET="$SECRET" GOTRUE_JWT_EXP=3600 GOTRUE_JWT_AUD=authenticated
+  GOTRUE_JWT_SECRET="$SECRET" GOTRUE_JWT_EXP="${LOCAL_JWT_EXP:-3600}" GOTRUE_JWT_AUD=authenticated
   GOTRUE_JWT_DEFAULT_GROUP_NAME=authenticated GOTRUE_JWT_ADMIN_ROLES=service_role
   # Like prod: invite-only (no public sign-up); password-reset mail goes to
   # the local mail sink ($FIELDSTACK/mail).
