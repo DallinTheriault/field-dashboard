@@ -17,14 +17,14 @@ export function JobDetailsSheet({
   service,
   scope,
   quotedPrice,
-  start,
-  end,
+  when,
+  workOrder,
 }: {
   service: string | null;
   scope: string | null;
   quotedPrice: string;
-  start: string;
-  end: string;
+  when: string;
+  workOrder: string | null;
 }) {
   const [open, setOpen] = useState(false);
 
@@ -84,8 +84,8 @@ export function JobDetailsSheet({
                 <Row label="Service" value={service?.trim() || "—"} />
                 <Row label="Scope" value={scope?.trim() || "—"} />
                 <Row label="Quoted price" value={quotedPrice} mono />
-                <Row label="Start" value={start} />
-                <Row label="End" value={end} />
+                <Row label="When" value={when} />
+                {workOrder && <Row label="Work order #" value={workOrder} mono />}
               </dl>
               <p className="px-4 pb-4 text-2xs text-bone-500">
                 Change any of this from Edit job in the ⋮ menu.

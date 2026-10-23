@@ -170,13 +170,13 @@ describe("hourly and minimum invoices", () => {
       { description: "Replaced toilet fill valve", qtyLabel: null, amount: 0, task_id: 4, covered: true },
       { description: "Supply line", qtyLabel: "× 2", amount: 0, covered: true, extra_expense_id: 30 },
       { description: "Toilet repair kit", qtyLabel: null, amount: 0, covered: true },
-      { description: "Minimum trip charge", qtyLabel: null, amount: 150, time_entry_ids: [48], kind: "minimum" },
+      { description: "Minimum service charge", qtyLabel: null, amount: 150, time_entry_ids: [48], kind: "minimum" },
     ]);
     expect(subtotalOf(rows)).toBe(150);
     expect(claimsOf(rows)).toEqual({ taskIds: [4], expenseIds: [30], hourIds: [48] });
   });
 
-  it("Add minimum trip charge: the other lines go to $0.00 and keep their claims; never two minimum lines", () => {
+  it("Add minimum service charge: the other lines go to $0.00 and keep their claims; never two minimum lines", () => {
     const labor = laborRow([{ id: 48, hours: 0.5 }], 110, false)!;
     const draft = [
       taskRow(t({ id: 4, title: "Paint door", qty: 3, unit_price: 20 })),
@@ -190,7 +190,7 @@ describe("hourly and minimum invoices", () => {
       ["Labor", "0.5 hr", 0],
       ["Caulk", "× 2", 0],
       ["Senior discount", null, 0],
-      ["Minimum trip charge", null, 150],
+      ["Minimum service charge", null, 150],
     ]);
     expect(claimsOf(once)).toEqual({ taskIds: [4], expenseIds: [9], hourIds: [48] });
     expect(once[1].covered).toBe(true);

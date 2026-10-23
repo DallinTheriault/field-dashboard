@@ -121,7 +121,7 @@ export function laborRow(entries: HourEntry[], rate: number, skilled: boolean): 
   };
 }
 
-export const MINIMUM_LINE = "Minimum trip charge";
+export const MINIMUM_LINE = "Minimum service charge";
 
 /** The minimum charge line; it covers (and claims) the job's logged hours. */
 export function minimumRow(minimum: number, hourIds: number[]): InvoiceRow {
@@ -186,7 +186,7 @@ export function minimumRows(input: {
 }
 
 /**
- * "Add minimum trip charge" on a draft: every other line at $0.00 (each keeps
+ * "Add minimum service charge" on a draft: every other line at $0.00 (each keeps
  * what it claims), then the minimum, carrying any hours a minimum line
  * already covered.
  */

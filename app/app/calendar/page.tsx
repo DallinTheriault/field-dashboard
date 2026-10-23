@@ -72,16 +72,20 @@ export default async function CalendarPage({
     utcDate(gridStart.getUTCFullYear(), gridStart.getUTCMonth(), gridStart.getUTCDate() + i),
   );
 
-  // Fetch jobs in this window, padded a day each side so timezone offsets
-  // can't drop edge events; the client buckets by tenant-timezone date.
+  // Fetch jobs that touch this window (start before its end, and end, or
+  // start when there's no end, after its start), padded a day each side so
+  // timezone offsets can't drop edge events; the client puts each job on
+  // every day it covers, by tenant-timezone date.
   const DAY = 24 * 60 * 60 * 1000;
+  const windowStart = new Date(gridStart.getTime() - DAY).toISOString();
+  const windowEnd = new Date(cellDates[41].getTime() + 2 * DAY).toISOString();
   const [{ data: rawJobs }, { data: rawUnscheduled }] = await Promise.all([
     supabase
       .from("jobs")
-      .select("id, name, address, service, status, start_datetime, end_datetime")
+      .select("id, name, address, service, status, start_datetime, end_datetime, all_day")
       .is("archived_at", null)
-      .gte("start_datetime", new Date(gridStart.getTime() - DAY).toISOString())
-      .lte("start_datetime", new Date(cellDates[41].getTime() + 2 * DAY).toISOString())
+      .lte("start_datetime", windowEnd)
+      .or(`end_datetime.gte."${windowStart}",and(end_datetime.is.null,start_datetime.gte."${windowStart}")`)
       .order("start_datetime", { ascending: true }),
     // Bookable backlog for the "Schedule a job → existing" flow.
     supabase
@@ -106,9 +110,11 @@ export default async function CalendarPage({
     job_number: (j.job_number as string | null) ?? null,
   }));
 
-  // Detect conflicts (same day jobs overlapping in time)
+  // Detect conflicts (same day jobs overlapping in time). All-day jobs have
+  // no time to overlap.
   const byDay = new Map<string, CalJob[]>();
   for (const j of jobs) {
+    if (j.all_day) continue;
     const key = dayKeyInTz(j.start_datetime, tz);
     if (!byDay.has(key)) byDay.set(key, []);
     byDay.get(key)!.push(j);

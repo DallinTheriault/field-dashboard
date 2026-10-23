@@ -24,22 +24,21 @@ import {
   type DraftTask,
 } from "@/lib/invoices/job-draft";
 import { receiptFilename, receiptPathsFor } from "@/lib/invoices/receipts";
+import { fmtLongDate } from "@/lib/schedule";
+import {
+  billToLines,
+  invoiceParties,
+  PARTIES_JOB_SELECT,
+  PARTIES_PAYER_SELECT,
+  serviceLines,
+  toPartiesJob,
+  type PartiesContact,
+} from "@/lib/invoices/parties";
 
 const usd = new Intl.NumberFormat("en-US", {
   style: "currency",
   currency: "USD",
 });
-
-function fmtDate(d: string | null, tz: string): string {
-  if (!d) return "—";
-  return new Date(d).toLocaleString("en-US", { timeZone: tz,
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-    hour: "numeric",
-    minute: "2-digit",
-  });
-}
 
 export default async function InvoiceDetailPage({
   params,
@@ -59,7 +58,7 @@ export default async function InvoiceDetailPage({
   const { data: inv } = await supabase
     .from("invoices")
     .select(
-      "*, jobs(id, name, address, status), billing_entities(name, invoice_prefix), estimates:estimate_id(id), bill_to:contacts!invoices_bill_to_same_tenant(card_link_default)",
+      `*, jobs(id, name, status, ${PARTIES_JOB_SELECT}), billing_entities(name, invoice_prefix), estimates:estimate_id(id), bill_to:contacts!invoices_bill_to_same_tenant(card_link_default, ${PARTIES_PAYER_SELECT})`,
     )
     .eq("id", invoiceId)
     .maybeSingle();
@@ -79,7 +78,10 @@ export default async function InvoiceDetailPage({
     status: string | null;
   } | null;
   const entity = inv.billing_entities as unknown as { name: string } | null;
-  const billTo = inv.bill_to as unknown as { card_link_default: boolean } | null;
+  const billTo = inv.bill_to as unknown as (PartiesContact & { card_link_default: boolean }) | null;
+  // Bill To is the payer, live from the contact until it goes out.
+  const parties = invoiceParties(inv, billTo, toPartiesJob(inv.jobs));
+  const service = serviceLines(parties.service);
   const rows = (inv.line_items ?? []) as DraftRow[];
   // Drafts edit in place; anything that went out is frozen.
   const editable = inv.status === "draft" && !inv.stripe_invoice_id;
@@ -206,18 +208,19 @@ export default async function InvoiceDetailPage({
         Invoices
       </Link>
 
-      <header className="flex items-start justify-between gap-3">
+      <header className="flex items-start justify-between gap-3" data-testid="invoice-header">
         <div>
-          <h1 className="text-xl font-semibold text-bone-50 font-mono">
-            {inv.invoice_number}
+          <h1 className="text-xl font-semibold text-bone-50">
+            <span className="font-mono">{inv.invoice_number}</span>
+            {parties.jobNumber && (
+              <span className="text-bone-400 font-normal" data-testid="invoice-job-number"> · {parties.jobNumber}</span>
+            )}
           </h1>
           <div className="text-2xs text-bone-400 mt-1">
-            {inv.customer_name}
-            {inv.customer_company && <> ({inv.customer_company})</>}
-            {entity && <> · {entity.name}</>} · Issued {fmtDate(inv.created_at, tz)}
-            {inv.sent_at && <> · Sent {fmtDate(inv.sent_at, tz)}</>}
-            {inv.paid_at && <> · Paid {fmtDate(inv.paid_at, tz)}</>}
-            {inv.voided_at && <> · Voided {fmtDate(inv.voided_at, tz)}</>}
+            {entity && <>{entity.name} · </>}Issued {fmtLongDate(inv.created_at, tz)}
+            {inv.sent_at && <> · Sent {fmtLongDate(inv.sent_at, tz)}</>}
+            {inv.paid_at && <> · Paid {fmtLongDate(inv.paid_at, tz)}</>}
+            {inv.voided_at && <> · Voided {fmtLongDate(inv.voided_at, tz)}</>}
           </div>
         </div>
         <InvoiceStatusChip status={inv.status} />
@@ -253,6 +256,24 @@ export default async function InvoiceDetailPage({
           </a>
         )}
       </div>
+
+      <section className="panel px-4 py-3 grid gap-4 sm:grid-cols-2 text-sm" data-testid="invoice-parties">
+        <div data-testid="bill-to">
+          <div className="text-2xs uppercase tracking-wide text-bone-500 mb-1">Bill to</div>
+          <div className="text-bone-50 font-medium">{parties.billTo.name}</div>
+          {billToLines(parties.billTo).map((l) => (
+            <div key={l} className="text-bone-300">{l}</div>
+          ))}
+        </div>
+        {service.length > 0 && (
+          <div data-testid="service-address">
+            <div className="text-2xs uppercase tracking-wide text-bone-500 mb-1">Service address</div>
+            {service.map((l, i) => (
+              <div key={l} className={i === 0 ? "text-bone-50 font-medium" : "text-bone-300"}>{l}</div>
+            ))}
+          </div>
+        )}
+      </section>
 
       {(agreed || shortfall !== null) && sendable && (
         <div className="space-y-1.5" data-testid="draft-checks">
@@ -346,7 +367,7 @@ export default async function InvoiceDetailPage({
           invoiceNumber={inv.invoice_number}
           entityName={entity?.name ?? ""}
           totalCents={Number(inv.total_cents)}
-          customerEmail={inv.customer_email}
+          customerEmail={parties.billTo.email}
           cardLinkDefault={billTo?.card_link_default ?? false}
           hostedUrl={inv.stripe_hosted_invoice_url}
           stripeReady={Boolean(process.env.ESTIMATOR_STRIPE_SECRET_KEY)}

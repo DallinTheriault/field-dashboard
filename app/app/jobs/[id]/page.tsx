@@ -38,6 +38,7 @@ import { extraAmounts } from "@/lib/estimator/expenses";
 import { BILLING_COLS, toJobBilling } from "@/lib/jobs/billing";
 import { BillingChip } from "@/components/ui/billing-chip";
 import { PaidOutsideNotice } from "./paid-outside";
+import { whenText } from "@/lib/schedule";
 
 function fmtDate(d: string | null, tz: string): string {
   if (!d) return "—";
@@ -333,7 +334,12 @@ export default async function JobDetailPage({
       <div className="flex flex-wrap items-center gap-2 mb-1.5">
         <Briefcase size={13} className="text-field-500 shrink-0" />
         <span className="label-eyebrow">{job.job_number ?? `Job #${job.id}`}</span>
-        <InlineStatusEdit jobId={job.id} currentStatus={job.status ?? "lead"} />
+        <InlineStatusEdit
+          jobId={job.id}
+          currentStatus={job.status ?? "lead"}
+          schedule={{ start_datetime: job.start_datetime ?? null, end_datetime: job.end_datetime ?? null, all_day: !!job.all_day }}
+          tz={tz}
+        />
         {billing?.state === "ready" ? (
           <Link href={`/app/jobs/${job.id}/invoice`} prefetch={false} aria-label="Ready to invoice: create the invoice">
             <BillingChip state={billing.state} />
@@ -387,8 +393,8 @@ export default async function JobDetailPage({
           service={job.service ?? null}
           scope={job.scope ?? null}
           quotedPrice={fmtPrice(job.quoted_price)}
-          start={fmtDate(job.start_datetime, tz)}
-          end={fmtDate(job.end_datetime, tz)}
+          when={whenText(job.start_datetime ?? null, job.end_datetime ?? null, !!job.all_day, tz) ?? "No date yet"}
+          workOrder={job.work_order_number ?? null}
         />
         {jobTags.length > 0 && <TagChipList tags={jobTags} maxVisible={10} />}
         <InlineAddTagButton
