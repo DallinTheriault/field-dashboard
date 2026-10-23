@@ -31,7 +31,7 @@ export type BuilderPart = {
  * What the invoice bills, chosen here; the server rebuilds the same rows and
  * the database claims them. Itemized: work lines, logged hours as one labor
  * line, ticked receipt lines at cost. Under the minimum, one tap bills it as
- * the minimum: every line and part at $0.00 plus the minimum trip charge.
+ * the minimum: every line and part at $0.00 plus the minimum service charge.
  */
 export function InvoiceBuilder({
   jobId,
@@ -255,7 +255,7 @@ export function InvoiceBuilder({
           {minimumMode ? (
             <>
               <div>
-                Billing as your minimum: each line and part at $0.00, plus Minimum trip charge {usd.format(minimum)}.
+                Billing as your minimum: each line and part at $0.00, plus Minimum service charge {usd.format(minimum)}.
               </div>
               <button type="button" onClick={() => setAsMinimum(false)} className="btn-ghost text-xs min-h-[44px]">
                 Bill itemized instead

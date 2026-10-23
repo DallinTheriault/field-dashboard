@@ -19,6 +19,18 @@ import {
 import { cn } from "@/lib/cn";
 import { createClient } from "@/lib/supabase/client";
 import { createJobManual } from "../jobs/_components/actions";
+import { WhenFields } from "@/components/ui/when-fields";
+import {
+  columnsToWhen,
+  dayKey as dayKeyOf,
+  daysCovered,
+  whenError,
+  whenText,
+  whenToColumns,
+  withLength,
+  type ScheduleColumns,
+  type When,
+} from "@/lib/schedule";
 
 export type CalJob = {
   id: number;
@@ -28,6 +40,7 @@ export type CalJob = {
   status: string;
   start_datetime: string;
   end_datetime: string | null;
+  all_day: boolean;
 };
 
 export type PickJob = {
@@ -87,9 +100,8 @@ const DURATIONS = [
   { hours: 8, label: "8 hrs" },
 ];
 
-/* Display always uses the TENANT timezone (matches the server-rendered
- * grid). Date/time INPUTS use the browser's timezone — same convention as
- * the job edit form, and for a local crew those are the same clock. */
+/* Display and the date/time inputs both use the TENANT timezone (matches
+ * the server-rendered grid and the job form). */
 function fmtTimeTz(iso: string, tz: string): string {
   return new Date(iso).toLocaleString("en-US", {
     hour: "numeric",
@@ -99,8 +111,14 @@ function fmtTimeTz(iso: string, tz: string): string {
 }
 
 function fmtRange(job: CalJob, tz: string): string {
+  if (job.all_day) return "All day";
   const start = fmtTimeTz(job.start_datetime, tz);
-  return job.end_datetime ? `${start} – ${fmtTimeTz(job.end_datetime, tz)}` : start;
+  if (!job.end_datetime) return start;
+  // Several days: the end is a date, not a time.
+  if (dayKeyOf(job.end_datetime, tz) > dayKeyOf(job.start_datetime, tz)) {
+    return `${start} – ${new Date(job.end_datetime).toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: tz })}`;
+  }
+  return `${start} – ${fmtTimeTz(job.end_datetime, tz)}`;
 }
 
 /** "Friday, Jul 11" from a YYYY-MM-DD key (pure — no timezone math). */
@@ -113,26 +131,8 @@ function dayLabel(key: string): string {
   });
 }
 
-function pad(n: number): string {
-  return String(n).padStart(2, "0");
-}
-
-/** ISO → browser-local "YYYY-MM-DD" / "HH:mm" for date+time inputs. */
-function isoToLocalParts(iso: string): { date: string; time: string } {
-  const d = new Date(iso);
-  return {
-    date: `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`,
-    time: `${pad(d.getHours())}:${pad(d.getMinutes())}`,
-  };
-}
-
-function localPartsToIso(date: string, time: string): string | null {
-  const d = new Date(`${date}T${time}`);
-  return isNaN(d.getTime()) ? null : d.toISOString();
-}
-
 function durationOf(job: CalJob): number {
-  if (!job.end_datetime) return 2;
+  if (!job.end_datetime || job.all_day) return 2;
   const h =
     (new Date(job.end_datetime).getTime() - new Date(job.start_datetime).getTime()) /
     3600000;
@@ -211,8 +211,7 @@ function Sheet({
 /* ---------- Schedule form (shared by add + reschedule) ---------- */
 
 function ScheduleForm({
-  initialDate,
-  initialTime,
+  initial,
   initialDuration,
   excludeJobId,
   allJobs,
@@ -221,81 +220,66 @@ function ScheduleForm({
   submitLabel,
   onSubmit,
 }: {
-  initialDate: string;
-  initialTime: string;
+  initial: When;
   initialDuration: number;
   excludeJobId?: number;
   allJobs: CalJob[];
   tz: string;
   busy: boolean;
   submitLabel: string;
-  onSubmit: (startIso: string, endIso: string) => void;
+  onSubmit: (when: When, lengthMinutes: number | null) => void;
 }) {
-  const [date, setDate] = useState(initialDate);
-  const [time, setTime] = useState(initialTime);
+  const [when, setWhen] = useState<When>(initial);
   const [duration, setDuration] = useState(initialDuration);
+  // Duration only means something for a timed, one-day job.
+  const timedDay = !!when.time && !(when.endDate && when.date && when.endDate > when.date);
+  const problem = when.date ? whenError(when) : "Pick a date.";
+  const cols: ScheduleColumns | null = problem
+    ? null
+    : withLength(whenToColumns(when, tz), timedDay ? duration * 60 : null);
+  const startIso = cols?.start_datetime ?? null;
+  const endIso = cols?.end_datetime ?? null;
 
-  const startIso = localPartsToIso(date, time);
-  const endIso = startIso
-    ? new Date(new Date(startIso).getTime() + duration * 3600000).toISOString()
-    : null;
-
-  // Booking-style heads-up: does this overlap another job on the calendar?
+  // Booking-style heads-up: does this overlap another timed job on the calendar?
   const overlap = useMemo(() => {
-    if (!startIso || !endIso) return null;
+    if (!startIso || !endIso || !timedDay) return null;
     const s = new Date(startIso).getTime();
     const e = new Date(endIso).getTime();
     for (const j of allJobs) {
-      if (j.id === excludeJobId || j.status === "cancelled") continue;
+      if (j.id === excludeJobId || j.status === "cancelled" || j.all_day) continue;
       const js = new Date(j.start_datetime).getTime();
       const je = j.end_datetime ? new Date(j.end_datetime).getTime() : js + 3600000;
       if (s < je && js < e) return j;
     }
     return null;
-  }, [startIso, endIso, allJobs, excludeJobId]);
+  }, [startIso, endIso, timedDay, allJobs, excludeJobId]);
 
   return (
     <div className="space-y-3">
-      <div className="grid grid-cols-2 gap-2">
+      <WhenFields value={when} onChange={setWhen} disabled={busy} />
+      {timedDay && (
         <div>
-          <label className="label-eyebrow block mb-1">Date</label>
-          <input
-            type="date"
-            value={date}
-            onChange={(e) => setDate(e.target.value)}
-            className="!bg-ink-2 w-full text-sm h-9 font-mono"
-          />
+          <label className="label-eyebrow block mb-1">Duration</label>
+          <div className="flex flex-wrap gap-1.5">
+            {DURATIONS.map((d) => (
+              <button
+                key={d.hours}
+                type="button"
+                onClick={() => setDuration(d.hours)}
+                className={cn(
+                  "chip text-2xs cursor-pointer transition-colors",
+                  duration === d.hours
+                    ? "border-field-500/60 text-field-400 bg-field-500/10"
+                    : "border-line-strong text-bone-300 hover:text-bone-100",
+                )}
+              >
+                {d.label}
+              </button>
+            ))}
+          </div>
         </div>
-        <div>
-          <label className="label-eyebrow block mb-1">Start time</label>
-          <input
-            type="time"
-            value={time}
-            onChange={(e) => setTime(e.target.value)}
-            className="!bg-ink-2 w-full text-sm h-9 font-mono"
-          />
-        </div>
-      </div>
-      <div>
-        <label className="label-eyebrow block mb-1">Duration</label>
-        <div className="flex flex-wrap gap-1.5">
-          {DURATIONS.map((d) => (
-            <button
-              key={d.hours}
-              type="button"
-              onClick={() => setDuration(d.hours)}
-              className={cn(
-                "chip text-2xs cursor-pointer transition-colors",
-                duration === d.hours
-                  ? "border-field-500/60 text-field-400 bg-field-500/10"
-                  : "border-line-strong text-bone-300 hover:text-bone-100",
-              )}
-            >
-              {d.label}
-            </button>
-          ))}
-        </div>
-      </div>
+      )}
+      {when.date && problem && <div className="text-2xs text-status-danger">{problem}</div>}
 
       {overlap && (
         <div className="flex items-start gap-2 p-2 rounded-xs bg-status-lead/[0.08] border border-status-lead/25">
@@ -309,8 +293,8 @@ function ScheduleForm({
 
       <button
         type="button"
-        onClick={() => startIso && endIso && onSubmit(startIso, endIso)}
-        disabled={busy || !startIso}
+        onClick={() => !problem && onSubmit(when, timedDay ? duration * 60 : null)}
+        disabled={busy || !!problem}
         className="btn-primary text-sm h-10 w-full"
       >
         {busy ? <Loader2 size={13} className="animate-spin" /> : <CalendarClock size={13} />}
@@ -375,17 +359,18 @@ export function CalendarClient({
 
   const conflictSet = useMemo(() => new Set(conflictDays), [conflictDays]);
 
+  // A job shows on every day from its start to its end date.
   const byDay = useMemo(() => {
     const map = new Map<string, CalJob[]>();
     for (const j of jobs) {
-      const key = new Intl.DateTimeFormat("en-CA", {
-        timeZone: tz,
-        year: "numeric",
-        month: "2-digit",
-        day: "2-digit",
-      }).format(new Date(j.start_datetime));
-      if (!map.has(key)) map.set(key, []);
-      map.get(key)!.push(j);
+      for (const key of daysCovered(j.start_datetime, j.end_datetime, tz)) {
+        if (!map.has(key)) map.set(key, []);
+        map.get(key)!.push(j);
+      }
+    }
+    // All-day jobs first, then by start time.
+    for (const list of map.values()) {
+      list.sort((a, b) => Number(b.all_day) - Number(a.all_day) || a.start_datetime.localeCompare(b.start_datetime));
     }
     return map;
   }, [jobs, tz]);
@@ -435,12 +420,11 @@ export function CalendarClient({
     router.refresh();
   }
 
-  async function saveSchedule(jobId: number, startIso: string, endIso: string, promote: boolean) {
+  async function saveSchedule(jobId: number, when: When, lengthMinutes: number | null, promote: boolean) {
     setErr(null);
     setBusy(true);
     const update: Record<string, unknown> = {
-      start_datetime: startIso,
-      end_datetime: endIso,
+      ...withLength(whenToColumns(when, tz), lengthMinutes),
       updated_at: new Date().toISOString(),
     };
     if (promote) update.status = "scheduled";
@@ -488,6 +472,7 @@ export function CalendarClient({
       .update({
         start_datetime: null,
         end_datetime: null,
+        all_day: false,
         status,
         updated_at: new Date().toISOString(),
       })
@@ -509,7 +494,9 @@ export function CalendarClient({
     done();
   }
 
-  async function createAndSchedule(startIso: string, endIso: string) {
+  // One record: the calendar makes a job (with its contact and property),
+  // dated in the same save.
+  async function createAndSchedule(when: When, lengthMinutes: number | null) {
     setErr(null);
     setBusy(true);
     const result = await createJobManual({
@@ -517,22 +504,12 @@ export function CalendarClient({
       phone: newPhone,
       address: newAddress,
       status: "scheduled",
+      when,
+      lengthMinutes,
+      service: newService,
     });
-    if (!result.ok) {
-      setBusy(false);
-      return setErr(result.error);
-    }
-    const { error } = await supabase
-      .from("jobs")
-      .update({
-        start_datetime: startIso,
-        end_datetime: endIso,
-        service: newService.trim() || null,
-        updated_at: new Date().toISOString(),
-      })
-      .eq("id", result.jobId);
     setBusy(false);
-    if (error) return setErr(error.message);
+    if (!result.ok) return setErr(result.error);
     done();
   }
 
@@ -566,6 +543,7 @@ export function CalendarClient({
           return (
             <div
               key={i}
+              data-day={cell.key}
               role="button"
               tabIndex={0}
               onClick={() => {
@@ -616,7 +594,11 @@ export function CalendarClient({
                       title={`${j.name ?? "—"} · ${j.address ?? ""}`}
                     >
                       <span className="num font-medium mr-1">
-                        {fmtTimeTz(j.start_datetime, tz)}
+                        {j.all_day
+                          ? "All day"
+                          : dayKeyOf(j.start_datetime, tz) === cell.key
+                            ? fmtTimeTz(j.start_datetime, tz)
+                            : "cont."}
                       </span>
                       {j.name || j.service || "—"}
                     </button>
@@ -659,18 +641,8 @@ export function CalendarClient({
           <div className="space-y-3">
             <div className="flex items-center gap-2 flex-wrap">
               {statusChip(eventJob.status)}
-              <span className="num text-sm text-bone-100">
-                {fmtRange(eventJob, tz)}
-              </span>
-              <span className="text-2xs text-bone-400">
-                {dayLabel(
-                  new Intl.DateTimeFormat("en-CA", {
-                    timeZone: tz,
-                    year: "numeric",
-                    month: "2-digit",
-                    day: "2-digit",
-                  }).format(new Date(eventJob.start_datetime)),
-                )}
+              <span className="num text-sm text-bone-100" data-testid="event-when">
+                {whenText(eventJob.start_datetime, eventJob.end_datetime, eventJob.all_day, tz)}
               </span>
             </div>
             {(eventJob.address || eventJob.service) && (
@@ -683,15 +655,14 @@ export function CalendarClient({
             {canWrite && reschedOpen ? (
               <div className="pt-2 border-t border-line-subtle">
                 <ScheduleForm
-                  initialDate={isoToLocalParts(eventJob.start_datetime).date}
-                  initialTime={isoToLocalParts(eventJob.start_datetime).time}
+                  initial={columnsToWhen(eventJob.start_datetime, eventJob.end_datetime, eventJob.all_day, tz)}
                   initialDuration={durationOf(eventJob)}
                   excludeJobId={eventJob.id}
                   allJobs={jobs}
                   tz={tz}
                   busy={busy}
                   submitLabel="Save new time"
-                  onSubmit={(s, e) => saveSchedule(eventJob.id, s, e, false)}
+                  onSubmit={(w, len) => saveSchedule(eventJob.id, w, len, false)}
                 />
               </div>
             ) : canWrite ? (
@@ -865,18 +836,17 @@ export function CalendarClient({
                   </button>
                 </div>
                 <ScheduleForm
-                  initialDate={addDay}
-                  initialTime="09:00"
+                  initial={{ date: addDay, time: "09:00", endDate: null }}
                   initialDuration={2}
                   allJobs={jobs}
                   tz={tz}
                   busy={busy}
                   submitLabel="Book it"
-                  onSubmit={(s, e) =>
+                  onSubmit={(w, len) =>
                     saveSchedule(
                       pickedJob.id,
-                      s,
-                      e,
+                      w,
+                      len,
                       ["lead", "estimated", "accepted", "callback"].includes(pickedJob.status),
                     )
                   }
@@ -933,8 +903,7 @@ export function CalendarClient({
                   />
                 </div>
                 <ScheduleForm
-                  initialDate={addDay}
-                  initialTime="09:00"
+                  initial={{ date: addDay, time: "09:00", endDate: null }}
                   initialDuration={2}
                   allJobs={jobs}
                   tz={tz}

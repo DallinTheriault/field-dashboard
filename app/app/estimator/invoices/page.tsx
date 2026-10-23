@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { wentOut } from "@/lib/invoices/parties";
 import { getCurrentUserRole } from "@/lib/permissions/current-role";
 import { canViewSettings } from "@/lib/permissions/roles";
 import { getTenantFeatureFlags } from "@/lib/features/flags";
@@ -36,6 +37,7 @@ type Row = {
   stripe_invoice_id: string | null;
   jobs: { address: string | null } | null;
   payments: Array<{ amount_cents: number }>;
+  bill_to: { name: string | null; company: string | null } | null;
 };
 
 /** Customer invoices: what's owed, what's still a draft, what's paid. */
@@ -57,7 +59,7 @@ export default async function InvoicesPage({
   const { data } = await supabase
     .from("invoices")
     .select(
-      "id, invoice_number, status, total_cents, customer_name, customer_company, created_at, sent_at, paid_at, stripe_invoice_id, jobs(address), payments(amount_cents)",
+      "id, invoice_number, status, total_cents, customer_name, customer_company, created_at, sent_at, paid_at, stripe_invoice_id, jobs(address), payments(amount_cents), bill_to:contacts!invoices_bill_to_same_tenant(name, company)",
     )
     .not("invoice_number", "is", null)
     .order("created_at", { ascending: false })
@@ -119,7 +121,11 @@ export default async function InvoicesPage({
           {rows.map((inv) => {
             const balance = balanceDueCents(inv.total_cents, inv.payments);
             const days = daysBetween(sentDay(inv), today);
-            const who = [inv.customer_name, inv.customer_company && `(${inv.customer_company})`].filter(Boolean).join(" ");
+            // A draft names its payer as the contact is now (v104).
+            const live = !wentOut(inv) && inv.bill_to;
+            const name = live ? inv.bill_to!.name?.trim() || inv.customer_name : inv.customer_name;
+            const company = live ? inv.bill_to!.company?.trim() || null : inv.customer_company;
+            const who = [name, company && `(${company})`].filter(Boolean).join(" ");
             return (
               <li key={inv.id}>
                 <Link

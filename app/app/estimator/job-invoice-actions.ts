@@ -225,10 +225,12 @@ export async function createInvoiceFromJob(
   if (billToId) {
     const { data: c } = await supabase.from("contacts").select("name, email, phone, company").eq("id", billToId).maybeSingle();
     if (c) {
+      // The payer's own details only: the job's email and phone are the
+      // resident's when someone else pays.
       billTo = {
         name: c.name ?? billTo.name,
-        email: c.email ?? billTo.email,
-        phone: c.phone ?? billTo.phone,
+        email: c.email ?? null,
+        phone: c.phone ?? null,
         company: c.company ?? null,
       };
     } else {
@@ -426,7 +428,7 @@ export async function updateDraftInvoiceRows(
 }
 
 /**
- * "Add minimum trip charge": every other line on the draft goes to $0.00
+ * "Add minimum service charge": every other line on the draft goes to $0.00
  * (keeping what it claims) and the minimum from pricing settings is added.
  */
 export async function applyMinimumCharge(invoiceId: number): Promise<Result> {
@@ -545,7 +547,14 @@ export async function createCardPayLink(
     if (blocked) return { ok: false, error: blocked };
   }
 
-  let customerEmail = inv.customer_email as string | null;
+  // A draft bills whoever its bill-to contact is now (the payer, never the
+  // resident); the invoice row takes the same details when it goes out (v104).
+  const { data: payer } = inv.bill_to_contact_id
+    ? await supabase.from("contacts").select("name, email, phone").eq("id", inv.bill_to_contact_id).maybeSingle()
+    : { data: null };
+  const customerName = (payer?.name as string | null) || (inv.customer_name as string);
+  const customerPhone = payer ? ((payer.phone as string | null) ?? null) : ((inv.customer_phone as string | null) ?? null);
+  let customerEmail = payer ? ((payer.email as string | null) ?? null) : ((inv.customer_email as string | null) ?? null);
   // The Stripe result is saved only if the draft is still exactly this one.
   let readAt = inv.updated_at as string;
   if (!customerEmail) {
@@ -555,6 +564,10 @@ export async function createCardPayLink(
     }
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(typed)) return { ok: false, error: "That email doesn't look right." };
     customerEmail = typed;
+    // The payer's contact first: the draft takes its email from there.
+    if (inv.bill_to_contact_id) {
+      await supabase.from("contacts").update({ email: typed }).eq("id", inv.bill_to_contact_id).is("email", null);
+    }
     const { data: withEmail } = await supabase
       .from("invoices")
       .update({ customer_email: typed })
@@ -563,9 +576,6 @@ export async function createCardPayLink(
       .select("updated_at");
     if (!withEmail?.length) return { ok: false, error: "The invoice changed; reload it and try again." };
     readAt = withEmail[0].updated_at as string;
-    if (inv.bill_to_contact_id) {
-      await supabase.from("contacts").update({ email: typed }).eq("id", inv.bill_to_contact_id).is("email", null);
-    }
   }
 
   const stripe = getEstimatorStripe();
@@ -575,9 +585,9 @@ export async function createCardPayLink(
   let finalizedId: string | null = null;
   try {
     const customer = await stripe.customers.create({
-      name: inv.customer_name,
+      name: customerName,
       email: customerEmail,
-      phone: inv.customer_phone ?? undefined,
+      phone: customerPhone ?? undefined,
       metadata: { field_invoice: inv.invoice_number ?? String(inv.id) },
     });
     const draft = await stripe.invoices.create({

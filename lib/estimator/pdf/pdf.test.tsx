@@ -77,6 +77,20 @@ const spcEntity: PdfEntity = {
   logoSrc: null,
 };
 
+// v104's header: who pays beside where the work was. Josh's shape (a
+// property manager's company and phone; the resident's house) and the
+// fullest one (mailing address, email, unit and work order too).
+const joshParties = {
+  client: { name: "Josh Ellis", company: "Vista Ventures Realty LLC", phone: "(801) 897-6545" },
+  service: ["2830 E Willow Hills Dr, Sandy UT 84093", "Resident: Ronny"],
+  jobNumber: "Job 13",
+};
+const fullParties = {
+  client: { ...joshParties.client, address: "PO Box 1234, Sandy UT 84093", email: "josh@example.com" },
+  service: ["2830 E Willow Hills Dr, Sandy UT 84093, Unit 12", "Resident: Ronny", "Work order #4417"],
+  jobNumber: "Job 13",
+};
+
 describe("invoice pagination", () => {
   it("SPC-2026-002 shape (14 lines, no tax, no pay box) fits ONE page", async () => {
     const buf = await renderInvoicePdf({
@@ -94,10 +108,10 @@ describe("invoice pagination", () => {
     expect(pageCount(buf)).toBe(1);
   });
 
-  it("20 lines (SPC shape: no tax, no pay box) fits ONE page", async () => {
+  it("20 lines (SPC shape: no tax, no pay box) fits ONE page, with Josh's Bill to and Service address", async () => {
     const buf = await renderInvoicePdf({
       entity: spcEntity,
-      client,
+      ...joshParties,
       rows: nRows(20),
       subtotal: 400,
       taxRatePct: 0,
@@ -105,6 +119,22 @@ describe("invoice pagination", () => {
       total: 400,
       invoiceNumber: "SPC-2026-098",
       issueDate: "2026-07-15",
+      dueTerms: "Due on receipt",
+    });
+    expect(pageCount(buf)).toBe(1);
+  });
+
+  it("the fullest Bill to and Service address still fit 18 lines on ONE page", async () => {
+    const buf = await renderInvoicePdf({
+      entity: spcEntity,
+      ...fullParties,
+      rows: nRows(18),
+      subtotal: 380,
+      taxRatePct: 0,
+      taxAmount: 0,
+      total: 380,
+      invoiceNumber: "TPS-2026-099",
+      issueDate: "Oct 22, 2026",
       dueTerms: "Due on receipt",
     });
     expect(pageCount(buf)).toBe(1);

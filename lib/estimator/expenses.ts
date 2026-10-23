@@ -121,7 +121,7 @@ export type InvoiceRow = {
   time_entry_ids?: number[];
   /** Labor lines: the hourly rate the hours are billed at. */
   rate?: number;
-  /** "labor": logged hours × rate. "minimum": the minimum trip charge. */
+  /** "labor": logged hours × rate. "minimum": the minimum service charge. */
   kind?: "labor" | "minimum";
   /** On the invoice at $0.00 because the minimum charge covers it. */
   covered?: boolean;

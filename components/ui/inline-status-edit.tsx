@@ -5,6 +5,8 @@ import { usePathname, useRouter } from "next/navigation";
 import { ChevronDown, Loader2 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { StatusChip } from "@/components/ui/status-chip";
+import { WhenDialog } from "@/components/ui/when-fields";
+import { applyWhen, columnsToWhen, type ScheduleColumns, type When } from "@/lib/schedule";
 
 const STATUSES = [
   "lead",
@@ -25,19 +27,27 @@ type Status = (typeof STATUSES)[number];
  *
  * Mobile/touch: chevron is always visible. Desktop: hover reveals a
  * subtle border lift.
+ *
+ * Scheduled asks "When?" first (given the job's schedule), so the job lands
+ * on the calendar; "No date yet" schedules it without one.
  */
 export function InlineStatusEdit({
   jobId,
   currentStatus,
+  schedule,
+  tz,
 }: {
   jobId: number | string;
   currentStatus: string;
+  schedule?: ScheduleColumns;
+  tz?: string;
 }) {
   const router = useRouter();
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const [asking, setAsking] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -50,18 +60,29 @@ export function InlineStatusEdit({
     return () => document.removeEventListener("mousedown", handleClick);
   }, []);
 
-  async function setStatus(next: Status) {
+  async function setStatus(next: Status, when?: When | null) {
     if (next === currentStatus) {
       setOpen(false);
+      return;
+    }
+    if (next === "scheduled" && schedule && tz && when === undefined) {
+      setOpen(false);
+      setErr(null);
+      setAsking(true);
       return;
     }
     setSaving(true);
     setErr(null);
     const supabase = createClient();
+    const cols =
+      when !== undefined && schedule && tz
+        ? applyWhen(schedule, when ?? { date: null, time: null, endDate: null }, tz)
+        : null;
     const { error } = await supabase
       .from("jobs")
       .update({
         status: next,
+        ...(cols ?? {}),
         updated_at: new Date().toISOString(),
       })
       .eq("id", jobId);
@@ -71,6 +92,7 @@ export function InlineStatusEdit({
       setErr(error.message);
       return;
     }
+    setAsking(false);
     // Completed: the job page asks which days you were there if no hours
     // are logged (mileage). Otherwise refresh so the timeline picks up the
     // new status_log row.
@@ -116,7 +138,18 @@ export function InlineStatusEdit({
         </div>
       )}
 
-      {err && (
+      {asking && schedule && tz && (
+        <WhenDialog
+          initial={columnsToWhen(schedule.start_datetime, schedule.end_datetime, schedule.all_day, tz)}
+          busy={saving}
+          error={err}
+          onSave={(w) => setStatus("scheduled", w)}
+          onNoDate={() => setStatus("scheduled", null)}
+          onClose={() => setAsking(false)}
+        />
+      )}
+
+      {err && !asking && (
         <div className="absolute top-full mt-1 text-2xs text-status-danger">
           {err}
         </div>

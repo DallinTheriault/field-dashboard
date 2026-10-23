@@ -8,6 +8,8 @@ import { createClient } from "@/lib/supabase/client";
 import { TagPicker } from "@/components/tags/tag-picker";
 import { AssignmentSelect } from "@/components/assignment/assignment-select";
 import { updateJobAddress } from "../../_components/actions";
+import { WhenFields } from "@/components/ui/when-fields";
+import { applyWhen, columnsToWhen, whenError, type When } from "@/lib/schedule";
 import type { Tag } from "@/lib/tags/types";
 import type { TeamMember } from "@/lib/team/types";
 
@@ -38,37 +40,24 @@ type JobInput = {
   quoted_price: number | null;
   start_datetime: string | null;
   end_datetime: string | null;
+  all_day: boolean;
+  work_order_number: string;
   status: string;
   notes: string;
   assigned_user_id: string | null;
 };
 
-// Convert ISO string → "YYYY-MM-DDTHH:mm" local for <input type="datetime-local">
-function toLocalInput(iso: string | null): string {
-  if (!iso) return "";
-  const d = new Date(iso);
-  if (isNaN(d.getTime())) return "";
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(
-    d.getHours(),
-  )}:${pad(d.getMinutes())}`;
-}
-
-function fromLocalInput(value: string): string | null {
-  if (!value) return null;
-  const d = new Date(value);
-  if (isNaN(d.getTime())) return null;
-  return d.toISOString();
-}
-
 export function JobEditForm({
   job,
+  tz,
   initialJobTags = [],
   allTags = [],
   teamMembers = [],
   serviceOptions = [],
 }: {
   job: JobInput;
+  /** The business's time zone: When is read and written in it. */
+  tz: string;
   initialJobTags?: Tag[];
   allTags?: Tag[];
   teamMembers?: TeamMember[];
@@ -86,8 +75,11 @@ export function JobEditForm({
   const [quotedPrice, setQuotedPrice] = useState<string>(
     job.quoted_price != null ? (job.quoted_price / 100).toFixed(2) : "",
   );
-  const [startDt, setStartDt] = useState(toLocalInput(job.start_datetime));
-  const [endDt, setEndDt] = useState(toLocalInput(job.end_datetime));
+  const prevSchedule = { start_datetime: job.start_datetime, end_datetime: job.end_datetime, all_day: job.all_day };
+  const [when, setWhen] = useState<When>(columnsToWhen(job.start_datetime, job.end_datetime, job.all_day, tz));
+  // Scheduled with no date has to be said, not left by accident.
+  const [noDateYet, setNoDateYet] = useState(job.status === "scheduled" && !job.start_datetime);
+  const [workOrder, setWorkOrder] = useState(job.work_order_number);
   const [status, setStatus] = useState<Status>(
     (STATUSES.includes(job.status as Status) ? job.status : "lead") as Status,
   );
@@ -139,6 +131,23 @@ export function JobEditForm({
       return;
     }
 
+    const whenProblem = whenError(when);
+    if (whenProblem) {
+      setSaving(false);
+      setErr(whenProblem);
+      return;
+    }
+    if (status === "scheduled" && !when.date && !noDateYet) {
+      setSaving(false);
+      setErr("When? Pick a date for this scheduled job, or tick No date yet.");
+      return;
+    }
+    if (workOrder.trim().length > 40) {
+      setSaving(false);
+      setErr("Work order # is 40 characters at most.");
+      return;
+    }
+
     // The address goes through the server: it re-points the job at the
     // matching property rather than editing a property other jobs may share.
     if (address.trim() !== job.address.trim() || unit.trim() !== job.unit.trim()) {
@@ -159,8 +168,8 @@ export function JobEditForm({
         service: service || null,
         scope: scope || null,
         quoted_price: priceCents,
-        start_datetime: fromLocalInput(startDt),
-        end_datetime: fromLocalInput(endDt),
+        ...applyWhen(prevSchedule, when, tz),
+        work_order_number: workOrder.trim() || null,
         status,
         notes: notes || null,
         assigned_user_id: assignedUserId,
@@ -285,7 +294,24 @@ export function JobEditForm({
         </div>
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+      <div className="field-group" data-testid="job-when">
+        <label className="field-label">When</label>
+        <WhenFields
+          value={when}
+          onChange={(w) => {
+            setWhen(w);
+            if (w.date) setNoDateYet(false);
+          }}
+        />
+        {status === "scheduled" && !when.date && (
+          <label className="flex items-center gap-2 text-xs text-bone-300 mt-1.5">
+            <input type="checkbox" checked={noDateYet} onChange={(e) => setNoDateYet(e.target.checked)} />
+            No date yet
+          </label>
+        )}
+      </div>
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <div className="field-group">
           <label className="field-label">Quoted price ($)</label>
           <input
@@ -299,20 +325,13 @@ export function JobEditForm({
           />
         </div>
         <div className="field-group">
-          <label className="field-label">Start</label>
+          <label className="field-label" htmlFor="job-work-order">Work order #</label>
           <input
-            type="datetime-local"
-            value={startDt}
-            onChange={(e) => setStartDt(e.target.value)}
-            className="font-mono"
-          />
-        </div>
-        <div className="field-group">
-          <label className="field-label">End</label>
-          <input
-            type="datetime-local"
-            value={endDt}
-            onChange={(e) => setEndDt(e.target.value)}
+            id="job-work-order"
+            value={workOrder}
+            onChange={(e) => setWorkOrder(e.target.value)}
+            maxLength={40}
+            placeholder="Optional; prints on the invoice"
             className="font-mono"
           />
         </div>

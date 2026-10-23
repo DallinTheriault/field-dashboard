@@ -177,6 +177,36 @@ function ClientBlock({ client, label }: { client: PdfClient; label: string }) {
   );
 }
 
+/**
+ * Who pays, beside where the work was, in one row so they can't be read as
+ * one person. Bill to: name, company, mailing address, email, phone. Service
+ * address: the property, then "Resident: …" and "Work order #…" when set.
+ */
+function PartiesRow({ billTo, service }: { billTo: PdfClient; service: string[] }) {
+  return (
+    <View style={[s.section, { flexDirection: "row", marginBottom: 12 }]}>
+      <View style={{ flex: 1, paddingRight: 12 }}>
+        <Text style={s.sectionLabel}>Bill to</Text>
+        <Text style={{ fontFamily: "Helvetica-Bold" }}>{billTo.name}</Text>
+        {billTo.company ? <Text>{billTo.company}</Text> : null}
+        {billTo.address ? <Text style={{ color: MUTED }}>{billTo.address}</Text> : null}
+        {billTo.email ? <Text style={{ color: MUTED }}>{billTo.email}</Text> : null}
+        {billTo.phone ? <Text style={{ color: MUTED }}>{billTo.phone}</Text> : null}
+      </View>
+      {service.length > 0 ? (
+        <View style={{ flex: 1 }}>
+          <Text style={s.sectionLabel}>Service address</Text>
+          {service.map((line, i) => (
+            <Text key={i} style={i === 0 ? { fontFamily: "Helvetica-Bold" } : { color: MUTED }}>
+              {line}
+            </Text>
+          ))}
+        </View>
+      ) : null}
+    </View>
+  );
+}
+
 function Row({ r }: { r: PdfRow }) {
   return (
     <View style={s.tr} wrap={false}>
@@ -277,7 +307,12 @@ export function EstimatePdf(p: EstimatePdfProps) {
 
 export interface InvoicePdfProps {
   entity: PdfEntity;
+  /** Bill to: the payer only (lib/invoices/parties). */
   client: PdfClient;
+  /** Service address lines: where the work was, resident, work order. */
+  service?: string[];
+  /** "Job 13", printed beside the invoice number. */
+  jobNumber?: string | null;
   rows: PdfRow[];
   subtotal: number;
   taxRatePct: number;
@@ -298,12 +333,15 @@ export function InvoicePdf(p: InvoicePdfProps) {
         <View style={s.docTitleRow}>
           <Text style={s.docTitle}>INVOICE</Text>
           <View style={s.metaBlock}>
-            <Text style={s.metaStrong}>{p.invoiceNumber}</Text>
+            <Text style={s.metaStrong}>
+              {p.invoiceNumber}
+              {p.jobNumber ? <Text style={{ color: MUTED, fontFamily: "Helvetica" }}> · {p.jobNumber}</Text> : null}
+            </Text>
             <Text>Issued {p.issueDate}</Text>
             <Text>Terms: {p.dueTerms}</Text>
           </View>
         </View>
-        <ClientBlock client={p.client} label="Bill to" />
+        <PartiesRow billTo={p.client} service={p.service ?? []} />
         <RowsTable
           rows={p.rows}
           tail={

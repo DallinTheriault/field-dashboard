@@ -6,6 +6,8 @@ import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { toE164US } from "@/lib/sms/phone";
 import { findOrCreateProperty, repointJobAddress } from "@/lib/jobs/properties";
+import { getTenantTimezone } from "@/lib/dates";
+import { whenError, whenToColumns, withLength, type When } from "@/lib/schedule";
 
 const VALID_STATUSES = [
   "lead",
@@ -76,6 +78,11 @@ export type CreateJobInput = {
   /** Optional "bill to" override; null bills the property's contact. */
   billToContactId?: number | null;
   status?: string;
+  /** When it happens (read in the business's time zone); omit or no date: unscheduled. */
+  when?: When | null;
+  /** A timed one-day job's length (the calendar's duration chips). */
+  lengthMinutes?: number | null;
+  service?: string;
 };
 
 /**
@@ -95,11 +102,18 @@ export async function createJob(input: CreateJobInput): Promise<CreateJobResult>
     return { ok: false, error: "Invalid status." };
   }
 
+  const whenProblem = input.when ? whenError(input.when) : null;
+  if (whenProblem) return { ok: false, error: whenProblem };
+
   const gate = await requireWriterClientId();
   if (!gate.ok) return gate;
   const { clientId } = gate;
 
   const admin = createAdminClient();
+  // Saved with the job, so a scheduled job is never left without its date.
+  const schedule = input.when?.date
+    ? withLength(whenToColumns(input.when, await getTenantTimezone()), input.lengthMinutes)
+    : null;
 
   // ---- 1. Resolve the contact -------------------------------------------
   let contact: {
@@ -245,6 +259,8 @@ export async function createJob(input: CreateJobInput): Promise<CreateJobResult>
       contact_id: contact.id,
       property_id: propertyId,
       bill_to_contact_id: billToContactId,
+      ...(schedule ?? {}),
+      service: (input.service ?? "").trim() || null,
       source: "manual",
     })
     .select("id")
@@ -296,12 +312,18 @@ export async function createJobManual(formData: {
   phone: string;
   address: string;
   status?: string;
+  when?: When | null;
+  lengthMinutes?: number | null;
+  service?: string;
 }): Promise<CreateJobResult> {
   return createJob({
     name: formData.name,
     phone: formData.phone,
     address: formData.address,
     status: formData.status,
+    when: formData.when,
+    lengthMinutes: formData.lengthMinutes,
+    service: formData.service,
   });
 }
 

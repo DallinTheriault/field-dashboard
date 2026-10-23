@@ -5,6 +5,7 @@ import { createClient } from "@/lib/supabase/server";
 import { getTeamMembers } from "@/lib/team/members";
 import { getJobTags, listTagsForClient } from "@/lib/tags/server";
 import { listServiceSuggestions } from "@/lib/jobs/services";
+import { getTenantTimezone } from "@/lib/dates";
 import { JobEditForm } from "./form";
 
 export default async function JobEditPage({
@@ -27,11 +28,12 @@ export default async function JobEditPage({
   // property edit their inline address.
   const property = job.property as { address: string; unit: string | null } | null;
 
-  const [allTags, jobTags, teamMembers, serviceOptions] = await Promise.all([
+  const [allTags, jobTags, teamMembers, serviceOptions, tz] = await Promise.all([
     listTagsForClient(job.client_id),
     getJobTags(Number(job.id)),
     getTeamMembers(job.client_id),
     listServiceSuggestions(job.client_id),
+    getTenantTimezone(),
   ]);
 
   return (
@@ -71,10 +73,13 @@ export default async function JobEditPage({
           quoted_price: job.quoted_price ?? null,
           start_datetime: job.start_datetime ?? null,
           end_datetime: job.end_datetime ?? null,
+          all_day: !!job.all_day,
+          work_order_number: job.work_order_number ?? "",
           status: job.status ?? "lead",
           notes: job.notes ?? "",
           assigned_user_id: job.assigned_user_id ?? null,
         }}
+        tz={tz}
         initialJobTags={jobTags}
         allTags={allTags}
         teamMembers={teamMembers}

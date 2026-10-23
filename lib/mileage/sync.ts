@@ -66,14 +66,14 @@ export async function syncDayTrips(
   const { data: jobRows } = jobIds.length
     ? await admin
         .from("jobs")
-        .select("id, client_id, name, job_number, address, property_id, start_datetime, property:properties(address, unit), contact:contacts!jobs_contact_id_fkey(name)")
+        .select("id, client_id, name, job_number, address, property_id, start_datetime, all_day, property:properties(address, unit), contact:contacts!jobs_contact_id_fkey(name)")
         .in("id", jobIds)
         .eq("client_id", clientId)
     : { data: [] };
 
   const jobs = new Map<number, JobInfo>();
   for (const j of (jobRows ?? []) as unknown as Array<
-    JobLocationRow & { id: number; job_number: string | null; start_datetime: string | null }
+    JobLocationRow & { id: number; job_number: string | null; start_datetime: string | null; all_day: boolean | null }
   >) {
     const prop = Array.isArray(j.property) ? j.property[0] : j.property;
     const street = (j.property_id != null ? prop?.address : j.address)?.trim() || null;
@@ -82,7 +82,8 @@ export async function syncDayTrips(
       label: [j.job_number ?? `Job #${j.id}`, jobContactName(j)].filter(Boolean).join(" "),
       address: street,
       propertyId: j.property_id ?? null,
-      startMinute: j.start_datetime ? minuteOfDay(j.start_datetime, opts.tz) : null,
+      // An all-day job has no start time to order the day's stops by.
+      startMinute: j.start_datetime && !j.all_day ? minuteOfDay(j.start_datetime, opts.tz) : null,
     });
   }
   const bases: Base[] = (baseRows ?? []).map((b) => ({

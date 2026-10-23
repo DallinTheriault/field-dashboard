@@ -2,6 +2,9 @@ import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { buildClientDocRows } from "@/lib/estimator/client-rows";
 import { renderEstimatePdf } from "@/lib/estimator/pdf/render";
+import { getTenantTimezone } from "@/lib/dates";
+import { fmtLongDate } from "@/lib/schedule";
+import { fmtPhoneDisplay } from "@/lib/sms/phone";
 
 /**
  * Client-facing estimate PDF, rendered on demand. Auth via the user's
@@ -91,7 +94,7 @@ export async function GET(
       name: entity.name,
       licenseNumber: entity.license_number,
       address: entity.address,
-      phone: entity.phone,
+      phone: entity.phone ? fmtPhoneDisplay(entity.phone) : null,
       email: entity.email,
       footerText: entity.default_footer_text,
       logoSrc: entity.logo_path,
@@ -99,13 +102,13 @@ export async function GET(
     client: {
       name: job?.name ?? "Customer",
       address: job?.address,
-      phone: job?.phone,
+      phone: job?.phone ? fmtPhoneDisplay(job.phone) : null,
       email: job?.email,
     },
     rows,
     total,
     refNumber,
-    date: (est.estimated_at ?? est.created_at).slice(0, 10),
+    date: fmtLongDate(est.estimated_at ?? est.created_at, await getTenantTimezone()),
     jobTitle: job?.address || job?.name || `Job #${est.job_id}`,
   });
 

@@ -10,6 +10,10 @@ import {
   type PropertyHit,
 } from "./actions";
 import { ContactCombobox } from "./contact-combobox";
+import { WhenFields } from "@/components/ui/when-fields";
+import { whenError, type When } from "@/lib/schedule";
+
+const NO_WHEN: When = { date: null, time: null, endDate: null };
 
 const STATUSES = [
   { value: "lead", label: "Lead" },
@@ -71,6 +75,8 @@ export function AddJobButton({ variant = "button" }: { variant?: "button" | "til
   const [billTo, setBillTo] = useState<ContactHit | null>(null);
 
   const [status, setStatus] = useState<string>("lead");
+  const [when, setWhen] = useState<When>(NO_WHEN);
+  const [noDateYet, setNoDateYet] = useState(false);
   const dialogRef = useRef<HTMLDivElement>(null);
 
   // Load the picked contact's properties for the selector
@@ -119,6 +125,8 @@ export function AddJobButton({ variant = "button" }: { variant?: "button" | "til
     setBillToOpen(false);
     setBillTo(null);
     setStatus("lead");
+    setWhen(NO_WHEN);
+    setNoDateYet(false);
     setError(null);
   }
 
@@ -134,6 +142,16 @@ export function AddJobButton({ variant = "button" }: { variant?: "button" | "til
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
+    const scheduled = status === "scheduled";
+    if (scheduled && !when.date && !noDateYet) {
+      setError("When? Pick a date, or tick No date yet.");
+      return;
+    }
+    const whenProblem = scheduled ? whenError(when) : null;
+    if (whenProblem) {
+      setError(whenProblem);
+      return;
+    }
     setSubmitting(true);
 
     const input = existingMode
@@ -144,6 +162,7 @@ export function AddJobButton({ variant = "button" }: { variant?: "button" | "til
           unit: unit || undefined,
           billToContactId: billTo?.id ?? null,
           status,
+          when: scheduled ? when : null,
         }
       : {
           name: contactQuery,
@@ -151,6 +170,7 @@ export function AddJobButton({ variant = "button" }: { variant?: "button" | "til
           address,
           billToContactId: billTo?.id ?? null,
           status,
+          when: scheduled ? when : null,
         };
 
     const result = await createJob(input);
@@ -391,6 +411,26 @@ export function AddJobButton({ variant = "button" }: { variant?: "button" | "til
                     ))}
                   </select>
                 </div>
+
+                {status === "scheduled" && (
+                  <div data-testid="new-job-when">
+                    <div className="label-eyebrow mb-1 text-bone-200">When?</div>
+                    <WhenFields
+                      value={when}
+                      onChange={(w) => {
+                        setWhen(w);
+                        if (w.date) setNoDateYet(false);
+                      }}
+                      disabled={submitting}
+                    />
+                    {!when.date && (
+                      <label className="flex items-center gap-2 text-xs text-bone-300 mt-1.5">
+                        <input type="checkbox" checked={noDateYet} onChange={(e) => setNoDateYet(e.target.checked)} />
+                        No date yet
+                      </label>
+                    )}
+                  </div>
+                )}
 
                 {error && (
                   <div className="flex items-start gap-2 p-2 rounded-xs bg-status-danger/[0.08] border border-status-danger/20">

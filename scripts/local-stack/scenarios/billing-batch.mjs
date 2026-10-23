@@ -127,8 +127,8 @@ check("under the minimum, the builder suggests billing as minimum",
 await suggest.getByRole("button", { name: "Bill as minimum" }).click();
 const preview = page.getByTestId("invoice-preview");
 const rows = await preview.locator("li[data-row]").evaluateAll((els) => els.map((e) => e.innerText.replace(/\s+/g, " ")));
-check("Bill as minimum: each line and part at $0.00, then the minimum trip charge",
-  rows.join(" | ") === "Replaced toilet fill valve $0.00 | Toilet repair kit $0.00 | Minimum trip charge $150.00" &&
+check("Bill as minimum: each line and part at $0.00, then the minimum service charge",
+  rows.join(" | ") === "Replaced toilet fill valve $0.00 | Toilet repair kit $0.00 | Minimum service charge $150.00" &&
   (await page.getByTestId("preview-subtotal").innerText()) === "$150.00", rows.join(" | "));
 await page.getByRole("button", { name: "Create draft" }).click();
 await page.waitForURL(/\/app\/estimator\/invoices\/\d+$/);
@@ -136,7 +136,7 @@ const minInv = Number(page.url().split("/").pop());
 let i1 = await inv(minInv);
 check("the draft is the minimum invoice", i1.total_cents === 15000 &&
   JSON.stringify(i1.line_items.map((x) => [x.description, x.amount])) ===
-    JSON.stringify([["Replaced toilet fill valve", 0], ["Toilet repair kit", 0], ["Minimum trip charge", 150]]));
+    JSON.stringify([["Replaced toilet fill valve", 0], ["Toilet repair kit", 0], ["Minimum service charge", 150]]));
 const typed = (await adminGet(`tasks?job_id=eq.${ronny.id}&select=id,title,status,unit_price,billable,invoice_id`))[0];
 check("the typed line became a done work line on the job, claimed by the draft",
   typed?.title === "Replaced toilet fill valve" && typed.status === "done" && Number(typed.unit_price) === 0 && typed.billable && typed.invoice_id === minInv);
@@ -242,7 +242,7 @@ check("paid in full, the job reaches Paid", (await billing(pricedJob.id))?.state
 await owner.post("time_entries", { client_id: 8, job_id: pricedJob.id, entry_date: "2026-10-23", hours: 1 });
 check("new hours on the completed job make it ready to invoice again", (await billing(pricedJob.id)).state === "ready");
 
-// --- Add minimum trip charge on a draft ----------------------------------------------------------------
+// --- Add minimum service charge on a draft ----------------------------------------------------------------
 await owner.post("tasks", { client_id: 8, job_id: minJob.id, title: "Swap faucet cartridge", status: "done", qty: 1, unit: "each", unit_price: 60, billable: true, sort_order: 1 });
 await page.goto(`${APP}/app/jobs/${minJob.id}/invoice`);
 await page.waitForLoadState("networkidle");
@@ -252,13 +252,13 @@ const mInv = Number(page.url().split("/").pop());
 await page.waitForLoadState("networkidle");
 const warn = page.getByTestId("min-charge");
 check("a draft under the minimum says so, before tax", (await warn.innerText()).includes("$90.00 under your minimum job charge (before tax)."));
-await warn.getByRole("button", { name: "Add minimum trip charge" }).click();
+await warn.getByRole("button", { name: "Add minimum service charge" }).click();
 const m = await eventually(async () => {
   const x = await inv(mInv);
   return x.total_cents === 15000 ? x : null;
 });
-check("one tap: the other lines go to $0.00 and the minimum trip charge is added",
-  !!m && JSON.stringify(m.line_items.map((x) => [x.description, x.amount])) === JSON.stringify([["Swap faucet cartridge", 0], ["Minimum trip charge", 150]]) &&
+check("one tap: the other lines go to $0.00 and the minimum service charge is added",
+  !!m && JSON.stringify(m.line_items.map((x) => [x.description, x.amount])) === JSON.stringify([["Swap faucet cartridge", 0], ["Minimum service charge", 150]]) &&
   m.line_items[0].task_id !== undefined, JSON.stringify(m?.line_items));
 await page.reload();
 await page.waitForLoadState("networkidle");
