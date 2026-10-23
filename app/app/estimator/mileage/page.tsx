@@ -20,11 +20,16 @@ import { MileageClient } from "./mileage-client";
  * Never on an estimate or invoice, never in the P&L net.
  */
 export default async function MileagePage({ searchParams }: { searchParams: Promise<{ y?: string }> }) {
-  const [session, flags, tz, { y: yParam }] = await Promise.all([
+  // Bases and rates load alongside the role and settings lookups (the
+  // database's row rules scope them).
+  const supabase = await createClient();
+  const [session, flags, tz, { y: yParam }, bases, rates] = await Promise.all([
     getCurrentUserRole(),
     getTenantFeatureFlags(),
     getTenantTimezone(),
     searchParams,
+    loadBases(supabase),
+    loadRatePeriods(supabase),
   ]);
   if (!session) redirect("/login");
   if (!canViewSettings(session.role)) redirect("/app");
@@ -34,15 +39,13 @@ export default async function MileagePage({ searchParams }: { searchParams: Prom
   const currentYear = Number(today.slice(0, 4));
   const year = /^\d{4}$/.test(yParam ?? "") ? Number(yParam) : currentYear;
 
-  // Bring the automatic trips up to date from what's cached; anything that
-  // needs a lookup is worked out by the page right after it loads.
-  await syncDayTrips(createAdminClient(), session.clientId, { network: false, tz });
-
-  const supabase = await createClient();
-  const [trips, bases, rates, catchUp] = await Promise.all([
-    loadTrips(supabase, year, { includeRemoved: true }),
-    loadBases(supabase),
-    loadRatePeriods(supabase),
+  // Bring the automatic trips up to date from what's cached (anything that
+  // needs a lookup is worked out by the page right after it loads), then read
+  // them; the catch-up count doesn't wait for that.
+  const [trips, catchUp] = await Promise.all([
+    syncDayTrips(createAdminClient(), session.clientId, { network: false, tz }).then(() =>
+      loadTrips(supabase, year, { includeRemoved: true }),
+    ),
     jobsWithoutSiteDays(supabase, year, tz),
   ]);
   const totals = yearTotals(

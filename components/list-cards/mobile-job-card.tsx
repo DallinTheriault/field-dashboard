@@ -3,6 +3,7 @@ import { Phone, MapPin, CalendarDays, Briefcase } from "lucide-react";
 import { StatusChip } from "@/components/ui/status-chip";
 import { TagChipList } from "@/components/tags/tag-chip";
 import { BillingChip } from "@/components/ui/billing-chip";
+import { LinkPending } from "@/components/ui/link-pending";
 import type { BillingState } from "@/lib/jobs/billing";
 import type { Tag } from "@/lib/tags/types";
 
@@ -47,11 +48,12 @@ export function MobileJobCard({
       href={`/app/jobs/${job.id}`}
       // Job detail is the most expensive render in the app; letting every
       // visible row prefetch it saturates mobile bandwidth right when the
-      // user taps (perf re-plan step 2). The tap itself now shows an
-      // instant skeleton instead.
+      // user taps (perf re-plan step 2). Without a prefetch the tapped card
+      // shows a spinner at once (LinkPending) until the job page streams in.
       prefetch={false}
-      className="block px-4 py-3 hover:bg-ink-2 active:bg-ink-2 transition-colors"
+      className="relative block px-4 py-3 hover:bg-ink-2 active:bg-ink-2 transition-colors"
     >
+      <LinkPending />
       <div className="flex items-center justify-between gap-3 mb-1.5">
         <div className="text-sm font-medium text-bone-100 truncate">
           {job.name || "—"}

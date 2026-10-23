@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { Building2, Palette, CalendarDays, ScanLine, Users } from "lucide-react";
+import { Building2, Palette, ScanLine, Users } from "lucide-react";
 import { LogoUploader } from "./logo-uploader";
 import { BusinessProfileForm } from "./profile-form";
 import { ColorPicker } from "./color-picker";
@@ -17,8 +17,34 @@ import {
 
 export default async function SettingsPage() {
   const supabase = await createClient();
+  const admin = createAdminClient();
 
-  const session = await getCurrentUserRole();
+  // Scan meter for the AI Receipt Scanning card — this month, tenant rows
+  // only (RLS). The meter is service-role-written; members can only read.
+  const monthStart = new Date();
+  monthStart.setDate(1);
+  monthStart.setHours(0, 0, 0, 0);
+
+  // Two rounds: everything that doesn't need the business id at once, then
+  // the team and its audit log (read with the admin client, so scoped by the
+  // session's business id, never by RLS).
+  const [session, { data: clients }, { data: { user: currentUser } }, { count: scansThisMonth }, { data: usersData }] =
+    await Promise.all([
+      getCurrentUserRole(),
+      supabase
+        .from("Clients")
+        .select(
+          "id, business_name, business_short_name, owner_first_name, owner_email, owner_phone, timezone, brand_logo_url, brand_primary_color, business_website, feature_receipt_ai_enabled",
+        )
+        .limit(1),
+      // Current user for "My profile" (their latest name, not the session's copy).
+      supabase.auth.getUser(),
+      supabase
+        .from("receipt_scans")
+        .select("id", { count: "exact", head: true })
+        .gte("created_at", monthStart.toISOString()),
+      admin.auth.admin.listUsers(),
+    ]);
   if (!session) {
     redirect("/login");
   }
@@ -29,41 +55,11 @@ export default async function SettingsPage() {
     redirect("/app/team");
   }
 
-  const { data: clients } = await supabase
-    .from("Clients")
-    .select(
-      "id, business_name, business_short_name, owner_first_name, owner_email, owner_phone, timezone, brand_logo_url, brand_primary_color, calendar_id, business_website, feature_receipt_ai_enabled",
-    )
-    .limit(1);
-
   const client = clients?.[0];
-
-  // Fetch current user for "My profile" section
-  const { data: { user: currentUser } } = await supabase.auth.getUser();
   const currentUserDisplayName =
     (currentUser?.user_metadata as { display_name?: string } | null | undefined)
       ?.display_name ?? "";
   const currentUserEmail = currentUser?.email ?? "";
-
-  const { data: calCx } = client
-    ? await supabase
-        .from("calendar_connections")
-        .select("calendar_id, connected_at, last_refreshed_at")
-        .eq("client_id", client.id)
-        .maybeSingle()
-    : { data: null };
-
-  // Scan meter for the AI Receipt Scanning card — this month, tenant rows
-  // only (RLS). The meter is service-role-written; members can only read.
-  const monthStart = new Date();
-  monthStart.setDate(1);
-  monthStart.setHours(0, 0, 0, 0);
-  const { count: scansThisMonth } = client
-    ? await supabase
-        .from("receipt_scans")
-        .select("id", { count: "exact", head: true })
-        .gte("created_at", monthStart.toISOString())
-    : { count: 0 };
 
   // Team members for the current tenant
   let teamMembers: Array<{
@@ -85,14 +81,22 @@ export default async function SettingsPage() {
   }> = [];
 
   if (client) {
-    const admin = createAdminClient();
-    const { data: memberships } = await admin
-      .from("client_users")
-      .select("id, auth_user_id, role, created_at")
-      .eq("client_id", client.id)
-      .order("created_at", { ascending: true });
-
-    const { data: usersData } = await admin.auth.admin.listUsers();
+    const [{ data: memberships }, { data: audit }] = await Promise.all([
+      admin
+        .from("client_users")
+        .select("id, auth_user_id, role, created_at")
+        .eq("client_id", session.clientId)
+        .order("created_at", { ascending: true }),
+      // Recent audit entries (last 25) for the activity log section
+      admin
+        .from("team_audit_log")
+        .select(
+          "id, action, actor_user_id, actor_role_at_time, target_email, old_role, new_role, created_at",
+        )
+        .eq("client_id", session.clientId)
+        .order("created_at", { ascending: false })
+        .limit(25),
+    ]);
     const userById = new Map(
       (usersData?.users ?? []).map((u) => [u.id, u.email ?? null]),
     );
@@ -108,16 +112,6 @@ export default async function SettingsPage() {
           is_self: m.auth_user_id === session.userId,
         }));
     }
-
-    // Recent audit entries (last 25) for the activity log section
-    const { data: audit } = await admin
-      .from("team_audit_log")
-      .select(
-        "id, action, actor_user_id, actor_role_at_time, target_email, old_role, new_role, created_at",
-      )
-      .eq("client_id", client.id)
-      .order("created_at", { ascending: false })
-      .limit(25);
 
     auditEntries = (audit ?? []).map((e) => ({
       id: e.id,
@@ -209,56 +203,6 @@ export default async function SettingsPage() {
             enabled={client?.feature_receipt_ai_enabled ?? false}
             scansThisMonth={scansThisMonth ?? 0}
           />
-        </Section>
-
-        {/* Calendar */}
-        <Section
-          icon={CalendarDays}
-          title="Google Calendar"
-          subtitle="Where bookings get added"
-        >
-          <div className="px-4 py-3.5">
-            {calCx ? (
-              <>
-                <div className="flex items-center gap-2 mb-2">
-                  <span className="w-1.5 h-1.5 rounded-full bg-status-completed" />
-                  <span className="text-sm text-bone-100">Connected</span>
-                </div>
-                <div className="text-xs text-bone-400 mb-3 break-all">
-                  {calCx.calendar_id}
-                </div>
-                <button className="btn-secondary text-xs h-8" disabled>
-                  Reconnect (coming soon)
-                </button>
-              </>
-            ) : client?.calendar_id ? (
-              <>
-                <div className="flex items-center gap-2 mb-2">
-                  <span className="w-1.5 h-1.5 rounded-full bg-status-progress" />
-                  <span className="text-sm text-bone-100">Service-account share</span>
-                </div>
-                <div className="text-xs text-bone-400 mb-3 break-all">
-                  {client.calendar_id}
-                </div>
-                <p className="text-2xs text-bone-400 mb-3 max-w-md">
-                  This calendar is shared with the Field service account. For
-                  better isolation, switch to per-tenant OAuth below.
-                </p>
-                <button className="btn-secondary text-xs h-8" disabled>
-                  Connect with Google (coming in v0.5)
-                </button>
-              </>
-            ) : (
-              <>
-                <div className="text-sm text-bone-100 mb-2">
-                  No calendar connected
-                </div>
-                <button className="btn-primary text-xs h-8" disabled>
-                  Connect Google Calendar (coming in v0.5)
-                </button>
-              </>
-            )}
-          </div>
         </Section>
 
       </div>

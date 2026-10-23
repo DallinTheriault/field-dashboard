@@ -34,59 +34,48 @@ export default async function CalendarPage({
 }: {
   searchParams: Promise<{ m?: string }>;
 }) {
-  const flags = await getTenantFeatureFlags();
-  if (!flags.calendar) {
-    return (
-      <FeatureDisabledPanel
-        featureName="Calendar"
-        description="Calendar integration is in development and not yet available for your account."
-      />
-    );
-  }
-
   const supabase = await createClient();
-  const [{ m }, tz, session] = await Promise.all([
-    searchParams,
-    getTenantTimezone(),
-    getCurrentUserRole(),
-  ]);
-  const canWrite =
-    session?.role === "owner" || session?.role === "manager";
+  const { m } = await searchParams;
+  const asked = m && /^\d{4}-\d{2}$/.test(m) ? m.split("-").map(Number) : null;
 
-  // "Today" and the default month are the tenant's, not the server's.
-  const todayKey = dayKeyInTz(new Date(), tz);
-  const [todayY, todayM] = todayKey.split("-").map(Number);
-  let y: number;
-  let mo: number; // 1-based month
-  if (m && /^\d{4}-\d{2}$/.test(m)) {
-    [y, mo] = m.split("-").map(Number);
-  } else {
-    y = todayY;
-    mo = todayM;
-  }
-
-  // 6-week grid starting on the Sunday before the 1st (pure UTC calendar math)
-  const first = utcDate(y, mo - 1, 1);
-  const gridStart = utcDate(y, mo - 1, 1 - first.getUTCDay());
-  const cellDates: Date[] = Array.from({ length: 42 }, (_, i) =>
-    utcDate(gridStart.getUTCFullYear(), gridStart.getUTCMonth(), gridStart.getUTCDate() + i),
-  );
-
-  // Fetch jobs that touch this window (start before its end, and end, or
-  // start when there's no end, after its start), padded a day each side so
-  // timezone offsets can't drop edge events; the client puts each job on
-  // every day it covers, by tenant-timezone date.
+  // The month's jobs (start before the window's end, and end, or start when
+  // there's no end, after its start), padded a day each side so timezone
+  // offsets can't drop edge events; the client puts each job on every day it
+  // covers, by tenant-timezone date. 6-week grid starting on the Sunday
+  // before the 1st (pure UTC calendar math).
   const DAY = 24 * 60 * 60 * 1000;
-  const windowStart = new Date(gridStart.getTime() - DAY).toISOString();
-  const windowEnd = new Date(cellDates[41].getTime() + 2 * DAY).toISOString();
-  const [{ data: rawJobs }, { data: rawUnscheduled }] = await Promise.all([
-    supabase
+  const gridOf = (y: number, mo: number) => {
+    const first = utcDate(y, mo - 1, 1);
+    const gridStart = utcDate(y, mo - 1, 1 - first.getUTCDay());
+    const cellDates: Date[] = Array.from({ length: 42 }, (_, i) =>
+      utcDate(gridStart.getUTCFullYear(), gridStart.getUTCMonth(), gridStart.getUTCDate() + i),
+    );
+    return { gridStart, cellDates };
+  };
+  const monthJobs = (y: number, mo: number) => {
+    const { gridStart, cellDates } = gridOf(y, mo);
+    const windowStart = new Date(gridStart.getTime() - DAY).toISOString();
+    const windowEnd = new Date(cellDates[41].getTime() + 2 * DAY).toISOString();
+    return supabase
       .from("jobs")
       .select("id, name, address, service, status, start_datetime, end_datetime, all_day")
       .is("archived_at", null)
       .lte("start_datetime", windowEnd)
       .or(`end_datetime.gte."${windowStart}",and(end_datetime.is.null,start_datetime.gte."${windowStart}")`)
-      .order("start_datetime", { ascending: true }),
+      .order("start_datetime", { ascending: true });
+  };
+
+  // One round: the jobs load alongside the settings and role lookups (the
+  // database's row rules scope them). Without ?m= the month is a guess from
+  // today's date in UTC, re-read only if the business's own time zone puts
+  // today in another month (hours around the 1st).
+  const now = new Date();
+  const [gy, gmo] = asked ?? [now.getUTCFullYear(), now.getUTCMonth() + 1];
+  const [flags, tz, session, guessed, { data: rawUnscheduled }] = await Promise.all([
+    getTenantFeatureFlags(),
+    getTenantTimezone(),
+    getCurrentUserRole(),
+    monthJobs(gy, gmo),
     // Bookable backlog for the "Schedule a job → existing" flow.
     supabase
       .from("jobs")
@@ -97,6 +86,23 @@ export default async function CalendarPage({
       .order("created_at", { ascending: false })
       .limit(100),
   ]);
+  if (!flags.calendar) {
+    return (
+      <FeatureDisabledPanel
+        featureName="Calendar"
+        description="Calendar integration is in development and not yet available for your account."
+      />
+    );
+  }
+  const canWrite =
+    session?.role === "owner" || session?.role === "manager";
+
+  // "Today" and the default month are the tenant's, not the server's.
+  const todayKey = dayKeyInTz(new Date(), tz);
+  const [todayY, todayM] = todayKey.split("-").map(Number);
+  const [y, mo] = asked ?? [todayY, todayM]; // mo is 1-based
+  const { cellDates } = gridOf(y, mo);
+  const { data: rawJobs } = y === gy && mo === gmo ? guessed : await monthJobs(y, mo);
 
   const jobs = ((rawJobs ?? []) as CalJob[]).filter(
     (j) => j.start_datetime != null,

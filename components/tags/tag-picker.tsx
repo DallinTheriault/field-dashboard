@@ -2,7 +2,7 @@
 
 import { useState, useMemo, useRef, useEffect } from "react";
 import { Search, Plus, Tag as TagIcon } from "lucide-react";
-import { createClient } from "@/lib/supabase/client";
+import { browserSupabase } from "@/lib/supabase/lazy-client";
 import type { Tag } from "@/lib/tags/types";
 import { nextTagColor, TAG_COLORS } from "@/lib/tags/colors";
 import { TagChip } from "./tag-chip";
@@ -97,10 +97,10 @@ export function TagPicker({
   }
 
   async function createNewTag() {
+    const supabase = await browserSupabase();
     if (!query.trim() || creating) return;
     setCreating(true);
     setCreateError(null);
-    const supabase = createClient();
     const { data, error } = await supabase
       .from("tags")
       .insert({

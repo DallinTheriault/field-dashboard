@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { Clock, Lock, Plus, Trash2 } from "lucide-react";
-import { createClient } from "@/lib/supabase/client";
+import { browserSupabase } from "@/lib/supabase/lazy-client";
 import { syncTripsNow } from "./mileage/mileage-actions";
 
 type TimeEntry = {
@@ -23,6 +23,52 @@ function billingOf(invoiceId: number | null, coveredAt: string | null, inv: Entr
   if (!wentOut) return { label: `on draft ${number}`, locked: false };
   return { label: coveredAt ? `covered by ${number}` : `billed on ${number}`, locked: true };
 }
+
+export type ActualsTimeRow = {
+  id: number;
+  entry_date: string;
+  hours: number | string;
+  note: string | null;
+  invoice_id: number | null;
+  covered_at: string | null;
+  invoice: unknown;
+};
+export type ActualsMaterialRow = {
+  id: number;
+  description: string;
+  qty: number | string | null;
+  amount: number | string;
+  assignment: string | null;
+  invoiced_on: unknown;
+};
+export type ActualsInitial = {
+  time: ActualsTimeRow[];
+  materials: ActualsMaterialRow[];
+  /** The latest estimate's line hours; null without an estimate. */
+  estimateHours: Array<number | string> | null;
+};
+
+const toEntries = (time: ActualsTimeRow[]): TimeEntry[] =>
+  time.map((t) => ({
+    id: t.id,
+    entry_date: t.entry_date,
+    note: t.note,
+    hours: Number(t.hours),
+    billing: billingOf(t.invoice_id, t.covered_at, t.invoice as EntryInvoice),
+  }));
+const toMaterials = (mats: ActualsMaterialRow[]): ActualMaterial[] =>
+  mats
+    .filter((m) => m.assignment !== "stock")
+    .map((m) => ({
+      id: m.id,
+      description: m.description,
+      qty: m.qty === null ? null : Number(m.qty),
+      actual_cost: Number(m.amount),
+      assignment: m.assignment ?? "job_in_bid",
+      invoiced: m.invoiced_on !== null && m.invoiced_on !== undefined,
+    }));
+const toEstHours = (hours: Array<number | string> | null) =>
+  hours === null || hours.length === 0 ? null : hours.reduce<number>((s, h) => s + Number(h), 0);
 
 type ActualMaterial = {
   id: number;
@@ -51,12 +97,20 @@ function todayISO(): string {
  * materials with real dollars spent. Feeds the Insights variance loop.
  * Owner/manager only — hours and costs are pricing internals.
  */
-export function JobActuals({ clientId, jobId }: { clientId: number; jobId: number }) {
-  const supabase = createClient();
-  const [loading, setLoading] = useState(true);
-  const [entries, setEntries] = useState<TimeEntry[]>([]);
-  const [materials, setMaterials] = useState<ActualMaterial[]>([]);
-  const [estHours, setEstHours] = useState<number | null>(null);
+export function JobActuals({
+  clientId,
+  jobId,
+  initial,
+}: {
+  clientId: number;
+  jobId: number;
+  /** Rendered with the page (no load after it shows); reloads after edits. */
+  initial?: ActualsInitial;
+}) {
+  const [loading, setLoading] = useState(!initial);
+  const [entries, setEntries] = useState<TimeEntry[]>(initial ? toEntries(initial.time) : []);
+  const [materials, setMaterials] = useState<ActualMaterial[]>(initial ? toMaterials(initial.materials) : []);
+  const [estHours, setEstHours] = useState<number | null>(initial ? toEstHours(initial.estimateHours) : null);
   const [err, setErr] = useState<string | null>(null);
   // Quick-entry state
   const [date, setDate] = useState(todayISO());
@@ -64,6 +118,7 @@ export function JobActuals({ clientId, jobId }: { clientId: number; jobId: numbe
   const [note, setNote] = useState("");
 
   async function load() {
+    const supabase = await browserSupabase();
     const [{ data: time }, { data: mats }, { data: est }] = await Promise.all([
       supabase
         .from("time_entries")
@@ -85,38 +140,16 @@ export function JobActuals({ clientId, jobId }: { clientId: number; jobId: numbe
         .limit(1)
         .maybeSingle(),
     ]);
-    setEntries(
-      (time ?? []).map((t) => ({
-        id: t.id,
-        entry_date: t.entry_date,
-        note: t.note,
-        hours: Number(t.hours),
-        billing: billingOf(t.invoice_id, t.covered_at, t.invoice as unknown as EntryInvoice),
-      })),
-    );
-    setMaterials(
-      (mats ?? []).map((m) => ({
-        id: m.id,
-        description: m.description,
-        qty: m.qty === null ? null : Number(m.qty),
-        actual_cost: Number(m.amount),
-        assignment: m.assignment ?? "job_in_bid",
-        invoiced: m.invoiced_on !== null && m.invoiced_on !== undefined,
-      })),
-    );
-    const lines = (est?.estimate_line_items ?? []) as Array<{
-      resolved_labor_hours: number;
-    }>;
-    setEstHours(
-      lines.length > 0
-        ? lines.reduce((s, l) => s + Number(l.resolved_labor_hours), 0)
-        : null,
-    );
+    setEntries(toEntries((time ?? []) as ActualsTimeRow[]));
+    setMaterials(toMaterials((mats ?? []) as ActualsMaterialRow[]));
+    const lines = (est?.estimate_line_items ?? []) as Array<{ resolved_labor_hours: number }>;
+    setEstHours(est ? toEstHours(lines.map((l) => l.resolved_labor_hours)) : null);
     setLoading(false);
   }
 
+  // The page renders the first load; fetch here only without it.
   useEffect(() => {
-    load();
+    if (!initial) load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [jobId]);
 
@@ -124,6 +157,7 @@ export function JobActuals({ clientId, jobId }: { clientId: number; jobId: numbe
   const matTotal = materials.reduce((s, m) => s + m.actual_cost, 0);
 
   async function addTime() {
+    const supabase = await browserSupabase();
     setErr(null);
     const h = parseFloat(hours);
     if (!Number.isFinite(h) || h <= 0) {
@@ -149,6 +183,7 @@ export function JobActuals({ clientId, jobId }: { clientId: number; jobId: numbe
   }
 
   async function removeTime(id: number) {
+    const supabase = await browserSupabase();
     setErr(null);
     const { error } = await supabase.from("time_entries").delete().eq("id", id);
     if (error) setErr(error.message);

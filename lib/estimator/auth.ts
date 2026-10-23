@@ -1,4 +1,5 @@
 import { createClient } from "@/lib/supabase/server";
+import { getAuthUser } from "@/lib/supabase/request-cache";
 import { isValidRole, type Role } from "@/lib/permissions/roles";
 
 export type WriterAuth =
@@ -11,14 +12,13 @@ export type WriterAuth =
 
 /**
  * Server-action gate for estimator writes: signed-in owner/manager of a
- * tenant. Mirrors the user_can_write_client RLS policy; RLS remains the
+ * tenant. The session is verified in memory (getClaims, ES256), not with a
+ * Supabase Auth round trip. Mirrors the user_can_write_client RLS policy; RLS remains the
  * backstop on every query made with the returned client.
  */
 export async function requireWriter(): Promise<WriterAuth> {
   const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const user = await getAuthUser();
   if (!user) return { ok: false, error: "Not signed in." };
 
   const { data: memberships } = await supabase
@@ -52,9 +52,7 @@ export type MemberAuth =
  */
 export async function requireMember(): Promise<MemberAuth> {
   const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const user = await getAuthUser();
   if (!user) return { ok: false, error: "Not signed in." };
 
   const { data: memberships } = await supabase

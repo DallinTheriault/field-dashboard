@@ -23,17 +23,28 @@ function fmtDay(d: string | null, tz: string): string | null {
   return new Date(d).toLocaleDateString("en-US", { timeZone: tz, weekday: "short", month: "short", day: "numeric" });
 }
 
+function receiptsQuery(supabase: Awaited<ReturnType<typeof createClient>>) {
+  return supabase
+    .from("purchases")
+    .select(`id, vendor, purchase_date, total, tax, receipt_paths, created_by, ${PURCHASE_SCAN_COLS}, expenses(count)`)
+    .not("scan_status", "is", null)
+    .order("id", { ascending: false })
+    .limit(20);
+}
+
 /**
  * Home: three things to start (a job, a receipt, a contact), then what needs
  * doing: open jobs, jobs ready to invoice, and invoices still owed.
  */
 export default async function HomePage() {
-  const [tz, session, flags] = await Promise.all([getTenantTimezone(), getCurrentUserRole(), getTenantFeatureFlags()]);
+  // One round: the role and settings lookups run alongside the page's queries
+  // (the database's row rules already scope them to this business); the role
+  // only decides which results are shown.
   const supabase = await createClient();
-  const money = flags.estimator && session !== null && canViewSettings(session.role);
-
-  const scanning = flags.estimator && flags.receiptAi && session !== null;
-  const [openRes, pickRes, billingRes, unpaidRes, receiptsRes] = await Promise.all([
+  const [tz, session, flags, openRes, pickRes, billingAll, unpaidAll, receiptsAll] = await Promise.all([
+    getTenantTimezone(),
+    getCurrentUserRole(),
+    getTenantFeatureFlags(),
     supabase
       .from("jobs")
       .select(`id, name, status, start_datetime, ${JOB_LOCATION_SELECT}`)
@@ -52,26 +63,24 @@ export default async function HomePage() {
       .limit(200),
     // Billing state per job (v099): which jobs are ready to invoice, and the
     // picker's labels.
-    money ? supabase.from("job_billing").select(BILLING_COLS) : Promise.resolve({ data: [] }),
-    money
-      ? supabase.from("invoices")
-          .select("id, invoice_number, customer_name, customer_company, total_cents, sent_at, created_at, jobs(address), payments(amount_cents)")
-          .in("status", ["sent", "overdue"])
-          .not("invoice_number", "is", null)
-      : Promise.resolve({ data: [] }),
-    // Scanned receipts still to check. Members see the ones they took.
-    scanning
-      ? (() => {
-          const q = supabase
-            .from("purchases")
-            .select(`id, vendor, purchase_date, total, tax, receipt_paths, created_by, ${PURCHASE_SCAN_COLS}, expenses(count)`)
-            .not("scan_status", "is", null)
-            .order("id", { ascending: false })
-            .limit(20);
-          return money ? q : q.eq("created_by", session!.userId);
-        })()
-      : Promise.resolve({ data: [] }),
+    supabase.from("job_billing").select(BILLING_COLS),
+    supabase.from("invoices")
+      .select("id, invoice_number, customer_name, customer_company, total_cents, sent_at, created_at, jobs(address), payments(amount_cents)")
+      .in("status", ["sent", "overdue"])
+      .not("invoice_number", "is", null),
+    // Scanned receipts still to check.
+    receiptsQuery(supabase),
   ]);
+  const money = flags.estimator && session !== null && canViewSettings(session.role);
+  const scanning = flags.estimator && flags.receiptAi && session !== null;
+  const billingRes = money ? billingAll : { data: [] };
+  const unpaidRes = money ? unpaidAll : { data: [] };
+  // Members see the receipts they took (a second round, members only).
+  const receiptsRes = !scanning
+    ? { data: [] }
+    : money
+      ? receiptsAll
+      : await receiptsQuery(supabase).eq("created_by", session!.userId);
 
   const now = Date.now();
   const toCheck = ((receiptsRes.data ?? []) as unknown as Array<Parameters<typeof toPendingReceipt>[0] & {

@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
-import { createClient } from "@/lib/supabase/client";
+import { browserSupabase } from "@/lib/supabase/lazy-client";
 import { AlertCircle } from "lucide-react";
 
 // Configurable thresholds. Conservative for business data.
@@ -34,7 +34,7 @@ export function IdleTimeout() {
 
   const forceLogout = useCallback(async () => {
     try {
-      const supabase = createClient();
+      const supabase = await browserSupabase();
       await supabase.auth.signOut();
     } catch {
       // ignore

@@ -4,7 +4,7 @@ import { Users, Search, Plus, Download } from "lucide-react";
 import { ClickableTableRow } from "@/components/ui/clickable-table-row";
 import { MobileContactCard } from "@/components/list-cards/mobile-contact-card";
 import { TagChipList } from "@/components/tags/tag-chip";
-import { getTagsByContactIds } from "@/lib/tags/server";
+import type { Tag } from "@/lib/tags/types";
 import { getTenantTimezone } from "@/lib/dates";
 
 function fmtPhone(p: string | null): string {
@@ -33,13 +33,14 @@ export default async function ContactsPage({
 }: {
   searchParams: Promise<{ q?: string }>;
 }) {
-  const tz = await getTenantTimezone();
   const supabase = await createClient();
   const { q } = await searchParams;
 
+  // One round: contacts (each with its tags) load alongside the settings
+  // lookup; the database's row rules scope them to this business.
   let query = supabase
     .from("contacts")
-    .select("id, name, phone, email, address, updated_at, created_at")
+    .select("id, name, phone, email, address, updated_at, created_at, contact_tags(tag:tags(*))")
     .is("archived_at", null)
     .order("updated_at", { ascending: false })
     .limit(200);
@@ -50,11 +51,14 @@ export default async function ContactsPage({
     );
   }
 
-  const { data: contacts, error } = await query;
+  const [tz, { data: contacts, error }] = await Promise.all([getTenantTimezone(), query]);
   const rows = contacts ?? [];
-
-  // Bulk-fetch tags for all visible contacts in one round-trip
-  const tagsByContact = await getTagsByContactIds(rows.map((c) => c.id));
+  const tagsByContact = new Map(
+    rows.map((c) => [
+      c.id,
+      ((c.contact_tags ?? []) as unknown as Array<{ tag: Tag | null }>).map((ct) => ct.tag).filter((t): t is Tag => t !== null),
+    ]),
+  );
 
   return (
     <div>

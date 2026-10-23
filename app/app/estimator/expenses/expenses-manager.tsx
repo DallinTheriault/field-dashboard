@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Paperclip, Plus, Trash2 } from "lucide-react";
-import { createClient } from "@/lib/supabase/client";
+import { browserSupabase } from "@/lib/supabase/lazy-client";
 import { EXPENSE_CATEGORIES } from "@/lib/estimator/expenses";
 
 type Expense = {
@@ -45,7 +45,6 @@ export function ExpensesManager({
   readOnly?: boolean;
 }) {
   const router = useRouter();
-  const supabase = createClient();
   const [date, setDate] = useState(todayISO());
   const [category, setCategory] = useState<string>(EXPENSE_CATEGORIES[0]);
   const [description, setDescription] = useState("");
@@ -54,6 +53,7 @@ export function ExpensesManager({
   const [err, setErr] = useState<string | null>(null);
 
   async function add() {
+    const supabase = await browserSupabase();
     setErr(null);
     const amt = parseFloat(amount);
     if (!description.trim()) return setErr("Describe the expense.");
@@ -74,6 +74,7 @@ export function ExpensesManager({
   }
 
   async function remove(e: Expense) {
+    const supabase = await browserSupabase();
     if (!confirm(`Delete "${e.description}" (${usd.format(e.amount)})?`)) return;
     const { error } = await supabase.from("expenses").delete().eq("id", e.id);
     if (error) setErr(error.message);

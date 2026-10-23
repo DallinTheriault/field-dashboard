@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { Loader2, User } from "lucide-react";
-import { createClient } from "@/lib/supabase/client";
+import { browserSupabase } from "@/lib/supabase/lazy-client";
 
 /**
  * User-level profile editor. Saves to auth.users.raw_user_meta_data.display_name
@@ -22,10 +22,10 @@ export function MyProfileForm({
   const [err, setErr] = useState<string | null>(null);
 
   async function handleSave() {
+    const supabase = await browserSupabase();
     setSaving(true);
     setErr(null);
     setSaved(false);
-    const supabase = createClient();
     const { error } = await supabase.auth.updateUser({
       data: { display_name: displayName.trim() || null },
     });

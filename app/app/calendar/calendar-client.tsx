@@ -17,7 +17,7 @@ import {
   X,
 } from "lucide-react";
 import { cn } from "@/lib/cn";
-import { createClient } from "@/lib/supabase/client";
+import { browserSupabase } from "@/lib/supabase/lazy-client";
 import { createJobManual } from "../jobs/_components/actions";
 import { WhenFields } from "@/components/ui/when-fields";
 import {
@@ -336,7 +336,6 @@ export function CalendarClient({
   canWrite: boolean;
 }) {
   const router = useRouter();
-  const supabase = createClient();
 
   // One sheet at a time; the day sheet stays "underneath" so back works.
   const [dayKey, setDayKey] = useState<string | null>(null);
@@ -421,6 +420,7 @@ export function CalendarClient({
   }
 
   async function saveSchedule(jobId: number, when: When, lengthMinutes: number | null, promote: boolean) {
+    const supabase = await browserSupabase();
     setErr(null);
     setBusy(true);
     const update: Record<string, unknown> = {
@@ -435,6 +435,7 @@ export function CalendarClient({
   }
 
   async function unschedule(job: CalJob) {
+    const supabase = await browserSupabase();
     setErr(null);
     setBusy(true);
     // Drop a 'scheduled' job back to what it was BEFORE booking. The status
@@ -483,6 +484,7 @@ export function CalendarClient({
   }
 
   async function cancelJob(job: CalJob) {
+    const supabase = await browserSupabase();
     setErr(null);
     setBusy(true);
     const { error } = await supabase

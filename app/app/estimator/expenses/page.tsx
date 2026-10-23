@@ -32,49 +32,53 @@ export default async function ExpensesPage({
 }: {
   searchParams: Promise<{ y?: string }>;
 }) {
-  const [session, flags, tz, { y: yParam }] = await Promise.all([
+  const { y: yParam } = await searchParams;
+  const asked = /^\d{4}$/.test(yParam ?? "") ? Number(yParam) : null;
+  const supabase = await createClient();
+  // Every row here is dated with a plain calendar date (payments by the day
+  // received), so the year boundary needs no timezone math.
+  const load = (year: number) =>
+    Promise.all([
+      supabase
+        .from("expenses")
+        .select(
+          "id, expense_date, category, description, amount, qty, assignment, receipt_path, job_id, purchase_id, jobs(name), purchases(vendor, receipt_path)",
+        )
+        .gte("expense_date", `${year}-01-01`)
+        .lte("expense_date", `${year}-12-31`)
+        .order("expense_date", { ascending: false })
+        .order("id", { ascending: false }),
+      // Income is payments by the day the money came in: a December part
+      // payment is December income even if the rest arrives in January.
+      supabase
+        .from("payments")
+        .select("amount_cents")
+        .gte("received_on", `${year}-01-01`)
+        .lte("received_on", `${year}-12-31`),
+      // Mileage is stated separately and NEVER summed into the P&L (§6.3):
+      // standard mileage and actual vehicle costs are alternative methods.
+      loadTrips(supabase, year),
+      loadRatePeriods(supabase),
+    ] as const);
+
+  // One round: the year's rows load alongside the role and settings lookups
+  // (the database's row rules scope them). Without ?y= the year is a guess
+  // from today's date in UTC, re-read only if the business's own time zone
+  // puts today in another year (hours around New Year).
+  const guess = asked ?? new Date().getUTCFullYear();
+  const [session, flags, tz, first] = await Promise.all([
     getCurrentUserRole(),
     getTenantFeatureFlags(),
     getTenantTimezone(),
-    searchParams,
+    load(guess),
   ]);
   if (!session) redirect("/login");
   if (!canViewSettings(session.role)) redirect("/app");
   if (!flags.estimator) return <FeatureDisabledPanel featureName="Estimator" />;
 
   const currentYear = Number(dayKeyInTz(new Date(), tz).slice(0, 4));
-  const year = /^\d{4}$/.test(yParam ?? "") ? Number(yParam) : currentYear;
-
-  const supabase = await createClient();
-  // Every row here is dated with a plain calendar date (payments by the day
-  // received), so the year boundary needs no timezone math.
-  const [
-    { data: expenseRows },
-    { data: paymentRows },
-    trips,
-    ratePeriods,
-  ] = await Promise.all([
-    supabase
-      .from("expenses")
-      .select(
-        "id, expense_date, category, description, amount, qty, assignment, receipt_path, job_id, purchase_id, jobs(name), purchases(vendor, receipt_path)",
-      )
-      .gte("expense_date", `${year}-01-01`)
-      .lte("expense_date", `${year}-12-31`)
-      .order("expense_date", { ascending: false })
-      .order("id", { ascending: false }),
-    // Income is payments by the day the money came in: a December part
-    // payment is December income even if the rest arrives in January.
-    supabase
-      .from("payments")
-      .select("amount_cents")
-      .gte("received_on", `${year}-01-01`)
-      .lte("received_on", `${year}-12-31`),
-    // Mileage is stated separately and NEVER summed into the P&L (§6.3):
-    // standard mileage and actual vehicle costs are alternative methods.
-    loadTrips(supabase, year),
-    loadRatePeriods(supabase),
-  ]);
+  const year = asked ?? currentYear;
+  const [{ data: expenseRows }, { data: paymentRows }, trips, ratePeriods] = year === guess ? first : await load(year);
 
   const expenses = (expenseRows ?? []).map((e) => {
     const job = e.jobs as unknown as { name: string | null } | null;

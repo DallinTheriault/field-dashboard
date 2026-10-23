@@ -5,7 +5,7 @@ import { ClickableTableRow } from "@/components/ui/clickable-table-row";
 import { MobileJobCard } from "@/components/list-cards/mobile-job-card";
 import { TagChipList } from "@/components/tags/tag-chip";
 import { AddJobButton } from "./_components/add-job-button";
-import { getTagsByJobIds, listTagsForClient } from "@/lib/tags/server";
+import type { Tag } from "@/lib/tags/types";
 import { Download } from "lucide-react";
 import { getTenantTimezone } from "@/lib/dates";
 import { getCurrentUserRole } from "@/lib/permissions/current-role";
@@ -32,69 +32,61 @@ export default async function JobsPage({
   const supabase = await createClient();
   const { status, tag: tagIdParam, billing: billingParam } = await searchParams;
 
-  // Identify tenant for tag list — the request-cached role lookup shares
-  // its auth + membership round-trips with the layout and other pages.
-  const [tz, session, flags] = await Promise.all([
+  // One round: the role and settings lookups, billing, the jobs (each with its
+  // tags) and the tag list all run together; the database's row rules scope
+  // every query to this business. Billing and tag filters apply to the result.
+  let jobsQuery = supabase
+    .from("jobs")
+    .select(`id, name, phone, service, status, quoted_price, start_datetime, created_at, ${JOB_LOCATION_SELECT}, job_tags(tag:tags(*))`)
+    .is("archived_at", null)
+    .order("created_at", { ascending: false });
+  if (status) jobsQuery = jobsQuery.eq("status", status);
+  const [tz, session, flags, billingRes, jobsRes, tagsRes] = await Promise.all([
     getTenantTimezone(),
     getCurrentUserRole(),
     getTenantFeatureFlags(),
+    supabase.from("job_billing").select(BILLING_COLS),
+    jobsQuery,
+    supabase.from("tags").select("*").order("use_count", { ascending: false }).order("created_at", { ascending: false }),
   ]);
   const clientId = session?.clientId ?? null;
   // Billing state (v099) is money: owners and managers, estimator on.
   const money = flags.estimator && session !== null && canViewSettings(session.role);
   const billingFilter = money && (billingParam === "unpaid" || billingParam === "paid") ? billingParam : null;
   const billing: Map<number, JobBilling> = money
-    ? billingByJob((await supabase.from("job_billing").select(BILLING_COLS)).data as Array<Record<string, unknown>> | null)
+    ? billingByJob(billingRes.data as Array<Record<string, unknown>> | null)
     : new Map();
+  const allTags = ((tagsRes.data ?? []) as Tag[]).filter((t) => t.client_id === clientId);
 
-  let baseQuery = supabase
-    .from("jobs")
-    .select(`id, name, phone, service, status, quoted_price, start_datetime, created_at, ${JOB_LOCATION_SELECT}`)
-    .is("archived_at", null)
-    .order("created_at", { ascending: false });
-
-  if (status) baseQuery = baseQuery.eq("status", status);
+  type JobRow = Parameters<typeof jobAddress>[0] & {
+    id: number;
+    name: string | null;
+    phone: string | null;
+    service: string | null;
+    status: string;
+    quoted_price: number | null;
+    start_datetime: string | null;
+    created_at: string;
+    job_tags: Array<{ tag: Tag | null }> | null;
+  };
+  let jobs = (jobsRes.data ?? []) as unknown as JobRow[];
   if (billingFilter) {
     const want = billingFilter === "paid" ? ["paid"] : UNPAID;
-    const ids = [...billing].filter(([, b]) => b.state !== null && want.includes(b.state)).map(([id]) => id);
-    baseQuery = ids.length ? baseQuery.in("id", ids) : baseQuery.eq("id", -1);
+    jobs = jobs.filter((j) => {
+      const state = billing.get(j.id)?.state ?? null;
+      return state !== null && want.includes(state);
+    });
   }
-
-  // Tag filtering: pass `tag` as the tag NAME from the URL, find its ID,
-  // then query job_tags for jobs with that tag.
-  if (tagIdParam && clientId) {
-    const { data: tagRow } = await supabase
-      .from("tags")
-      .select("id")
-      .eq("client_id", clientId)
-      .eq("name", tagIdParam)
-      .maybeSingle();
-    if (tagRow) {
-      const { data: jt } = await supabase
-        .from("job_tags")
-        .select("job_id")
-        .eq("tag_id", (tagRow as { id: number }).id);
-      const jobIds = (jt ?? []).map((r: { job_id: number }) => r.job_id);
-      if (jobIds.length === 0) {
-        // No matching jobs
-        baseQuery = baseQuery.eq("id", -1);
-      } else {
-        baseQuery = baseQuery.in("id", jobIds);
-      }
-    } else {
-      baseQuery = baseQuery.eq("id", -1);
-    }
+  // Tag filtering: `tag` in the URL is the tag NAME.
+  if (tagIdParam) {
+    const tag = allTags.find((t) => t.name === tagIdParam);
+    jobs = tag ? jobs.filter((j) => (j.job_tags ?? []).some((jt) => jt.tag?.id === tag.id)) : [];
   }
-
-  const { data: jobs } = await baseQuery;
   // Resolve each job's address from its property once, for both layouts.
-  const rows = (jobs ?? []).map((j) => ({ ...j, address: jobAddress(j) }));
-
-  // Bulk-fetch tags for visible jobs + the tag-filter list in one wave
-  const [tagsByJob, allTags] = await Promise.all([
-    getTagsByJobIds(rows.map((j) => j.id)),
-    clientId ? listTagsForClient(clientId) : Promise.resolve([]),
-  ]);
+  const rows = jobs.map((j) => ({ ...j, address: jobAddress(j) }));
+  const tagsByJob = new Map(
+    rows.map((j) => [j.id, (j.job_tags ?? []).map((jt) => jt.tag).filter((t): t is Tag => t !== null)]),
+  );
 
   return (
     <div>

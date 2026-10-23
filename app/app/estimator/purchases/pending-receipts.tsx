@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Loader2, Paperclip, RefreshCw, Trash2 } from "lucide-react";
-import { createClient } from "@/lib/supabase/client";
+import { browserSupabase } from "@/lib/supabase/lazy-client";
 import type { Role } from "@/lib/permissions/roles";
 import { SCAN_STALE_MS, type PendingReceipt, type ReceiptState } from "@/lib/receipts/state";
 import { deletePurchase } from "./purchase-actions";
@@ -36,9 +36,9 @@ export function useScanFollow(readingIds: number[]) {
   useEffect(() => {
     if (!key) return;
     const ids = key.split(",").map(Number);
-    const supabase = createClient();
     const since = Date.now();
     const timer = window.setInterval(async () => {
+      const supabase = await browserSupabase();
       const { data } = await supabase.from("purchases").select("id, scan_status").in("id", ids);
       const moved =
         (data ?? []).length < ids.length ||
