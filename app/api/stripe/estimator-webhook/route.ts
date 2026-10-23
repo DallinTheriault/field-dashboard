@@ -65,7 +65,7 @@ export async function POST(request: Request) {
   let offStripe = stripeInvoice.amount_paid_off_stripe;
   if (offStripe === undefined || offStripe === null) {
     try {
-      const stripe = getEstimatorStripe();
+      const stripe = await getEstimatorStripe();
       if (!stripe) throw new Error("Stripe isn't configured");
       offStripe = (await stripe.invoices.retrieve(stripeInvoice.id!)).amount_paid_off_stripe ?? 0;
     } catch (e) {

@@ -53,7 +53,7 @@ export async function recordPayment(
   if (inv.stripe_invoice_id) {
     const { data: after } = await supabase.from("invoices").select("status").eq("id", invoiceId).maybeSingle();
     if (after?.status === "paid") {
-      const stripe = getEstimatorStripe();
+      const stripe = await getEstimatorStripe();
       try {
         if (!stripe) throw new Error("Stripe isn't connected");
         await stripe.invoices.pay(inv.stripe_invoice_id, { paid_out_of_band: true });
