@@ -22,10 +22,8 @@
     "next": "^15.0.4",
     "react": "^19.2.7",
     "react-dom": "^19.2.7",
-    "resend": "^4.0.1",
     "stripe": "^22.3.0",
-    "tailwind-merge": "^2.5.4",
-    "twilio": "^5.3.5"
+    "tailwind-merge": "^2.5.4"
   },
   "devDependencies": {
     "@types/node": "22.9.0",
