@@ -152,7 +152,8 @@ function Letterhead({ entity }: { entity: PdfEntity }) {
           )}
         </View>
         <View style={s.entityBlock}>
-          <Text style={{ color: INK, fontFamily: "Helvetica-Bold" }}>{entity.name}</Text>
+          {/* Without a logo the name is already the letterhead, once. */}
+          {entity.logoSrc ? <Text style={{ color: INK, fontFamily: "Helvetica-Bold" }}>{entity.name}</Text> : null}
           {entity.licenseNumber ? <Text>License {entity.licenseNumber}</Text> : null}
           {entity.address ? <Text>{entity.address}</Text> : null}
           {entity.phone ? <Text>{entity.phone}</Text> : null}

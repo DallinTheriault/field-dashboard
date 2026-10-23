@@ -124,11 +124,11 @@ describe("invoice pagination", () => {
     expect(pageCount(buf)).toBe(1);
   });
 
-  it("the fullest Bill to and Service address still fit 18 lines on ONE page", async () => {
+  it("the fullest Bill to and Service address still fit 19 lines on ONE page", async () => {
     const buf = await renderInvoicePdf({
       entity: spcEntity,
       ...fullParties,
-      rows: nRows(18),
+      rows: nRows(19),
       subtotal: 380,
       taxRatePct: 0,
       taxAmount: 0,

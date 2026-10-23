@@ -90,6 +90,9 @@ check("PDF: Bill to and Service address are separate blocks; Ronny's address isn
   // pdftotext spaces out the letter-spaced headings ("B I L L TO").
   /BILLTO\s*SERVICEADDRESS/.test(pdf.replace(/ /g, "")) && /Josh Ellis\s+2830 E Willow/.test(pdf) && pdf.includes("Resident: Ronny") && pdf.includes("(801) 897-6545") &&
   !pdf.includes("+1801"), pdf.slice(0, 600));
+const [entity] = await adminGet(`billing_entities?id=eq.${row.billing_entity_id}&select=name,logo_path`);
+check("PDF: with no logo the business name prints once, as the letterhead",
+  !entity.logo_path && pdf.split(entity.name).length - 1 === 1, `${pdf.split(entity.name).length - 1}×`);
 check("PDF: the invoice number with the job number, and dates like Oct 22, 2026",
   pdf.includes(`${row.invoice_number} · ${j.job_number}`) && LONG_DAY.test(pdf) && !ISO_DAY.test(pdf));
 
