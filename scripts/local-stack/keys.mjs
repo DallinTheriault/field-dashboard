@@ -1,10 +1,29 @@
 // Print an HS256 JWT for the local stack, shaped like Supabase's API keys.
 // Usage: node keys.mjs <secret> <anon|service_role>
-import { createHmac } from "node:crypto";
+//
+// Or print the session signing keys, like prod's (ES256, with the legacy HS256
+// secret still trusted for the API keys):
+//   node keys.mjs <secret> signing-keys
+// → { "auth": [...private JWKs for GoTrue], "verify": {JWKS for PostgREST},
+//     "public": {JWKS of the ES256 key, for Storage} }
+import { createHmac, generateKeyPairSync, randomUUID } from "node:crypto";
 
 const [secret, role] = process.argv.slice(2);
+if (secret && role === "signing-keys") {
+  const { privateKey, publicKey } = generateKeyPairSync("ec", { namedCurve: "P-256" });
+  const kid = randomUUID();
+  const ec = { ...privateKey.export({ format: "jwk" }), kid, alg: "ES256", use: "sig" };
+  const ecPublic = { ...publicKey.export({ format: "jwk" }), kid, alg: "ES256", use: "sig", key_ops: ["verify"] };
+  const legacy = { kty: "oct", k: Buffer.from(secret).toString("base64url"), kid: "legacy-hs256", alg: "HS256", key_ops: ["verify"] };
+  console.log(JSON.stringify({
+    auth: [{ ...ec, key_ops: ["sign", "verify"] }, legacy],
+    verify: { keys: [ecPublic, legacy] },
+    public: { keys: [ecPublic] },
+  }));
+  process.exit(0);
+}
 if (!secret || !["anon", "service_role"].includes(role)) {
-  console.error("usage: node keys.mjs <secret> <anon|service_role>");
+  console.error("usage: node keys.mjs <secret> <anon|service_role|signing-keys>");
   process.exit(1);
 }
 

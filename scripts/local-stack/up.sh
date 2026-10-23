@@ -22,6 +22,19 @@ chown postgres "$PG_RUN" "$LOGS"
 SECRET="$(jwt_secret)"
 ANON_KEY="$(sign_key anon)"
 SERVICE_KEY="$(sign_key service_role)"
+# Prod signs sessions with ES256, so the app verifies them in memory
+# (getClaims); match it unless LOCAL_JWT=hs256. LOCAL_JWT_EXP=<seconds>
+# shortens sessions (default an hour, like prod) to test expiry and refresh.
+if [ "${LOCAL_JWT:-es256}" = es256 ]; then
+  signing_keys_part verify > "$FIELDSTACK/jwt-verify.json"
+  JWT_KEYS_ENV=(GOTRUE_JWT_KEYS="$(signing_keys_part auth)")
+  STORAGE_JWKS_ENV=(JWT_JWKS="$(signing_keys_part public)")
+  REST_JWT_SECRET="@$FIELDSTACK/jwt-verify.json"
+else
+  JWT_KEYS_ENV=()
+  STORAGE_JWKS_ENV=()
+  REST_JWT_SECRET="$SECRET"
+fi
 
 pid_alive() { [ -s "$PG_RUN/$1.pid" ] && kill -0 "$(cat "$PG_RUN/$1.pid")" 2>/dev/null; }
 spawn() { # name, then command; detached so it outlives this shell
@@ -52,7 +65,7 @@ AUTH_ENV=(
   GOTRUE_DB_DRIVER=postgres GOTRUE_DB_NAMESPACE=auth
   DATABASE_URL="$(DB_URL_AS supabase_auth_admin)?search_path=auth&sslmode=disable"
   GOTRUE_DB_MIGRATIONS_PATH="$BIN/migrations"
-  GOTRUE_JWT_SECRET="$SECRET" GOTRUE_JWT_EXP=3600 GOTRUE_JWT_AUD=authenticated
+  GOTRUE_JWT_SECRET="$SECRET" GOTRUE_JWT_EXP="${LOCAL_JWT_EXP:-3600}" GOTRUE_JWT_AUD=authenticated
   GOTRUE_JWT_DEFAULT_GROUP_NAME=authenticated GOTRUE_JWT_ADMIN_ROLES=service_role
   # Like prod: invite-only (no public sign-up); password-reset mail goes to
   # the local mail sink ($FIELDSTACK/mail).
@@ -62,6 +75,7 @@ AUTH_ENV=(
   GOTRUE_MAILER_URLPATHS_RECOVERY=/auth/v1/verify GOTRUE_MAILER_URLPATHS_INVITE=/auth/v1/verify
   GOTRUE_MAILER_URLPATHS_CONFIRMATION=/auth/v1/verify GOTRUE_MAILER_URLPATHS_EMAIL_CHANGE=/auth/v1/verify
   GOTRUE_RATE_LIMIT_EMAIL_SENT=1000 GOTRUE_LOG_LEVEL=warn
+  "${JWT_KEYS_ENV[@]}"
 )
 STORAGE_ENV=(
   env -i PATH="$PATH" NODE_ENV=production
@@ -74,6 +88,7 @@ STORAGE_ENV=(
   GLOBAL_S3_BUCKET=local TENANT_ID=local REGION=local
   FILE_SIZE_LIMIT=52428800 IMAGE_TRANSFORMATION_ENABLED=false
   PG_QUEUE_ENABLE=false LOG_LEVEL=warn
+  "${STORAGE_JWKS_ENV[@]}"
 )
 
 # Storage reads its migrations relative to its own directory.
@@ -108,7 +123,7 @@ db-schemas = "public"
 db-anon-role = "anon"
 db-extra-search-path = "public, extensions"
 db-max-rows = 1000
-jwt-secret = "$SECRET"
+jwt-secret = "$REST_JWT_SECRET"
 server-host = "127.0.0.1"
 server-port = $REST_PORT
 log-level = "warn"

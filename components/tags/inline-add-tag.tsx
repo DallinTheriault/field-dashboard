@@ -3,7 +3,7 @@
 import { useState, useMemo, useRef, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { Plus, Search, Check, Loader2 } from "lucide-react";
-import { createClient } from "@/lib/supabase/client";
+import { browserSupabase } from "@/lib/supabase/lazy-client";
 import type { Tag } from "@/lib/tags/types";
 import { nextTagColor, TAG_COLORS } from "@/lib/tags/colors";
 
@@ -73,9 +73,9 @@ export function InlineAddTagButton({
 
   async function attach(tag: Tag) {
     setPending(true);
-    const supabase = createClient();
     const table = entityType === "job" ? "job_tags" : "contact_tags";
     const fkField = entityType === "job" ? "job_id" : "contact_id";
+    const supabase = await browserSupabase();
     await supabase.from(table).insert({
       [fkField]: entityId,
       tag_id: tag.id,
@@ -90,7 +90,7 @@ export function InlineAddTagButton({
   async function createAndAttach() {
     if (!query.trim() || pending) return;
     setPending(true);
-    const supabase = createClient();
+    const supabase = await browserSupabase();
     const { data: created, error } = await supabase
       .from("tags")
       .insert({

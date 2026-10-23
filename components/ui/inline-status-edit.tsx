@@ -3,7 +3,7 @@
 import { useState, useRef, useEffect } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { ChevronDown, Loader2 } from "lucide-react";
-import { createClient } from "@/lib/supabase/client";
+import { browserSupabase } from "@/lib/supabase/lazy-client";
 import { StatusChip } from "@/components/ui/status-chip";
 import { WhenDialog } from "@/components/ui/when-fields";
 import { applyWhen, columnsToWhen, type ScheduleColumns, type When } from "@/lib/schedule";
@@ -73,11 +73,11 @@ export function InlineStatusEdit({
     }
     setSaving(true);
     setErr(null);
-    const supabase = createClient();
     const cols =
       when !== undefined && schedule && tz
         ? applyWhen(schedule, when ?? { date: null, time: null, endDate: null }, tz)
         : null;
+    const supabase = await browserSupabase();
     const { error } = await supabase
       .from("jobs")
       .update({

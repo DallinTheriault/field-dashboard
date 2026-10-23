@@ -49,6 +49,18 @@ jwt_secret() {
 
 sign_key() { node "$HERE/keys.mjs" "$(jwt_secret)" "$1"; }
 
+# Session signing keys like prod's: ES256, with the HS256 secret still trusted
+# for the API keys. LOCAL_JWT=hs256 up.sh keeps the old HS256-only setup.
+signing_keys() {
+  local f="$FIELDSTACK/jwt-keys.json"
+  if [ ! -s "$f" ]; then
+    node "$HERE/keys.mjs" "$(jwt_secret)" signing-keys > "$f"
+    chmod 600 "$f"
+  fi
+  cat "$f"
+}
+signing_keys_part() { signing_keys | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>process.stdout.write(JSON.stringify(JSON.parse(s)[process.argv[1]])))' "$1"; }
+
 as_postgres() { runuser -u postgres -- "$@"; }
 psql_pg() { as_postgres env PGOPTIONS="-c client_min_messages=warning" "$PG_BIN/psql" -h "$PG_RUN" -p "$PG_PORT" -U postgres -d postgres -v ON_ERROR_STOP=1 -q "$@"; }
 

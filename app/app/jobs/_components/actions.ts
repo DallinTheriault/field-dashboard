@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { getAuthUser } from "@/lib/supabase/request-cache";
 import { toE164US } from "@/lib/sms/phone";
 import { findOrCreateProperty, repointJobAddress } from "@/lib/jobs/properties";
 import { getTenantTimezone } from "@/lib/dates";
@@ -44,9 +45,7 @@ async function requireWriterClientId(verb: "create" | "edit" = "create"): Promis
   { ok: true; clientId: number } | { ok: false; error: string }
 > {
   const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const user = await getAuthUser();
   if (!user) return { ok: false, error: "Not signed in." };
 
   const { data: memberships } = await supabase

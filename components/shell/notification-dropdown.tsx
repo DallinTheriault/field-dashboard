@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { Bell, X } from "lucide-react";
-import { createClient } from "@/lib/supabase/client";
+import { browserSupabase } from "@/lib/supabase/lazy-client";
 import { cn } from "@/lib/cn";
 
 type Notification = {
@@ -46,7 +46,7 @@ export function NotificationDropdown() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const supabase = createClient();
+      const supabase = await browserSupabase();
       const { data } = await supabase
         .from("notifications")
         .select("id, kind, title, body, link_url, read_at, created_at")
@@ -84,7 +84,7 @@ export function NotificationDropdown() {
   async function handleClickItem(n: Notification) {
     // Optimistically mark read
     if (!n.read_at) {
-      const supabase = createClient();
+      const supabase = await browserSupabase();
       await supabase
         .from("notifications")
         .update({ read_at: new Date().toISOString() })
@@ -103,7 +103,7 @@ export function NotificationDropdown() {
   }
 
   async function handleMarkAllRead() {
-    const supabase = createClient();
+    const supabase = await browserSupabase();
     await supabase
       .from("notifications")
       .update({ read_at: new Date().toISOString() })

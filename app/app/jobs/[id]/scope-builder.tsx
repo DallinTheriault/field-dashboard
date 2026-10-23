@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
+import { useRef, useState } from "react";
 import {
   Camera,
   Check,
@@ -14,7 +14,7 @@ import {
   Square,
   Trash2,
 } from "lucide-react";
-import { createClient } from "@/lib/supabase/client";
+import { browserSupabase } from "@/lib/supabase/lazy-client";
 import { compressImage } from "@/lib/photos/compress";
 import {
   customLine,
@@ -113,7 +113,6 @@ export function ScopeBuilder({
   /** General and skilled hourly rates (null: not set). */
   rates: Rates;
 }) {
-  const supabase = useMemo(() => createClient(), []);
   const [lines, setLines] = useState<JobLine[]>(initial);
   const [saves, setSaves] = useState<Record<number, SaveState>>({});
   const [openId, setOpenId] = useState<number | null>(null);
@@ -159,6 +158,7 @@ export function ScopeBuilder({
     const patch = q.pending;
     q.pending = null;
     q.inflight = true;
+    const supabase = await browserSupabase();
     const { error } = await supabase
       .from("tasks")
       .update({ ...patch, updated_at: new Date().toISOString() })
@@ -217,6 +217,7 @@ export function ScopeBuilder({
     };
     setLines((cur) => [...cur, draft]);
     setSave(id, { state: "saving" });
+    const supabase = await browserSupabase();
     const { data, error } = await supabase
       .from("tasks")
       .insert({ client_id: clientId, job_id: jobId, sort_order: sort, ...nl })
@@ -360,7 +361,6 @@ function PriceBookPicker({
   onPick: (e: PriceBookEntry) => void;
   rates: Rates;
 }) {
-  const supabase = useMemo(() => createClient(), []);
   const [query, setQuery] = useState("");
   const [focused, setFocused] = useState(false);
   const [entries, setEntries] = useState<PriceBookEntry[] | null>(null);
@@ -375,6 +375,7 @@ function PriceBookPicker({
   async function load() {
     if (entries || loading.current) return;
     loading.current = true;
+    const supabase = await browserSupabase();
     const [{ data: rows }, { data: used }] = await Promise.all([
       supabase
         .from("service_catalog")
@@ -840,7 +841,6 @@ function LineDetails({
   onPhotos: (photos: TaskPhoto[]) => void;
   onError: (m: string | null) => void;
 }) {
-  const supabase = useMemo(() => createClient(), []);
   const [title, setTitle] = useState(line.title);
   const [note, setNote] = useState(line.note ?? "");
   const [uploading, setUploading] = useState(false);
@@ -883,6 +883,7 @@ function LineDetails({
   }
 
   async function saveCaption(photoId: number, caption: string) {
+    const supabase = await browserSupabase();
     const { error } = await supabase
       .from("task_photos")
       .update({ caption: caption.trim() || null })
@@ -1054,7 +1055,6 @@ function LineDetails({
  * it follows the rate when the rate changes. The line itself is untouched.
  */
 function SaveToPriceBook({ line, clientId, rates }: { line: JobLine; clientId: number; rates: Rates }) {
-  const supabase = useMemo(() => createClient(), []);
   const builtIn = line.title === LABOR_HOURLY || line.title === SKILLED_HOURLY;
   const guessedRate: RateType =
     line.title === SKILLED_HOURLY ||
@@ -1077,6 +1077,7 @@ function SaveToPriceBook({ line, clientId, rates }: { line: JobLine; clientId: n
     const r = rowFromHourlyLine({ name, hours, rateType });
     if (!r.ok) return setErr(r.error);
     setBusy(true);
+    const supabase = await browserSupabase();
     const { data: existing, error: readErr } = await supabase.from("service_catalog").select("name").eq("active", true);
     if (readErr) {
       setBusy(false);

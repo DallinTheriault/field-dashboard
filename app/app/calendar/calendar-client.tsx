@@ -17,7 +17,7 @@ import {
   X,
 } from "lucide-react";
 import { cn } from "@/lib/cn";
-import { createClient } from "@/lib/supabase/client";
+import { browserSupabase } from "@/lib/supabase/lazy-client";
 import { createJobManual } from "../jobs/_components/actions";
 import { WhenFields } from "@/components/ui/when-fields";
 import {
@@ -336,7 +336,6 @@ export function CalendarClient({
   canWrite: boolean;
 }) {
   const router = useRouter();
-  const supabase = createClient();
 
   // One sheet at a time; the day sheet stays "underneath" so back works.
   const [dayKey, setDayKey] = useState<string | null>(null);
@@ -428,6 +427,7 @@ export function CalendarClient({
       updated_at: new Date().toISOString(),
     };
     if (promote) update.status = "scheduled";
+    const supabase = await browserSupabase();
     const { error } = await supabase.from("jobs").update(update).eq("id", jobId);
     setBusy(false);
     if (error) return setErr(error.message);
@@ -441,6 +441,7 @@ export function CalendarClient({
     // log records every real transition, so callback stays callback and
     // accepted stays accepted. Other statuses keep their status.
     let status = job.status;
+    const supabase = await browserSupabase();
     if (job.status === "scheduled") {
       const { data: logRows } = await supabase
         .from("job_status_log")
@@ -485,6 +486,7 @@ export function CalendarClient({
   async function cancelJob(job: CalJob) {
     setErr(null);
     setBusy(true);
+    const supabase = await browserSupabase();
     const { error } = await supabase
       .from("jobs")
       .update({ status: "cancelled", updated_at: new Date().toISOString() })

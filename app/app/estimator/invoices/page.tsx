@@ -46,24 +46,29 @@ export default async function InvoicesPage({
 }: {
   searchParams: Promise<{ tab?: string }>;
 }) {
-  const tz = await getTenantTimezone();
-  const [session, flags, sp] = await Promise.all([getCurrentUserRole(), getTenantFeatureFlags(), searchParams]);
+  // One round: the invoices load alongside the role and settings lookups
+  // (the database's row rules scope them to this business).
+  const supabase = await createClient();
+  const [tz, session, flags, sp, { data }] = await Promise.all([
+    getTenantTimezone(),
+    getCurrentUserRole(),
+    getTenantFeatureFlags(),
+    searchParams,
+    supabase
+      .from("invoices")
+      .select(
+        "id, invoice_number, status, total_cents, customer_name, customer_company, created_at, sent_at, paid_at, stripe_invoice_id, jobs(address), payments(amount_cents), bill_to:contacts!invoices_bill_to_same_tenant(name, company)",
+      )
+      .not("invoice_number", "is", null)
+      .order("created_at", { ascending: false })
+      .limit(500),
+  ]);
   if (!session) redirect("/login");
   if (!canViewSettings(session.role)) redirect("/app");
   if (!flags.estimator) return <FeatureDisabledPanel featureName="Invoices" />;
 
   const tab: InvoiceTab = (["unpaid", "drafts", "paid", "voided"] as const).find((t) => t === sp.tab) ?? "unpaid";
   const today = dayKeyInTz(new Date(), tz);
-
-  const supabase = await createClient();
-  const { data } = await supabase
-    .from("invoices")
-    .select(
-      "id, invoice_number, status, total_cents, customer_name, customer_company, created_at, sent_at, paid_at, stripe_invoice_id, jobs(address), payments(amount_cents), bill_to:contacts!invoices_bill_to_same_tenant(name, company)",
-    )
-    .not("invoice_number", "is", null)
-    .order("created_at", { ascending: false })
-    .limit(500);
   const all = (data ?? []) as unknown as Row[];
 
   const counts = { unpaid: 0, drafts: 0, paid: 0, voided: 0 } as Record<InvoiceTab, number>;

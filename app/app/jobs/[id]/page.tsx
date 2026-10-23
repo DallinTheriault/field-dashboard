@@ -11,7 +11,7 @@ import {
   Receipt,
 } from "lucide-react";
 import { EstimateStatusChip } from "../../estimator/estimate-status";
-import { JobActuals } from "../../estimator/job-actuals";
+import { JobActuals, type ActualsMaterialRow, type ActualsTimeRow } from "../../estimator/job-actuals";
 import { JobExpenseCapture } from "./job-expense-capture";
 import { WorkOrExpense } from "./work-or-expense";
 import { PropertyMiles } from "../../estimator/mileage/property-miles";
@@ -31,7 +31,8 @@ import { InlineStatusEdit } from "@/components/ui/inline-status-edit";
 import { createClient } from "@/lib/supabase/server";
 import { getTeamMembers } from "@/lib/team/members";
 import { getActivityTimeline } from "@/lib/timeline/fetch";
-import { getJobTags, listTagsForClient } from "@/lib/tags/server";
+import { getJobTags } from "@/lib/tags/server";
+import type { Tag } from "@/lib/tags/types";
 import { dayKeyInTz, getTenantTimezone } from "@/lib/dates";
 import { getTenantFeatureFlags } from "@/lib/features/flags";
 import { extraAmounts } from "@/lib/estimator/expenses";
@@ -80,72 +81,63 @@ export default async function JobDetailPage({
   const supabase = await createClient();
   const [{ id }, { days: daysParam }] = await Promise.all([params, searchParams]);
 
-  // Batch 1 — everything that doesn't need the job row. tz + flags share
-  // the layout's tenant-context fetch; role shares the layout's auth.
-  // This page's queries used to run as a 9-deep serial chain (~0.4-0.9s
-  // of document render); the same reads now resolve in three waves.
-  const [tz, flags, session, { data: job }] = await Promise.all([
-    getTenantTimezone(),
-    getTenantFeatureFlags(),
-    getCurrentUserRole(),
-    supabase.from("jobs").select("*").eq("id", id).maybeSingle(),
-  ]);
-
-  if (!job) notFound();
-
-  // Estimator integration — only when the tenant's flag is on. The actuals
-  // card exposes hours (pricing internals), so it's owner/manager-only.
-  const estimatorOn = flags.estimator;
-  const canSeeInternals = session ? canViewSettings(session.role) : false;
-
-  // Batch 2 — every read keyed off the job row, in one wave. Tasks are the
-  // scoping list + punch list: visible to every member; edits are
-  // owner/manager (RLS enforces; the UI hides controls for read-only
-  // roles). Uninvoiced extras are the actual money leak (architect Q1
-  // refinement): materials bought as "extra" that never made it onto an
-  // invoice.
+  // One round: every read here is keyed by the job id in the URL, so the role
+  // and settings lookups, the job row and everything on it run together (the
+  // database's row rules scope each query to this business). Reads the role
+  // doesn't allow are dropped below. Only the team list waits, on the job's
+  // business id.
+  if (!/^\d+$/.test(id)) notFound();
+  const jobId = Number(id);
+  const jobP = Promise.resolve(
+    supabase.from("jobs").select("*, property:properties(id, address, unit)").eq("id", jobId).maybeSingle(),
+  );
   const [
+    tz,
+    flags,
+    session,
+    { data: job },
     teamMembers,
     events,
     jobTags,
-    allTags,
+    { data: tagRows },
     { data: jobEstimates },
     { data: looseExtras },
     { data: taskRows },
     { data: jobExpenseRows },
     { data: mileageRows },
-    { data: pricingSettings },
-    { data: jobProperty },
+    { data: pricingRow },
     { data: billingRow },
     { data: scanRows },
+    { data: timeRows },
   ] = await Promise.all([
-    getTeamMembers(job.client_id),
-    getActivityTimeline("job", Number(job.id)),
-    getJobTags(Number(job.id)),
-    listTagsForClient(job.client_id),
-    estimatorOn
-      ? supabase
-          .from("estimates")
-          .select(
-            "id, version, status, computed_price, manual_override_price, estimated_at",
-          )
-          .eq("job_id", job.id)
-          .order("version", { ascending: false })
-      : Promise.resolve({ data: null }),
-    estimatorOn
-      ? supabase
-          .from("expenses")
-          .select("id")
-          .eq("job_id", job.id)
-          .eq("assignment", "job_extra")
-          .is("invoiced_on", null)
-      : Promise.resolve({ data: null }),
+    getTenantTimezone(),
+    getTenantFeatureFlags(),
+    getCurrentUserRole(),
+    jobP,
+    jobP.then(({ data }) => (data ? getTeamMembers(data.client_id) : [])),
+    getActivityTimeline("job", jobId),
+    getJobTags(jobId),
+    supabase.from("tags").select("*").order("use_count", { ascending: false }).order("created_at", { ascending: false }),
+    supabase
+      .from("estimates")
+      .select("id, version, status, computed_price, manual_override_price, estimated_at, estimate_line_items(resolved_labor_hours)")
+      .eq("job_id", jobId)
+      .order("version", { ascending: false }),
+    supabase
+      .from("expenses")
+      .select("id")
+      .eq("job_id", jobId)
+      .eq("assignment", "job_extra")
+      .is("invoiced_on", null),
+    // Tasks are the scoping list + punch list: visible to every member; edits
+    // are owner/manager (RLS enforces; the UI hides controls for read-only
+    // roles). The estimate-line count says which ones an estimate links to.
     supabase
       .from("tasks")
       .select(
-        "id, title, note, status, sort_order, service_id, qty, unit, unit_price, billable, task_photos(id, caption), invoice:invoices!tasks_invoice_same_tenant(invoice_number, status, stripe_invoice_id)",
+        "id, title, note, status, sort_order, service_id, qty, unit, unit_price, billable, task_photos(id, caption), invoice:invoices!tasks_invoice_same_tenant(invoice_number, status, stripe_invoice_id), estimate_line_items(count)",
       )
-      .eq("job_id", job.id)
+      .eq("job_id", jobId)
       .order("sort_order")
       .order("id"),
     // Job-attached expense items for the capture card's read-only list.
@@ -155,60 +147,60 @@ export default async function JobDetailPage({
     // still reassignable (the draft re-derives its lines), only a finalized
     // one is frozen. Embed the invoice so the row can show which it is
     // instead of offering a control that the server would refuse.
-    estimatorOn
-      ? supabase
-          .from("expenses")
-          .select(
-            "id, description, amount, qty, unit_price, assignment, invoiced_on, bill_markup, attach_receipt, purchases(tax, subtotal), invoices(invoice_number, status, stripe_invoice_id)",
-          )
-          .eq("job_id", job.id)
-          .order("id", { ascending: false })
-      : Promise.resolve({ data: null }),
+    supabase
+      .from("expenses")
+      .select(
+        "id, description, amount, qty, unit_price, assignment, invoiced_on, bill_markup, attach_receipt, purchases(tax, subtotal), invoices(invoice_number, status, stripe_invoice_id)",
+      )
+      .eq("job_id", jobId)
+      .order("id", { ascending: false }),
     // Trips that include this job (its days on site), a read-only line.
-    estimatorOn && canSeeInternals
-      ? supabase
-          .from("mileage_entries")
-          .select("miles")
-          .neq("kind", "removed")
-          .or(`job_id.eq.${job.id},stops.cs.[{"job_id":${job.id}}]`)
-      : Promise.resolve({ data: null }),
-    estimatorOn && canSeeInternals
-      ? supabase
-          .from("pricing_settings")
-          .select("default_hourly_rate, skilled_hourly_rate, material_markup_pct")
-          .maybeSingle()
-      : Promise.resolve({ data: null }),
-    // Not role-gated: the property address is customer info shown to every
-    // role in the header block, not a pricing internal.
-    job.property_id
-      ? supabase
-          .from("properties")
-          .select("id, address, unit")
-          .eq("id", job.property_id)
-          .maybeSingle()
-      : Promise.resolve({ data: null }),
-    // Billing state (v099): owners and managers, like the rest of the money.
-    estimatorOn && canSeeInternals
-      ? supabase.from("job_billing").select(BILLING_COLS).eq("job_id", job.id).maybeSingle()
-      : Promise.resolve({ data: null }),
+    supabase
+      .from("mileage_entries")
+      .select("miles")
+      .neq("kind", "removed")
+      .or(`job_id.eq.${jobId},stops.cs.[{"job_id":${jobId}}]`),
+    supabase
+      .from("pricing_settings")
+      .select("default_hourly_rate, skilled_hourly_rate, material_markup_pct")
+      .maybeSingle(),
+    supabase.from("job_billing").select(BILLING_COLS).eq("job_id", jobId).maybeSingle(),
     // Receipts scanned from this job and not saved yet (v100).
-    estimatorOn && flags.receiptAi
-      ? supabase
-          .from("purchases")
-          .select(`id, vendor, purchase_date, total, tax, receipt_paths, ${PURCHASE_SCAN_COLS}, expenses(count)`)
-          .eq("scan_job_id", job.id)
-          .not("scan_status", "is", null)
-          .order("id", { ascending: false })
-          .limit(20)
-      : Promise.resolve({ data: null }),
+    supabase
+      .from("purchases")
+      .select(`id, vendor, purchase_date, total, tax, receipt_paths, ${PURCHASE_SCAN_COLS}, expenses(count)`)
+      .eq("scan_job_id", jobId)
+      .not("scan_status", "is", null)
+      .order("id", { ascending: false })
+      .limit(20),
+    // Hours for the actuals card (owner/manager).
+    supabase
+      .from("time_entries")
+      .select("id, entry_date, hours, note, invoice_id, covered_at, invoice:invoices!time_entries_invoice_same_tenant(invoice_number, status, stripe_invoice_id)")
+      .eq("job_id", jobId)
+      .order("entry_date", { ascending: false })
+      .order("id", { ascending: false }),
   ]);
+
+  if (!job) notFound();
+
+  // Estimator integration — only when the tenant's flag is on. The actuals
+  // card exposes hours (pricing internals), so it's owner/manager-only.
+  const estimatorOn = flags.estimator;
+  const canSeeInternals = session ? canViewSettings(session.role) : false;
+  const internals = estimatorOn && canSeeInternals;
+  const allTags = ((tagRows ?? []) as Tag[]).filter((t) => t.client_id === job.client_id);
+  const jobProperty = (Array.isArray(job.property) ? job.property[0] : job.property) as
+    | { id: number; address: string; unit: string | null }
+    | null;
+  const pricingSettings = internals ? pricingRow : null;
   const scanNow = Date.now();
-  const pendingReceipts = ((scanRows ?? []) as unknown as Array<Parameters<typeof toPendingReceipt>[0] & {
+  const pendingReceipts = ((estimatorOn && flags.receiptAi ? scanRows ?? [] : []) as unknown as Array<Parameters<typeof toPendingReceipt>[0] & {
     expenses: Array<{ count: number }> | null;
   }>)
     .map((p) => toPendingReceipt(p, p.expenses?.[0]?.count ?? 0, scanNow))
     .filter((p) => p.itemCount === 0);
-  const billing = billingRow ? toJobBilling(billingRow as Record<string, unknown>) : null;
+  const billing = internals && billingRow ? toJobBilling(billingRow as Record<string, unknown>) : null;
 
   // Just completed with no hours logged: which days were you there?
   let siteDaysAsk: string[] | null = null;
@@ -226,10 +218,11 @@ export default async function JobDetailPage({
   const isOwner = session?.role === "owner";
 
   // Trips that include this job: a read-only signal, never job costing.
-  const tripCount = (mileageRows ?? []).length;
+  const trips = internals ? mileageRows ?? [] : [];
+  const tripCount = trips.length;
   const tripMiles =
     Math.round(
-      (mileageRows ?? []).reduce((s, m) => s + Number(m.miles ?? 0), 0) * 10,
+      trips.reduce((s, m) => s + Number(m.miles ?? 0), 0) * 10,
     ) / 10;
 
   const propertyAddress = jobProperty
@@ -240,7 +233,7 @@ export default async function JobDetailPage({
 
   // Mirrors invoiceGuard() in purchase-actions: finalized (sent, or issued
   // through Stripe) means frozen; draft means still editable.
-  const jobExpenseItems = (jobExpenseRows ?? []).map((e) => {
+  const jobExpenseItems = (estimatorOn ? jobExpenseRows ?? [] : []).map((e) => {
     const inv = (Array.isArray(e.invoices) ? e.invoices[0] : e.invoices) as
       | { invoice_number: string | null; status: string | null; stripe_invoice_id: string | null }
       | null
@@ -273,21 +266,7 @@ export default async function JobDetailPage({
     ? teamMembers.find((m) => m.user_id === job.assigned_user_id) ?? null
     : null;
 
-  const uninvoicedExtras = (looseExtras ?? []).length;
-
-  const taskIds = (taskRows ?? []).map((t) => t.id);
-  const { data: linkRows } = taskIds.length
-    ? await supabase
-        .from("estimate_line_items")
-        .select("task_id")
-        .in("task_id", taskIds)
-    : { data: [] as Array<{ task_id: number | null }> };
-  const linkCounts = new Map<number, number>();
-  for (const r of linkRows ?? []) {
-    if (r.task_id !== null) {
-      linkCounts.set(r.task_id, (linkCounts.get(r.task_id) ?? 0) + 1);
-    }
-  }
+  const uninvoicedExtras = estimatorOn ? (looseExtras ?? []).length : 0;
   const jobLines: JobLine[] = (taskRows ?? []).map((t) => {
     // Same rule as the expense lock above: a line is final once its invoice
     // went out (not draft, or issued through Stripe), unless it was voided.
@@ -309,7 +288,7 @@ export default async function JobDetailPage({
       lockedOn: final ? (inv?.invoice_number ?? "an invoice") : null,
       photos: ((t.task_photos as unknown as Array<{ id: number; caption: string | null }>) ?? [])
         .sort((a, b) => a.id - b.id),
-      linkedLines: linkCounts.get(t.id) ?? 0,
+      linkedLines: (t.estimate_line_items as unknown as Array<{ count: number }> | null)?.[0]?.count ?? 0,
     };
   });
   const rateOf = (v: unknown) => (v === null || v === undefined ? null : Number(v));
@@ -495,7 +474,19 @@ export default async function JobDetailPage({
 
       {estimatorOn && canSeeInternals && (
         <>
-          <JobActuals clientId={job.client_id} jobId={Number(job.id)} />
+          <JobActuals
+            clientId={job.client_id}
+            jobId={Number(job.id)}
+            initial={{
+              time: (timeRows ?? []) as ActualsTimeRow[],
+              materials: (jobExpenseRows ?? []) as unknown as ActualsMaterialRow[],
+              estimateHours: jobEstimates?.[0]
+                ? ((jobEstimates[0].estimate_line_items ?? []) as Array<{ resolved_labor_hours: number }>).map(
+                    (l) => l.resolved_labor_hours,
+                  )
+                : null,
+            }}
+          />
           {tripCount > 0 && (
             <div className="panel px-4 py-2.5 mb-5 flex items-center gap-2 text-2xs text-bone-400">
               <Car size={12} className="text-bone-500" />

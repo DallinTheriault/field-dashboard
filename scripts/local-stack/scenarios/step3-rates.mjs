@@ -101,7 +101,12 @@ const pick = async (query, name) => {
 };
 await pick("hang", "Hang door");
 await pick("skilled", "Skilled labor, hourly");
-const lines = await adminGet(`tasks?job_id=eq.${job.id}&select=title,qty,unit,unit_price&order=id`);
+// A picked line shows at once and saves right after; wait for both saves.
+let lines = [];
+for (const end = Date.now() + 15_000; Date.now() < end; await new Promise((r) => setTimeout(r, 250))) {
+  lines = await adminGet(`tasks?job_id=eq.${job.id}&select=title,qty,unit,unit_price&order=id`);
+  if (lines.length >= 2) break;
+}
 check("picked lines copy the price: Hang door $190 each, Skilled labor $125/hr",
   lines.length === 2 && Number(lines[0].unit_price) === 190 && lines[0].unit === "each" &&
   lines[1].title === "Skilled labor, hourly" && Number(lines[1].unit_price) === 125 && lines[1].unit === "hour", JSON.stringify(lines));

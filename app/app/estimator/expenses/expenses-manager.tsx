@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Paperclip, Plus, Trash2 } from "lucide-react";
-import { createClient } from "@/lib/supabase/client";
+import { browserSupabase } from "@/lib/supabase/lazy-client";
 import { EXPENSE_CATEGORIES } from "@/lib/estimator/expenses";
 
 type Expense = {
@@ -45,7 +45,6 @@ export function ExpensesManager({
   readOnly?: boolean;
 }) {
   const router = useRouter();
-  const supabase = createClient();
   const [date, setDate] = useState(todayISO());
   const [category, setCategory] = useState<string>(EXPENSE_CATEGORIES[0]);
   const [description, setDescription] = useState("");
@@ -59,6 +58,7 @@ export function ExpensesManager({
     if (!description.trim()) return setErr("Describe the expense.");
     if (!Number.isFinite(amt) || amt <= 0) return setErr("Amount must be > 0.");
     setBusy(true);
+    const supabase = await browserSupabase();
     const { error } = await supabase.from("expenses").insert({
       client_id: clientId,
       expense_date: date || todayISO(),
@@ -75,6 +75,7 @@ export function ExpensesManager({
 
   async function remove(e: Expense) {
     if (!confirm(`Delete "${e.description}" (${usd.format(e.amount)})?`)) return;
+    const supabase = await browserSupabase();
     const { error } = await supabase.from("expenses").delete().eq("id", e.id);
     if (error) setErr(error.message);
     else router.refresh();
