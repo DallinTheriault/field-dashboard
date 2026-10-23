@@ -420,7 +420,6 @@ export function CalendarClient({
   }
 
   async function saveSchedule(jobId: number, when: When, lengthMinutes: number | null, promote: boolean) {
-    const supabase = await browserSupabase();
     setErr(null);
     setBusy(true);
     const update: Record<string, unknown> = {
@@ -428,6 +427,7 @@ export function CalendarClient({
       updated_at: new Date().toISOString(),
     };
     if (promote) update.status = "scheduled";
+    const supabase = await browserSupabase();
     const { error } = await supabase.from("jobs").update(update).eq("id", jobId);
     setBusy(false);
     if (error) return setErr(error.message);
@@ -435,13 +435,13 @@ export function CalendarClient({
   }
 
   async function unschedule(job: CalJob) {
-    const supabase = await browserSupabase();
     setErr(null);
     setBusy(true);
     // Drop a 'scheduled' job back to what it was BEFORE booking. The status
     // log records every real transition, so callback stays callback and
     // accepted stays accepted. Other statuses keep their status.
     let status = job.status;
+    const supabase = await browserSupabase();
     if (job.status === "scheduled") {
       const { data: logRows } = await supabase
         .from("job_status_log")
@@ -484,9 +484,9 @@ export function CalendarClient({
   }
 
   async function cancelJob(job: CalJob) {
-    const supabase = await browserSupabase();
     setErr(null);
     setBusy(true);
+    const supabase = await browserSupabase();
     const { error } = await supabase
       .from("jobs")
       .update({ status: "cancelled", updated_at: new Date().toISOString() })

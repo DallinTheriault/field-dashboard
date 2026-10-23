@@ -53,12 +53,12 @@ export function ExpensesManager({
   const [err, setErr] = useState<string | null>(null);
 
   async function add() {
-    const supabase = await browserSupabase();
     setErr(null);
     const amt = parseFloat(amount);
     if (!description.trim()) return setErr("Describe the expense.");
     if (!Number.isFinite(amt) || amt <= 0) return setErr("Amount must be > 0.");
     setBusy(true);
+    const supabase = await browserSupabase();
     const { error } = await supabase.from("expenses").insert({
       client_id: clientId,
       expense_date: date || todayISO(),
@@ -74,8 +74,8 @@ export function ExpensesManager({
   }
 
   async function remove(e: Expense) {
-    const supabase = await browserSupabase();
     if (!confirm(`Delete "${e.description}" (${usd.format(e.amount)})?`)) return;
+    const supabase = await browserSupabase();
     const { error } = await supabase.from("expenses").delete().eq("id", e.id);
     if (error) setErr(error.message);
     else router.refresh();

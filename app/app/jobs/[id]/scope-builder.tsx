@@ -153,12 +153,12 @@ export function ScopeBuilder({
   }
 
   async function flush(id: number) {
-    const supabase = await browserSupabase();
     const q = queue.current.get(id);
     if (!q?.pending) return;
     const patch = q.pending;
     q.pending = null;
     q.inflight = true;
+    const supabase = await browserSupabase();
     const { error } = await supabase
       .from("tasks")
       .update({ ...patch, updated_at: new Date().toISOString() })
@@ -202,7 +202,6 @@ export function ScopeBuilder({
   }
 
   async function addLine(nl: NewLine) {
-    const supabase = await browserSupabase();
     setErr(null);
     const id = tempId.current--;
     const sort = lines.reduce((m, l) => Math.max(m, l.sort_order), 0) + 1;
@@ -218,6 +217,7 @@ export function ScopeBuilder({
     };
     setLines((cur) => [...cur, draft]);
     setSave(id, { state: "saving" });
+    const supabase = await browserSupabase();
     const { data, error } = await supabase
       .from("tasks")
       .insert({ client_id: clientId, job_id: jobId, sort_order: sort, ...nl })
@@ -373,9 +373,9 @@ function PriceBookPicker({
   // Loaded on first focus, not with the page: the job page is already the
   // heaviest in the app and most visits never open the picker.
   async function load() {
-    const supabase = await browserSupabase();
     if (entries || loading.current) return;
     loading.current = true;
+    const supabase = await browserSupabase();
     const [{ data: rows }, { data: used }] = await Promise.all([
       supabase
         .from("service_catalog")
@@ -1073,11 +1073,11 @@ function SaveToPriceBook({ line, clientId, rates }: { line: JobLine; clientId: n
   const price = hours.trim() !== "" && Number.isFinite(h) ? priceFromHours(h, rates[rateType], "each") : null;
 
   async function save() {
-    const supabase = await browserSupabase();
     setErr(null);
     const r = rowFromHourlyLine({ name, hours, rateType });
     if (!r.ok) return setErr(r.error);
     setBusy(true);
+    const supabase = await browserSupabase();
     const { data: existing, error: readErr } = await supabase.from("service_catalog").select("name").eq("active", true);
     if (readErr) {
       setBusy(false);

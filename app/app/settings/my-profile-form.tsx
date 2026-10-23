@@ -22,10 +22,10 @@ export function MyProfileForm({
   const [err, setErr] = useState<string | null>(null);
 
   async function handleSave() {
-    const supabase = await browserSupabase();
     setSaving(true);
     setErr(null);
     setSaved(false);
+    const supabase = await browserSupabase();
     const { error } = await supabase.auth.updateUser({
       data: { display_name: displayName.trim() || null },
     });

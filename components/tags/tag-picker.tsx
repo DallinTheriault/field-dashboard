@@ -97,10 +97,10 @@ export function TagPicker({
   }
 
   async function createNewTag() {
-    const supabase = await browserSupabase();
     if (!query.trim() || creating) return;
     setCreating(true);
     setCreateError(null);
+    const supabase = await browserSupabase();
     const { data, error } = await supabase
       .from("tags")
       .insert({

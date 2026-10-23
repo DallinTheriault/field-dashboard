@@ -157,13 +157,13 @@ export function JobActuals({
   const matTotal = materials.reduce((s, m) => s + m.actual_cost, 0);
 
   async function addTime() {
-    const supabase = await browserSupabase();
     setErr(null);
     const h = parseFloat(hours);
     if (!Number.isFinite(h) || h <= 0) {
       setErr("Hours must be > 0.");
       return;
     }
+    const supabase = await browserSupabase();
     const { error } = await supabase.from("time_entries").insert({
       client_id: clientId,
       job_id: jobId,
@@ -183,8 +183,8 @@ export function JobActuals({
   }
 
   async function removeTime(id: number) {
-    const supabase = await browserSupabase();
     setErr(null);
+    const supabase = await browserSupabase();
     const { error } = await supabase.from("time_entries").delete().eq("id", id);
     if (error) setErr(error.message);
     load();

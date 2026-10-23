@@ -61,7 +61,6 @@ export function InlineStatusEdit({
   }, []);
 
   async function setStatus(next: Status, when?: When | null) {
-    const supabase = await browserSupabase();
     if (next === currentStatus) {
       setOpen(false);
       return;
@@ -78,6 +77,7 @@ export function InlineStatusEdit({
       when !== undefined && schedule && tz
         ? applyWhen(schedule, when ?? { date: null, time: null, endDate: null }, tz)
         : null;
+    const supabase = await browserSupabase();
     const { error } = await supabase
       .from("jobs")
       .update({

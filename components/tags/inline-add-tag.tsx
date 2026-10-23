@@ -72,10 +72,10 @@ export function InlineAddTagButton({
   }, [allTags, query]);
 
   async function attach(tag: Tag) {
-    const supabase = await browserSupabase();
     setPending(true);
     const table = entityType === "job" ? "job_tags" : "contact_tags";
     const fkField = entityType === "job" ? "job_id" : "contact_id";
+    const supabase = await browserSupabase();
     await supabase.from(table).insert({
       [fkField]: entityId,
       tag_id: tag.id,
@@ -88,9 +88,9 @@ export function InlineAddTagButton({
   }
 
   async function createAndAttach() {
-    const supabase = await browserSupabase();
     if (!query.trim() || pending) return;
     setPending(true);
+    const supabase = await browserSupabase();
     const { data: created, error } = await supabase
       .from("tags")
       .insert({
