@@ -46,11 +46,10 @@ export function MobileJobCard({
   return (
     <Link
       href={`/app/jobs/${job.id}`}
-      // Job detail is the most expensive render in the app; letting every
-      // visible row prefetch it saturates mobile bandwidth right when the
-      // user taps (perf re-plan step 2). Without a prefetch the tapped card
-      // shows a spinner at once (LinkPending) until the job page streams in.
-      prefetch={false}
+      // Default prefetch: for this dynamic page Next fetches only the shell
+      // and the job page's loading screen (not the page itself), so a tap
+      // shows that screen at once. A tap before the prefetch lands still gets
+      // the card's spinner (LinkPending).
       className="relative block px-4 py-3 hover:bg-ink-2 active:bg-ink-2 transition-colors"
     >
       <LinkPending />

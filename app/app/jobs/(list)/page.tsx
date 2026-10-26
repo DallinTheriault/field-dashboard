@@ -4,7 +4,7 @@ import { StatusChip } from "@/components/ui/status-chip";
 import { ClickableTableRow } from "@/components/ui/clickable-table-row";
 import { MobileJobCard } from "@/components/list-cards/mobile-job-card";
 import { TagChipList } from "@/components/tags/tag-chip";
-import { AddJobButton } from "./_components/add-job-button";
+import { AddJobButton } from "../_components/add-job-button";
 import type { Tag } from "@/lib/tags/types";
 import { Download } from "lucide-react";
 import { getTenantTimezone } from "@/lib/dates";

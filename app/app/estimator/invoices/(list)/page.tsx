@@ -6,7 +6,7 @@ import { getCurrentUserRole } from "@/lib/permissions/current-role";
 import { canViewSettings } from "@/lib/permissions/roles";
 import { getTenantFeatureFlags } from "@/lib/features/flags";
 import { FeatureDisabledPanel } from "@/components/ui/feature-disabled-panel";
-import { InvoiceStatusChip } from "./invoice-status";
+import { InvoiceStatusChip } from "../invoice-status";
 import { dayKeyInTz, getTenantTimezone } from "@/lib/dates";
 import { balanceDueCents, daysBetween, invoiceTab, type InvoiceTab } from "@/lib/invoices/payments";
 import { cn } from "@/lib/cn";

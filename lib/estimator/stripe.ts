@@ -3,9 +3,8 @@ import type Stripe from "stripe";
 /**
  * Stripe client for ESTIMATOR customer invoicing (Hosted Invoices).
  *
- * This is deliberately a DIFFERENT key from STRIPE_SECRET_KEY (Field's own
- * subscription billing). The estimator invoices the tenant's customers from
- * the tenant's Stripe account. Restricted-key permissions required:
+ * The estimator invoices the tenant's customers from the tenant's Stripe
+ * account. Restricted-key permissions required:
  * Customers (write), Invoices (write), Invoice Items (write).
  *
  * Unset key = feature cleanly disabled: actions return a helpful error and
