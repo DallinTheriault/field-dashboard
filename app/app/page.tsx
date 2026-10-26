@@ -2,6 +2,7 @@ import Link from "next/link";
 import { ArrowRight, Briefcase, Receipt, UserPlus, Wallet } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { StatusChip } from "@/components/ui/status-chip";
+import { LinkPending } from "@/components/ui/link-pending";
 import { dayKeyInTz, getTenantTimezone } from "@/lib/dates";
 import { getCurrentUserRole } from "@/lib/permissions/current-role";
 import { canViewSettings } from "@/lib/permissions/roles";
@@ -271,7 +272,10 @@ function Row({
 }) {
   return (
     <li data-row={testValue}>
-      <Link href={href} prefetch={false} className="flex items-start gap-3 px-4 py-3 min-h-[44px] hover:bg-ink-2 transition-colors">
+      {/* No prefetch, so nothing would show until the server answers; the
+          spinner shows the tap was taken. */}
+      <Link href={href} prefetch={false} className="relative flex items-start gap-3 px-4 py-3 min-h-[44px] hover:bg-ink-2 transition-colors">
+        <LinkPending />
         <div className="flex-1 min-w-0">
           <div className="text-sm font-medium text-bone-100 break-words">{title}</div>
           {sub && <div className="text-2xs text-bone-400 break-words">{sub}</div>}
