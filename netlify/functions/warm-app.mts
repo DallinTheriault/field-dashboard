@@ -13,7 +13,9 @@ export default async (req: Request): Promise<Response> => {
   const base = process.env.URL || new URL(req.url).origin;
   const start = Date.now();
   try {
-    const res = await fetch(`${base}/api/ping`, { signal: AbortSignal.timeout(20_000) });
+    // Billed while waiting. Giving up early doesn't stop the wake-up: once
+    // the request is in, the server function starts anyway.
+    const res = await fetch(`${base}/api/ping`, { signal: AbortSignal.timeout(10_000) });
     const ms = Date.now() - start;
     console.log("[warm-app]", { status: res.status, ms, base });
     return new Response(null, { status: res.ok ? 204 : 502 });
