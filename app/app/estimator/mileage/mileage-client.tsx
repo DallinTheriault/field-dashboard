@@ -78,7 +78,10 @@ export function MileageClient({
     running.current = true;
     setWorking(true);
     setStalled(false);
-    for (let i = 0; i < 50 && alive.current; i++) {
+    // A batch that got no turn at the map services may just have overlapped
+    // another lookup (a save, another device): try it a couple more times
+    // before saying they're busy.
+    for (let i = 0, idle = 0; i < 50 && alive.current; i++) {
       const r = await syncTripsBatch();
       if (!alive.current) break;
       router.refresh();
@@ -87,10 +90,15 @@ export function MileageClient({
         break;
       }
       if (!r.data || r.data.pending === 0) break;
-      if (r.data.lookups === 0) {
+      if (r.data.lookups > 0) {
+        idle = 0;
+        continue;
+      }
+      if (++idle >= 3) {
         setStalled(true);
         break;
       }
+      await new Promise((done) => setTimeout(done, 2000));
     }
     running.current = false;
     if (alive.current) setWorking(false);

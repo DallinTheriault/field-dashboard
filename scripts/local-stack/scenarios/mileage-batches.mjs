@@ -52,11 +52,12 @@ const page = await login(browser, "owner@cascade.test", PHONE);
 page.on("dialog", (d) => d.accept());
 const errors = [];
 page.on("pageerror", (e) => errors.push(e.message));
-// Every server action the page sends, and how long the server took to answer it.
+// Every batch (and server action) the page sends, and how long the server
+// took to answer it. Batches go to /api/estimator/mileage/sync.
 let actions = [];
 const started = new Map();
 page.on("request", (r) => {
-  if (r.method() === "POST" && r.headers()["next-action"]) started.set(r, Date.now());
+  if (r.method() === "POST" && (r.headers()["next-action"] || new URL(r.url()).pathname === "/api/estimator/mileage/sync")) started.set(r, Date.now());
 });
 const finished = (r) => {
   const t = started.get(r);
