@@ -4,7 +4,9 @@ import { tracedFetch } from './perf-trace';
 
 /**
  * Refreshes the user's session cookie on every request and guards protected routes.
- * Unauthenticated users hitting /dashboard/* are redirected to /login.
+ * Unauthenticated users hitting /app/* or /dashboard/* are redirected to /login,
+ * before any page renders (the app layout's own check came too late: the page
+ * had already started its queries, which then failed as signed out).
  *
  * The session is verified in memory: getClaims() checks the access token's
  * ES256 signature against the project's published keys (cached 10 minutes per
@@ -43,7 +45,8 @@ export async function updateSession(request: NextRequest) {
   const user = data?.claims?.sub ? { id: data.claims.sub } : null;
 
   const pathname = request.nextUrl.pathname;
-  const isProtected = pathname.startsWith('/dashboard');
+  const isProtected =
+    pathname === '/app' || pathname.startsWith('/app/') || pathname.startsWith('/dashboard');
   const isAuthPage = pathname === '/login';
 
   if (!user && isProtected) {

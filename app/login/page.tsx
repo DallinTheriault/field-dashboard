@@ -10,7 +10,9 @@ import { Loader2, ArrowRight, Clock } from "lucide-react";
 function LoginForm() {
   const router = useRouter();
   const params = useSearchParams();
-  const redirect = params.get("redirect") || "/app";
+  // Only somewhere in Field: a path, never another site ("//evil.com" too).
+  const asked = params.get("redirect") ?? "";
+  const redirect = asked.startsWith("/") && !asked.startsWith("//") && !asked.startsWith("/\\") ? asked : "/app";
   const reason = params.get("reason");
 
   const [email, setEmail] = useState("");

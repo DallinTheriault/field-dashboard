@@ -15,10 +15,10 @@ import {
   checkMapServices,
   saveBase,
   saveRatePeriod,
-  syncTripsNow,
   updateTrip,
 } from "./mileage-actions";
 import { MapCredit } from "./map-credit";
+import { syncTripsBatch } from "./sync-client";
 
 const usd = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" });
 const num1 = new Intl.NumberFormat("en-US", { maximumFractionDigits: 1 });
@@ -79,7 +79,7 @@ export function MileageClient({
     setWorking(true);
     setStalled(false);
     for (let i = 0; i < 50 && alive.current; i++) {
-      const r = await syncTripsNow();
+      const r = await syncTripsBatch();
       if (!alive.current) break;
       router.refresh();
       if (!r.ok) {

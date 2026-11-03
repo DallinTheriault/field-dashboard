@@ -1,12 +1,10 @@
 "use server";
 
-import { revalidatePath } from "next/cache";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { requireWriter } from "@/lib/estimator/auth";
 import { getTenantTimezone, dayKeyInTz } from "@/lib/dates";
-import { BATCH_MS, syncDayTrips, type SyncResult } from "@/lib/mileage/sync";
+import { revalidateMileage, syncBatch } from "@/lib/mileage/sync-run";
 import { baseOn, daysBetween } from "@/lib/mileage/plan";
-import { milesFromBase, type PropertyMiles } from "@/lib/mileage/property-miles";
 import { checkServices, type ServiceCheck } from "@/lib/mileage/geo";
 import { sharedTurn } from "@/lib/mileage/throttle";
 
@@ -21,44 +19,22 @@ function cleanMiles(v: number | string): number | null {
   return round1(n);
 }
 
-function revalidate(jobIds: Array<number | null | undefined> = []) {
-  revalidatePath("/app/estimator/mileage");
-  revalidatePath("/app/estimator/mileage/catch-up");
-  revalidatePath("/app/estimator/expenses");
-  for (const id of jobIds) if (id) revalidatePath(`/app/jobs/${id}`);
-}
+const revalidate = revalidateMileage;
 
 /**
  * Every action here ends well inside the server's 60 s limit: lookups start
  * only within a budget, and each request gives up after 8 s. After a change
  * (a base, days on site) a short batch covers the usual one or two days;
- * anything left stays pending for the Mileage page's batches.
+ * anything left stays pending for the Mileage page's batches, which run
+ * through /api/estimator/mileage/sync, as the job page's miles box runs
+ * through /api/estimator/property-miles: never as actions, which would hold
+ * up the page's taps while they wait on the map services.
  */
 const AFTER_CHANGE_MS = 10_000;
+/** "Check map services": a lookup you tapped for and wait on. */
 const LOOKUP_MS = 15_000;
 
-async function sync(clientId: number, budgetMs = AFTER_CHANGE_MS): Promise<SyncResult> {
-  return syncDayTrips(createAdminClient(), clientId, { network: true, tz: await getTenantTimezone(), budgetMs });
-}
-
-/** One batch of trips that need a lookup (the Mileage page runs these until none are left). */
-export async function syncTripsNow(): Promise<Result<SyncResult>> {
-  const auth = await requireWriter();
-  if (!auth.ok) return auth;
-  const r = await sync(auth.clientId, BATCH_MS);
-  if (r.inserted || r.updated || r.deleted) revalidate();
-  return { ok: true, data: r };
-}
-
-/** One-way miles from today's base to an address, to check against Google Maps. */
-export async function propertyMilesNow(address: string): Promise<Result<PropertyMiles>> {
-  const auth = await requireWriter();
-  if (!auth.ok) return auth;
-  const a = (address ?? "").trim();
-  if (!a) return { ok: true, data: { status: "no_address", address: "" } };
-  const today = dayKeyInTz(new Date(), await getTenantTimezone());
-  return { ok: true, data: await milesFromBase(createAdminClient(), auth.clientId, a, today, Date.now() + LOOKUP_MS) };
-}
+const sync = (clientId: number, budgetMs = AFTER_CHANGE_MS) => syncBatch(clientId, budgetMs);
 
 /** Ask each map service once, from today's base: can Field reach them? */
 export async function checkMapServices(): Promise<Result<{ base: string; checks: ServiceCheck[] }>> {
