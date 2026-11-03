@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
-import { usePathname, useRouter } from "next/navigation";
+import { useRouter } from "next/navigation";
 import { ChevronDown, Loader2 } from "lucide-react";
 import { browserSupabase } from "@/lib/supabase/lazy-client";
 import { StatusChip } from "@/components/ui/status-chip";
@@ -30,24 +30,33 @@ type Status = (typeof STATUSES)[number];
  *
  * Scheduled asks "When?" first (given the job's schedule), so the job lands
  * on the calendar; "No date yet" schedules it without one.
+ *
+ * The new status shows as soon as it's saved, and `onSaved` runs then (the
+ * job page asks which days you were on site), without waiting for the
+ * page's refresh to land.
  */
 export function InlineStatusEdit({
   jobId,
   currentStatus,
   schedule,
   tz,
+  onSaved,
 }: {
   jobId: number | string;
   currentStatus: string;
   schedule?: ScheduleColumns;
   tz?: string;
+  onSaved?: (next: Status) => void;
 }) {
   const router = useRouter();
-  const pathname = usePathname();
   const [open, setOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [asking, setAsking] = useState(false);
+  // The status just saved, shown until the page's own data catches up.
+  const [saved, setSaved] = useState<string | null>(null);
+  const shown = saved ?? currentStatus;
+  useEffect(() => setSaved(null), [currentStatus]);
   const containerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -61,7 +70,7 @@ export function InlineStatusEdit({
   }, []);
 
   async function setStatus(next: Status, when?: When | null) {
-    if (next === currentStatus) {
+    if (next === shown) {
       setOpen(false);
       return;
     }
@@ -93,11 +102,10 @@ export function InlineStatusEdit({
       return;
     }
     setAsking(false);
-    // Completed: the job page asks which days you were there if no hours
-    // are logged (mileage). Otherwise refresh so the timeline picks up the
-    // new status_log row.
-    if (next === "completed") router.replace(`${pathname}?days=ask`, { scroll: false });
-    else router.refresh();
+    setSaved(next);
+    onSaved?.(next);
+    // So the timeline picks up the new status_log row.
+    router.refresh();
   }
 
   return (
@@ -109,7 +117,7 @@ export function InlineStatusEdit({
         className="inline-flex items-center gap-1 group rounded hover:bg-ink-2 px-1 -mx-1 py-0.5 transition-colors"
         aria-label="Change status"
       >
-        <StatusChip status={currentStatus} />
+        <StatusChip status={shown} />
         {saving ? (
           <Loader2 size={11} className="animate-spin text-bone-400" />
         ) : (
@@ -130,7 +138,7 @@ export function InlineStatusEdit({
               className="w-full flex items-center gap-2 px-3 py-1.5 text-left hover:bg-ink-3 transition-colors"
             >
               <StatusChip status={s} />
-              {s === currentStatus && (
+              {s === shown && (
                 <span className="ml-auto text-2xs text-bone-500">current</span>
               )}
             </button>

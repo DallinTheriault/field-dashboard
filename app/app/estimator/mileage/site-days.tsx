@@ -102,10 +102,24 @@ export function SiteDaysForm({
   );
 }
 
-/** Asked when a job is completed with no hours logged. */
-export function SiteDaysDialog({ jobId, days, closeHref }: { jobId: number; days: string[]; closeHref: string }) {
+/**
+ * Asked when a job is completed with no hours logged. Opened on the page
+ * (onClose) when the status changes there, or from a link (closeHref) when
+ * the job was completed on its edit page.
+ */
+export function SiteDaysDialog({
+  jobId,
+  days,
+  closeHref,
+  onClose,
+}: {
+  jobId: number;
+  days: string[];
+  closeHref?: string;
+  onClose?: () => void;
+}) {
   const router = useRouter();
-  const close = () => router.replace(closeHref, { scroll: false });
+  const close = () => (onClose ? onClose() : router.replace(closeHref ?? `/app/jobs/${jobId}`, { scroll: false }));
   return (
     <div
       className="fixed inset-0 z-50 bg-ink-0/70 flex items-end sm:items-center justify-center p-4"

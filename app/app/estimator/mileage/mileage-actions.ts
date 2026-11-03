@@ -5,8 +5,6 @@ import { requireWriter } from "@/lib/estimator/auth";
 import { getTenantTimezone, dayKeyInTz } from "@/lib/dates";
 import { revalidateMileage, syncBatch } from "@/lib/mileage/sync-run";
 import { baseOn, daysBetween } from "@/lib/mileage/plan";
-import { checkServices, type ServiceCheck } from "@/lib/mileage/geo";
-import { sharedTurn } from "@/lib/mileage/throttle";
 
 type Result<T = undefined> = { ok: true; data?: T } | { ok: false; error: string };
 
@@ -25,32 +23,14 @@ const revalidate = revalidateMileage;
  * Every action here ends well inside the server's 60 s limit: lookups start
  * only within a budget, and each request gives up after 8 s. After a change
  * (a base, days on site) a short batch covers the usual one or two days;
- * anything left stays pending for the Mileage page's batches, which run
- * through /api/estimator/mileage/sync, as the job page's miles box runs
- * through /api/estimator/property-miles: never as actions, which would hold
- * up the page's taps while they wait on the map services.
+ * anything left stays pending for the Mileage page's batches. Lookups
+ * nobody is waiting on run through routes instead (/api/estimator/mileage/
+ * sync and /check, /api/estimator/property-miles): while an action waits on
+ * the map services, every tap on the page waits with it.
  */
 const AFTER_CHANGE_MS = 10_000;
-/** "Check map services": a lookup you tapped for and wait on. */
-const LOOKUP_MS = 15_000;
 
 const sync = (clientId: number, budgetMs = AFTER_CHANGE_MS) => syncBatch(clientId, budgetMs);
-
-/** Ask each map service once, from today's base: can Field reach them? */
-export async function checkMapServices(): Promise<Result<{ base: string; checks: ServiceCheck[] }>> {
-  const auth = await requireWriter();
-  if (!auth.ok) return auth;
-  const admin = createAdminClient();
-  const today = dayKeyInTz(new Date(), await getTenantTimezone());
-  const { data: bases } = await admin.from("mileage_bases").select("id, address, effective_from").eq("client_id", auth.clientId);
-  const base = baseOn(
-    today,
-    (bases ?? []).map((b) => ({ id: b.id, address: b.address, effectiveFrom: String(b.effective_from) })),
-  );
-  if (!base) return { ok: false, error: "Add a base first." };
-  const checks = await checkServices(base.address, null, sharedTurn(admin, Date.now() + LOOKUP_MS));
-  return { ok: true, data: { base: base.address, checks } };
-}
 
 /* ---------- trips ---------- */
 

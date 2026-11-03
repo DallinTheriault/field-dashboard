@@ -16,6 +16,7 @@ import { JobExpenseCapture } from "./job-expense-capture";
 import { WorkOrExpense } from "./work-or-expense";
 import { PropertyMiles } from "../../estimator/mileage/property-miles";
 import { SiteDaysDialog } from "../../estimator/mileage/site-days";
+import { JobStatus } from "./job-status";
 import { daysBetween } from "@/lib/mileage/plan";
 import { PURCHASE_SCAN_COLS, toPendingReceipt } from "@/lib/receipts/state";
 import { JobDetailsSheet } from "./job-details-sheet";
@@ -27,7 +28,6 @@ import { TagChipList } from "@/components/tags/tag-chip";
 import { InlineAddTagButton } from "@/components/tags/inline-add-tag";
 import { AssignmentChip } from "@/components/assignment/assignment-select";
 import { ActivityTimeline } from "@/components/activity/activity-timeline";
-import { InlineStatusEdit } from "@/components/ui/inline-status-edit";
 import { createClient } from "@/lib/supabase/server";
 import { getTeamMembers } from "@/lib/team/members";
 import { getActivityTimeline } from "@/lib/timeline/fetch";
@@ -202,18 +202,19 @@ export default async function JobDetailPage({
     .filter((p) => p.itemCount === 0);
   const billing = internals && billingRow ? toJobBilling(billingRow as Record<string, unknown>) : null;
 
-  // Just completed with no hours logged: which days were you there?
+  // The job's scheduled days: what "Which days were you there?" starts from.
+  const scheduledDays = job.start_datetime
+    ? daysBetween(dayKeyInTz(job.start_datetime, tz), job.end_datetime ? dayKeyInTz(job.end_datetime, tz) : null)
+    : [];
+
+  // Completed on the edit page with no hours logged (days=ask): which days were you there?
   let siteDaysAsk: string[] | null = null;
   if (daysParam === "ask" && estimatorOn && canSeeInternals && job.status === "completed") {
     const [{ count: hourRows }, { count: dayRows }] = await Promise.all([
       supabase.from("time_entries").select("*", { count: "exact", head: true }).eq("job_id", job.id).throwOnError(),
       supabase.from("job_site_days").select("*", { count: "exact", head: true }).eq("job_id", job.id).throwOnError(),
     ]);
-    if ((hourRows ?? 0) === 0 && (dayRows ?? 0) === 0) {
-      const startDay = job.start_datetime ? dayKeyInTz(job.start_datetime, tz) : null;
-      const endDay = job.end_datetime ? dayKeyInTz(job.end_datetime, tz) : null;
-      siteDaysAsk = startDay ? daysBetween(startDay, endDay) : [];
-    }
+    if ((hourRows ?? 0) === 0 && (dayRows ?? 0) === 0) siteDaysAsk = scheduledDays;
   }
   const isOwner = session?.role === "owner";
 
@@ -313,11 +314,12 @@ export default async function JobDetailPage({
       <div className="flex flex-wrap items-center gap-2 mb-1.5">
         <Briefcase size={13} className="text-field-500 shrink-0" />
         <span className="label-eyebrow">{job.job_number ?? `Job #${job.id}`}</span>
-        <InlineStatusEdit
-          jobId={job.id}
+        <JobStatus
+          jobId={Number(job.id)}
           currentStatus={job.status ?? "lead"}
           schedule={{ start_datetime: job.start_datetime ?? null, end_datetime: job.end_datetime ?? null, all_day: !!job.all_day }}
           tz={tz}
+          siteDays={internals ? scheduledDays : null}
         />
         {billing?.state === "ready" ? (
           <Link href={`/app/jobs/${job.id}/invoice`} prefetch={false} aria-label="Ready to invoice: create the invoice">

@@ -260,8 +260,8 @@ check("…untick the days you weren't there: the rest become trips", days7.map((
 await page.goto(`${APP}/app/jobs/${j1.id}`);
 await page.getByRole("button", { name: "Change status" }).click();
 await page.getByRole("button", { name: "Completed", exact: true }).click();
-await page.waitForURL(/days=ask/);
-await page.waitForLoadState("networkidle");
+await until(async () => (await adminGet(`jobs?id=eq.${j1.id}&select=status`))[0]?.status === "completed");
+await page.waitForTimeout(1500);
 check("no question when hours are logged", (await page.getByRole("dialog", { name: "Which days were you there?" }).count()) === 0);
 
 
@@ -330,6 +330,18 @@ await page.locator("main h1").waitFor();
 const leftAfter = Date.now() - tLeave;
 check("leaving a job right after logging hours doesn't wait on its trip lookup", leftAfter < 3000, `${leftAfter} ms`);
 await geo.script({ delay: {} });
+// Let the lookups started here finish (that day's trip, the job's miles box)
+// before the next scenario counts the map services' requests.
+await until(async () => {
+  const t = (await allTrips()).filter((x) => x.job_id === jLeave.id || (x.stops ?? []).some((st) => st.job_id === jLeave.id));
+  return t.length > 0 && t.every((x) => x.miles_status !== "pending");
+}, 60_000);
+for (let seen = -1, i = 0; i < 40; i++) {
+  const n = (await geo.requests()).length;
+  if (n === seen) break;
+  seen = n;
+  await new Promise((r) => setTimeout(r, 3000));
+}
 
 // --- Members --------------------------------------------------------------------------------------------
 const mp = await login(browser, "member@cascade.test", PHONE);
