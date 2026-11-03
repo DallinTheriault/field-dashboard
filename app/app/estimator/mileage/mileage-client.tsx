@@ -66,6 +66,9 @@ export function MileageClient({
   // or down): "Try again" or the next visit picks up from there.
   const alive = useRef(true);
   const running = useRef(false);
+  // Asked to run while running (a save brought back new pending trips):
+  // go round again, since the running batches may predate the save.
+  const again = useRef(false);
   const [stalled, setStalled] = useState(false);
   useEffect(() => {
     alive.current = true;
@@ -74,32 +77,41 @@ export function MileageClient({
     };
   }, []);
   const runBatches = useCallback(async () => {
-    if (running.current) return;
+    if (running.current) {
+      again.current = true;
+      return;
+    }
     running.current = true;
     setWorking(true);
     setStalled(false);
-    // A batch that got no turn at the map services may just have overlapped
-    // another lookup (a save, another device): try it a couple more times
-    // before saying they're busy.
-    for (let i = 0, idle = 0; i < 50 && alive.current; i++) {
-      const r = await syncTripsBatch();
-      if (!alive.current) break;
-      router.refresh();
-      if (!r.ok) {
-        setErr(r.error);
-        break;
+    let stop = false;
+    do {
+      again.current = false;
+      // A batch that got no turn at the map services may just have overlapped
+      // another lookup (a save, another device): try it a couple more times
+      // before saying they're busy.
+      for (let i = 0, idle = 0; i < 50 && alive.current; i++) {
+        const r = await syncTripsBatch();
+        if (!alive.current) break;
+        router.refresh();
+        if (!r.ok) {
+          setErr(r.error);
+          stop = true;
+          break;
+        }
+        if (!r.data || r.data.pending === 0) break;
+        if (r.data.lookups > 0) {
+          idle = 0;
+          continue;
+        }
+        if (++idle >= 3) {
+          setStalled(true);
+          stop = true;
+          break;
+        }
+        await new Promise((done) => setTimeout(done, 2000));
       }
-      if (!r.data || r.data.pending === 0) break;
-      if (r.data.lookups > 0) {
-        idle = 0;
-        continue;
-      }
-      if (++idle >= 3) {
-        setStalled(true);
-        break;
-      }
-      await new Promise((done) => setTimeout(done, 2000));
-    }
+    } while (again.current && !stop && alive.current);
     running.current = false;
     if (alive.current) setWorking(false);
   }, [router]);
