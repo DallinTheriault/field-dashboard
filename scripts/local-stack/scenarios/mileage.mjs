@@ -238,7 +238,7 @@ const j7 = await mk("Gil Twoday", "600 Maple St, Riverton, UT 84065", "2026-10-1
 // Slow map services: the job page's miles box is still waiting on them when
 // the job is marked Completed, and the question must not wait with it (it
 // did while the miles box ran as a server action: up to ~30 s).
-await geo.script({ delay: { census: 8000, valhalla: 8000 } });
+await geo.script({ delay: { census: 6000, valhalla: 6000 } });
 await page.goto(`${APP}/app/jobs/${j7.id}`);
 await page.getByRole("button", { name: "Change status" }).click();
 const tDone = Date.now();
@@ -318,7 +318,7 @@ for (const [label, path] of [["the invoice builder", `/app/jobs/${j3.id}/invoice
 // Logging hours starts a trip lookup in the background; leaving the page
 // right after must not wait on it (it did while that ran as a server action).
 const jLeave = await mk("Hal Hours", "710 Cedar St, Draper, UT 84020");
-await geo.script({ delay: { census: 8000, valhalla: 8000 } });
+await geo.script({ delay: { census: 6000, valhalla: 6000 } });
 await page.goto(`${APP}/app/jobs/${jLeave.id}`);
 await page.getByLabel("Hours").fill("2");
 await page.getByRole("button", { name: "Log time" }).click();
@@ -330,18 +330,20 @@ await page.locator("main h1").waitFor();
 const leftAfter = Date.now() - tLeave;
 check("leaving a job right after logging hours doesn't wait on its trip lookup", leftAfter < 3000, `${leftAfter} ms`);
 await geo.script({ delay: {} });
-// Let the lookups started here finish (that day's trip, the job's miles box)
-// before the next scenario counts the map services' requests.
+// Let the lookups started here finish before the next scenario counts the
+// map services' requests: that day's trip, and the job's miles box (which
+// keeps going on the server after the page is left, and lands in the caches).
 await until(async () => {
   const t = (await allTrips()).filter((x) => x.job_id === jLeave.id || (x.stops ?? []).some((st) => st.job_id === jLeave.id));
   return t.length > 0 && t.every((x) => x.miles_status !== "pending");
 }, 60_000);
-for (let seen = -1, i = 0; i < 40; i++) {
-  const n = (await geo.requests()).length;
-  if (n === seen) break;
-  seen = n;
-  await new Promise((r) => setTimeout(r, 3000));
-}
+await until(async () => {
+  const g = (await adminGet(`geocode_cache?client_id=eq.8&address=eq.${encodeURIComponent("710 Cedar St, Draper, UT 84020")}&select=status,lat,lon`))[0];
+  if (!g) return false;
+  if (g.status !== "ok") return true;
+  const key = `${Number(g.lat).toFixed(5)},${Number(g.lon).toFixed(5)}`;
+  return (await adminGet(`route_cache?client_id=eq.8&select=miles&or=${encodeURIComponent(`(from_point.eq."${key}",to_point.eq."${key}")`)}`)).length > 0;
+}, 90_000);
 
 // --- Members --------------------------------------------------------------------------------------------
 const mp = await login(browser, "member@cascade.test", PHONE);

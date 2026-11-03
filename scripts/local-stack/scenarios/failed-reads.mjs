@@ -2,16 +2,19 @@
 // the pages that use it show an error, not an empty or half-filled page.
 // Usage (gateway already failing that table): node failed-reads.mjs <table>
 import { APP, PHONE, check, launch, login } from "./browser.mjs";
-import { adminGet } from "./api.mjs";
+import { adminCall, adminGet } from "./api.mjs";
 
 const table = process.argv[2];
 const job = (await adminGet("jobs?client_id=eq.8&archived_at=is.null&select=id&order=id&limit=1"))[0].id;
-const purchase = (await adminGet("purchases?client_id=eq.8&select=id&order=id.desc&limit=1"))[0]?.id;
+// A receipt to open (a fresh stack has none): never skip its check silently.
+const purchase =
+  (await adminGet("purchases?client_id=eq.8&select=id&order=id.desc&limit=1"))[0]?.id ??
+  (await adminCall("POST", "purchases", { client_id: 8, vendor: "Failed-reads check", purchase_date: "2026-10-31", source: "manual" })).body[0].id;
 const ERROR_SCREEN = "This page didn't load";
 
 // Pages whose server render reads the table: they show the error screen.
 const PAGES = {
-  expenses: ["/app/estimator/purchases", ...(purchase ? [`/app/estimator/purchases/${purchase}`] : []), "/app/estimator/expenses", `/app/jobs/${job}`],
+  expenses: ["/app/estimator/purchases", `/app/estimator/purchases/${purchase}`, "/app/estimator/expenses", `/app/jobs/${job}`],
   mileage_entries: ["/app/estimator/mileage", "/app/estimator/expenses"],
   payments: ["/app/estimator/expenses"],
   time_entries: [`/app/jobs/${job}`, "/app/estimator/insights"],
