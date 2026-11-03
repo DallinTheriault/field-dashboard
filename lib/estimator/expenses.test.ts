@@ -82,3 +82,39 @@ describe("job_extra -> invoice rows (at cost, no markup)", () => {
     expect(stripped[0].description).toBe("Painting");
   });
 });
+
+import { knownStockCategory, stockTaxCategory, summarizeStock } from "./expenses";
+
+describe("stock category -> tax category", () => {
+  it("tools file under Tools & equipment, consumables under Materials & supplies", () => {
+    expect(stockTaxCategory("Tools")).toBe("Tools & equipment");
+    expect(stockTaxCategory("consumables")).toBe("Materials & supplies");
+    expect(knownStockCategory(" tools ")).toBe("Tools");
+  });
+
+  it("any other label leaves the tax category alone", () => {
+    expect(stockTaxCategory("Vehicle & fuel")).toBeNull();
+    expect(stockTaxCategory("Cleaning Supplies")).toBeNull();
+    expect(stockTaxCategory(null)).toBeNull();
+  });
+
+  it("re-filing items moves cost between categories; the totals stay the same", () => {
+    const before = [
+      { category: "Materials & supplies", amount: 249, assignment: "stock" },
+      { category: "Materials & supplies", amount: 26.97, assignment: "stock" },
+      { category: "Vehicle & fuel", amount: 60, assignment: "stock" },
+    ];
+    const after = before.map((e, i) => (i === 0 ? { ...e, category: stockTaxCategory("Tools")! } : e));
+    const p0 = summarizePnl({ paymentCents: [], expenses: before });
+    const p1 = summarizePnl({ paymentCents: [], expenses: after });
+    expect(p1.totalExpenses).toBe(p0.totalExpenses);
+    expect(p1.byCategory).toEqual(
+      expect.arrayContaining([
+        { category: "Tools & equipment", total: 249 },
+        { category: "Materials & supplies", total: 26.97 },
+        { category: "Vehicle & fuel", total: 60 },
+      ]),
+    );
+    expect(summarizeStock(after).total).toBe(summarizeStock(before).total);
+  });
+});

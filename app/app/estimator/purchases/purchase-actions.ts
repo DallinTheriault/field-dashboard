@@ -6,6 +6,9 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import {
   ASSIGNMENTS,
   JOB_ASSIGNMENTS,
+  RECEIPT_ITEM_CATEGORY,
+  knownStockCategory,
+  stockTaxCategory,
   type Assignment,
 } from "@/lib/estimator/expenses";
 import {
@@ -45,28 +48,46 @@ async function invoiceGuard(
 
 type Result = { ok: true } | { ok: false; error: string };
 
+type AssignPatch = {
+  assignment: Assignment;
+  jobId?: number | null;
+  stockCategory?: string | null;
+  customerNotified?: boolean;
+};
+
 /**
- * Assign (or reassign) one expense item. The whole four-way model funnels
- * through here so the guards live in ONE place:
+ * Assign (or reassign) one expense item. Same path and guards as a batch:
+ * see setItemsAssignment.
+ */
+export async function setItemAssignment(itemId: number, patch: AssignPatch): Promise<Result> {
+  const r = await setItemsAssignment([itemId], patch);
+  return r.ok ? { ok: true } : r;
+}
+
+/**
+ * Assign (or reassign) expense items: one, or a whole receipt at once ("Set
+ * all items to…"). Every assignment funnels through here so the guards live
+ * in ONE place:
  *  - job assignments require a job that belongs to this tenant (H2-style
  *    ownership check through the caller's RLS view);
- *  - an item already stamped onto an invoice is FROZEN (ruling Q1c) —
- *    refresh the draft invoice first, or the invoice is final and the
- *    money conversation is a human one, not a silent data edit.
+ *  - an item stamped onto an invoice that went out is FROZEN (ruling Q1c):
+ *    a batch leaves it as it is and counts it in `locked`; on a DRAFT it may
+ *    change, and the draft's lines follow (§6.4).
+ * Items already set this way are left untouched (their "customer knows"
+ * flag included). Stock as Tools or Consumables also files the item under
+ * that tax category (STOCK_TAX_CATEGORY); leaving stock puts a Tools item
+ * back under the receipt's. Totals never change, only the split.
  */
-export async function setItemAssignment(
-  itemId: number,
-  patch: {
-    assignment: Assignment;
-    jobId?: number | null;
-    stockCategory?: string | null;
-    customerNotified?: boolean;
-  },
-): Promise<Result> {
+export async function setItemsAssignment(
+  itemIds: number[],
+  patch: AssignPatch,
+): Promise<{ ok: true; changed: number; locked: number } | { ok: false; error: string }> {
   const supabase = await createClient();
   if (!ASSIGNMENTS.includes(patch.assignment)) {
     return { ok: false, error: "Invalid assignment." };
   }
+  const ids = [...new Set(itemIds.map(Number))].filter((n) => Number.isInteger(n) && n > 0);
+  if (ids.length === 0 || ids.length > 300) return { ok: false, error: "No items to assign." };
 
   // Role gate (defense-in-depth): RLS already limits writes to owner/manager,
   // but prove the boundary at every route — a member may never set job_extra
@@ -80,58 +101,121 @@ export async function setItemAssignment(
     return { ok: false, error: "You can't set the notified flag." };
   }
 
-  const { data: item } = await supabase
+  const { data: items, error: readErr } = await supabase
     .from("expenses")
-    .select("id, client_id, job_id, assignment, invoiced_on")
-    .eq("id", itemId)
-    .maybeSingle();
-  if (!item) return { ok: false, error: "Item not found." };
-  const guard = await invoiceGuard(supabase, item.invoiced_on);
-  if ("error" in guard) return { ok: false, error: guard.error };
+    .select("id, client_id, job_id, assignment, stock_category, category, invoiced_on, purchase_id")
+    .in("id", ids);
+  if (readErr) return { ok: false, error: readErr.message };
+  if (!items || items.length !== ids.length) return { ok: false, error: "Item not found." };
+  const clientId = items[0].client_id;
+  if (items.some((it) => it.client_id !== clientId)) return { ok: false, error: "Item not found." };
 
   const isJob = JOB_ASSIGNMENTS.includes(patch.assignment);
   let jobId: number | null = null;
   if (isJob) {
     jobId = patch.jobId ? Number(patch.jobId) : null;
     if (!jobId) return { ok: false, error: "Pick a job for a job assignment." };
-    // Ownership guard: visible via the caller's RLS AND same tenant as item.
+    // Ownership guard: visible via the caller's RLS AND same tenant as the items.
     const { data: job } = await supabase
       .from("jobs")
       .select("id, client_id")
       .eq("id", jobId)
       .maybeSingle();
-    if (!job || job.client_id !== item.client_id) {
+    if (!job || job.client_id !== clientId) {
       return { ok: false, error: "Job not found." };
     }
   }
+  // Tools / Consumables come back spelled as offered and set the tax
+  // category; any other label (a quick expense's) leaves it as it is.
+  const stockLabel = patch.assignment === "stock" ? (patch.stockCategory ?? "").trim() || null : null;
+  const stockCategory = knownStockCategory(stockLabel) ?? stockLabel;
+  const taxCategory = patch.assignment === "stock" ? stockTaxCategory(stockCategory) : null;
 
+  // The invoices these items are on, in one read: final ones lock their items.
+  const invoiceIds = [...new Set(items.map((it) => it.invoiced_on).filter((v): v is number => v !== null))];
+  const { data: invoices, error: invErr } = invoiceIds.length
+    ? await supabase.from("invoices").select("id, invoice_number, status, stripe_invoice_id").in("id", invoiceIds)
+    : { data: [], error: null };
+  if (invErr) return { ok: false, error: invErr.message };
+  const finalInvoice = new Map(
+    (invoices ?? []).filter((inv) => inv.status !== "draft" || inv.stripe_invoice_id).map((inv) => [inv.id, inv.invoice_number]),
+  );
+  const open = items.filter((it) => it.invoiced_on === null || !finalInvoice.has(it.invoiced_on));
+  const locked = items.length - open.length;
+  if (open.length === 0) {
+    const number = finalInvoice.get(items[0].invoiced_on as number);
+    return {
+      ok: false,
+      error:
+        items.length === 1
+          ? `This item is on invoice ${number} — that invoice went out and is final.`
+          : "These items are on invoices that went out, so they can't change.",
+    };
+  }
+  const changing = open.filter(
+    (it) =>
+      it.assignment !== patch.assignment ||
+      (it.job_id ?? null) !== jobId ||
+      (it.stock_category ?? null) !== stockCategory ||
+      (taxCategory !== null && it.category !== taxCategory),
+  );
+  if (changing.length === 0) return { ok: true, changed: 0, locked };
+  // Leaving stock, an item filed under a stock category's tax line (Tools)
+  // goes back to the receipt's; one the user filed some other way stays.
+  const refile =
+    patch.assignment === "stock"
+      ? []
+      : changing.filter(
+          (it) =>
+            it.assignment === "stock" &&
+            it.category !== RECEIPT_ITEM_CATEGORY &&
+            it.category === stockTaxCategory(it.stock_category),
+        );
+
+  // An item on a draft comes off it here; the draft is refreshed below.
   const { data: updated, error } = await supabase
     .from("expenses")
     .update({
       assignment: patch.assignment,
-      job_id: isJob ? jobId : null,
-      stock_category:
-        patch.assignment === "stock"
-          ? (patch.stockCategory ?? "").trim() || null
-          : null,
-      customer_notified:
-        patch.assignment === "job_extra" ? !!patch.customerNotified : false,
-      invoiced_on: guard.refreshDraft ? null : item.invoiced_on,
+      job_id: jobId,
+      stock_category: stockCategory,
+      ...(taxCategory ? { category: taxCategory } : {}),
+      customer_notified: patch.assignment === "job_extra" ? !!patch.customerNotified : false,
+      invoiced_on: null,
     })
-    .eq("id", itemId)
+    .in(
+      "id",
+      changing.map((it) => it.id),
+    )
     .select("id");
   if (error) return { ok: false, error: error.message };
   if ((updated ?? []).length === 0) {
     return { ok: false, error: "You don't have permission to assign items." };
   }
+  if (refile.length > 0) {
+    const { error: cErr } = await supabase
+      .from("expenses")
+      .update({ category: RECEIPT_ITEM_CATEGORY })
+      .in(
+        "id",
+        refile.map((it) => it.id),
+      );
+    if (cErr) return { ok: false, error: cErr.message };
+  }
 
-  // The draft invoice's lines follow the reassignment (§6.4).
-  if (guard.refreshDraft) await refreshDraftExtras(guard.refreshDraft);
+  // The draft invoices' lines follow the reassignment (§6.4).
+  const drafts = [...new Set(changing.map((it) => it.invoiced_on).filter((v): v is number => v !== null))];
+  for (const draft of drafts) await refreshDraftExtras(draft);
 
   revalidatePath("/app/estimator/purchases");
-  if (jobId) revalidatePath(`/app/jobs/${jobId}`);
-  if (item.job_id && item.job_id !== jobId) revalidatePath(`/app/jobs/${item.job_id}`);
-  return { ok: true };
+  revalidatePath("/app");
+  for (const pid of new Set(changing.map((it) => it.purchase_id).filter((v) => v !== null))) {
+    revalidatePath(`/app/estimator/purchases/${pid}`);
+  }
+  for (const jid of new Set([jobId, ...changing.map((it) => it.job_id)].filter((v) => v !== null))) {
+    revalidatePath(`/app/jobs/${jid}`);
+  }
+  return { ok: true, changed: updated?.length ?? 0, locked };
 }
 
 /**
@@ -298,7 +382,7 @@ export async function saveScannedReceipt(input: {
       client_id: clientId,
       purchase_id: purchase.id,
       expense_date: date || null,
-      category: "Materials & supplies",
+      category: RECEIPT_ITEM_CATEGORY,
       description: row.description.trim(),
       sku: row.sku,
       qty: row.qty !== null && Number.isFinite(row.qty) && row.qty > 0 ? row.qty : 1,

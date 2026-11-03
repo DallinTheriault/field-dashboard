@@ -47,14 +47,14 @@ export default async function ExpensesPage({
         .gte("expense_date", `${year}-01-01`)
         .lte("expense_date", `${year}-12-31`)
         .order("expense_date", { ascending: false })
-        .order("id", { ascending: false }),
+        .order("id", { ascending: false }).throwOnError(),
       // Income is payments by the day the money came in: a December part
       // payment is December income even if the rest arrives in January.
       supabase
         .from("payments")
         .select("amount_cents")
         .gte("received_on", `${year}-01-01`)
-        .lte("received_on", `${year}-12-31`),
+        .lte("received_on", `${year}-12-31`).throwOnError(),
       // Mileage is stated separately and NEVER summed into the P&L (§6.3):
       // standard mileage and actual vehicle costs are alternative methods.
       loadTrips(supabase, year),

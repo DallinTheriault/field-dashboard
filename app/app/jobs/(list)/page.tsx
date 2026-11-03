@@ -39,15 +39,15 @@ export default async function JobsPage({
     .from("jobs")
     .select(`id, name, phone, service, status, quoted_price, start_datetime, created_at, ${JOB_LOCATION_SELECT}, job_tags(tag:tags(*))`)
     .is("archived_at", null)
-    .order("created_at", { ascending: false });
+    .order("created_at", { ascending: false }).throwOnError();
   if (status) jobsQuery = jobsQuery.eq("status", status);
   const [tz, session, flags, billingRes, jobsRes, tagsRes] = await Promise.all([
     getTenantTimezone(),
     getCurrentUserRole(),
     getTenantFeatureFlags(),
-    supabase.from("job_billing").select(BILLING_COLS),
+    supabase.from("job_billing").select(BILLING_COLS).throwOnError(),
     jobsQuery,
-    supabase.from("tags").select("*").order("use_count", { ascending: false }).order("created_at", { ascending: false }),
+    supabase.from("tags").select("*").order("use_count", { ascending: false }).order("created_at", { ascending: false }).throwOnError(),
   ]);
   const clientId = session?.clientId ?? null;
   // Billing state (v099) is money: owners and managers, estimator on.

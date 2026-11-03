@@ -83,6 +83,37 @@ export const ASSIGNMENT_LABELS: Record<Assignment, string> = {
   stock: "Stock / company",
 };
 
+/** The tax category a receipt's items start with (scan and manual entry). */
+export const RECEIPT_ITEM_CATEGORY = "Materials & supplies";
+
+/**
+ * Stock categories offered when an item goes to stock, and the tax category
+ * (the P&L line and the CSV's category column) each one files under. Moving
+ * an item to stock moves its cost between tax lines; the total never changes.
+ */
+export const STOCK_TAX_CATEGORY = {
+  Tools: "Tools & equipment",
+  Consumables: "Materials & supplies",
+} as const;
+export type StockCategory = keyof typeof STOCK_TAX_CATEGORY;
+export const STOCK_CATEGORIES = Object.keys(STOCK_TAX_CATEGORY) as StockCategory[];
+
+/** The stock category as offered (any case), or null for any other label. */
+export function knownStockCategory(label: string | null | undefined): StockCategory | null {
+  const k = (label ?? "").trim().toLowerCase();
+  return STOCK_CATEGORIES.find((c) => c.toLowerCase() === k) ?? null;
+}
+
+/**
+ * The tax category a stock category files under; null for any other label
+ * (a quick expense's "Vehicle & fuel", an older free-text one), whose tax
+ * category is left as it is.
+ */
+export function stockTaxCategory(label: string | null | undefined): string | null {
+  const c = knownStockCategory(label);
+  return c ? STOCK_TAX_CATEGORY[c] : null;
+}
+
 /** Job types — count toward job material cost; stock never does. */
 export const JOB_ASSIGNMENTS: Assignment[] = [
   "job_in_bid",

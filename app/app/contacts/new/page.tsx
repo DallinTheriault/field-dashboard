@@ -23,7 +23,7 @@ export default async function NewContactPage() {
     .select("client_id")
     .eq("auth_user_id", user.id)
     .limit(1)
-    .maybeSingle();
+    .maybeSingle().throwOnError();
 
   const clientId = (clientUser as { client_id?: number } | null)?.client_id;
   if (!clientId) {

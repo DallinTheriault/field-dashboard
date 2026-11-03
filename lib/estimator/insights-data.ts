@@ -38,11 +38,11 @@ export async function getInsightsData(
         .select(
           "id, job_id, version, computed_cost, resolved_loaded_rate, resolved_travel_fee, jobs(name, status)",
         )
-        .order("version", { ascending: true }),
+        .order("version", { ascending: true }).throwOnError(),
       supabase
         .from("estimate_line_items")
-        .select("estimate_id, service_id, resolved_labor_hours, resolved_labor_cost"),
-      supabase.from("time_entries").select("job_id, hours"),
+        .select("estimate_id, service_id, resolved_labor_hours, resolved_labor_cost").throwOnError(),
+      supabase.from("time_entries").select("job_id, hours").throwOnError(),
       // Job-assigned expense lines are the material/parts actuals now.
       // Job material cost = the three job assignments (§7.3); stock never
       // counts. Pre-assignment rows with a job still count (they were
@@ -51,17 +51,17 @@ export async function getInsightsData(
         .from("expenses")
         .select("job_id, amount")
         .not("job_id", "is", null)
-        .neq("assignment", "stock"),
+        .neq("assignment", "stock").throwOnError(),
       supabase
         .from("service_catalog")
         .select("id, name, type, unit, labor_hours_per_unit, flat_labor_hours")
         // Variance compares builder hours; PRICED rows have none to tune.
-        .in("type", ["MEASURED", "TASK"]),
+        .in("type", ["MEASURED", "TASK"]).throwOnError(),
       supabase
         .from("invoices")
         .select("job_id")
         .eq("status", "paid")
-        .not("invoice_number", "is", null),
+        .not("invoice_number", "is", null).throwOnError(),
     ]);
 
   // Latest estimate per job — ascending version order means later overwrites.

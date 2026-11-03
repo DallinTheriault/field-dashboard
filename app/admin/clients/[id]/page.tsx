@@ -17,7 +17,7 @@ export default async function AdminClientDetailPage({
     .from("Clients")
     .select("*")
     .eq("id", id)
-    .maybeSingle();
+    .maybeSingle().throwOnError();
 
   if (!client) notFound();
 

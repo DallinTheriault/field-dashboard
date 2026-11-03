@@ -119,7 +119,7 @@ export function JobActuals({
 
   async function load() {
     const supabase = await browserSupabase();
-    const [{ data: time }, { data: mats }, { data: est }] = await Promise.all([
+    const [{ data: time, error: tErr }, { data: mats, error: mErr }, { data: est, error: eErr }] = await Promise.all([
       supabase
         .from("time_entries")
         .select("id, entry_date, hours, note, invoice_id, covered_at, invoice:invoices!time_entries_invoice_same_tenant(invoice_number, status, stripe_invoice_id)")
@@ -140,11 +140,13 @@ export function JobActuals({
         .limit(1)
         .maybeSingle(),
     ]);
+    setLoading(false);
+    // Keep what's on screen rather than show empty hours and materials.
+    if (tErr || mErr || eErr) return setErr("Couldn't load this job's hours and materials. Refresh to try again.");
     setEntries(toEntries((time ?? []) as ActualsTimeRow[]));
     setMaterials(toMaterials((mats ?? []) as ActualsMaterialRow[]));
     const lines = (est?.estimate_line_items ?? []) as Array<{ resolved_labor_hours: number }>;
     setEstHours(est ? toEstHours(lines.map((l) => l.resolved_labor_hours)) : null);
-    setLoading(false);
   }
 
   // The page renders the first load; fetch here only without it.

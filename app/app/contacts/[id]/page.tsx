@@ -86,7 +86,7 @@ export default async function ContactDetailPage({
     .from("contacts")
     .select("*")
     .eq("id", id)
-    .maybeSingle();
+    .maybeSingle().throwOnError();
 
   if (!contact) notFound();
 
@@ -103,12 +103,12 @@ export default async function ContactDetailPage({
       .select("id, name, address, service, status, quoted_price, start_datetime, created_at")
       .eq("contact_id", contact.id)
       .is("archived_at", null)
-      .order("created_at", { ascending: false }),
+      .order("created_at", { ascending: false }).throwOnError(),
     supabase
       .from("properties")
       .select("id, address, unit, label")
       .eq("contact_id", contact.id)
-      .order("created_at", { ascending: true }),
+      .order("created_at", { ascending: true }).throwOnError(),
     getTeamMembers(contact.client_id),
     getActivityTimeline("contact", Number(contact.id)),
     getContactTags(Number(contact.id)),

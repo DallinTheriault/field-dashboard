@@ -40,18 +40,20 @@ export function MaterialsManager({ clientId }: { clientId: number }) {
   const supabase = createClient();
   const [materials, setMaterials] = useState<Material[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadFailed, setLoadFailed] = useState(false);
   const [editing, setEditing] = useState<number | "new" | null>(null);
   const [draft, setDraft] = useState<Draft>(EMPTY);
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
   async function load() {
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from("materials")
       .select(
         "id, name, unit, unit_cost, coverage_sqft_per_unit, purchasable_unit_size, is_placeholder, active",
       )
       .order("name", { ascending: true });
+    if (error) return setLoadFailed(true);
     setMaterials(
       (data ?? []).map((m) => ({
         ...m,
@@ -124,6 +126,9 @@ export function MaterialsManager({ clientId }: { clientId: number }) {
     load();
   }
 
+  if (loadFailed) {
+    return <div className="px-4 py-4 text-2xs text-status-danger">Couldn&apos;t load this section, so it&apos;s hidden rather than shown empty. Refresh to try again.</div>;
+  }
   if (loading) {
     return <div className="px-4 py-4 text-2xs text-bone-400">Loading…</div>;
   }

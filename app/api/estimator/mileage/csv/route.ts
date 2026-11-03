@@ -25,7 +25,16 @@ export async function GET(request: Request) {
   const y = new URL(request.url).searchParams.get("y") ?? "";
   const year = /^\d{4}$/.test(y) ? Number(y) : Number(dayKeyInTz(new Date(), tz).slice(0, 4));
   const supabase = await createClient();
-  const [trips, rates] = await Promise.all([loadTrips(supabase, year), loadRatePeriods(supabase)]);
+  // A failed read answers 500 with a message, never a log missing trips.
+  const loaded = await Promise.all([loadTrips(supabase, year), loadRatePeriods(supabase)]).catch((e: unknown) => e as Error);
+  if (loaded instanceof Error) {
+    console.error("[csv] mileage export failed", loaded);
+    return new NextResponse("Couldn't build the export, so nothing was downloaded. Try again.", {
+      status: 500,
+      headers: { "Content-Type": "text/plain; charset=utf-8" },
+    });
+  }
+  const [trips, rates] = loaded;
   const totals = yearTotals(trips, rates);
 
   const lines = [

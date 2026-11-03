@@ -74,7 +74,9 @@ export async function mintPurchasePhotoUrls(purchase: {
   const { data, error } = await admin.storage
     .from("receipts")
     .createSignedUrls(paths, TTL_SECONDS);
-  if (error || !data) return [];
+  // Thrown, not swallowed: an empty list would read "No photo on this purchase".
+  if (error) throw error;
+  if (!data) return [];
   return data
     .filter((r) => !r.error && r.signedUrl)
     .map((r) => ({ url: r.signedUrl as string, pdf: isPdfPath(r.path ?? "") }));

@@ -6,6 +6,14 @@ import { ALTERNATIVE_METHODS_NOTE } from "@/lib/estimator/mileage";
 import { loadRatePeriods, loadTrips } from "@/lib/mileage/trips";
 import { yearTotals } from "@/lib/mileage/plan";
 
+function exportFailed(what: string, e: Error) {
+  console.error(`[csv] ${what} export failed`, e);
+  return new NextResponse("Couldn't build the export, so nothing was downloaded. Try again.", {
+    status: 500,
+    headers: { "Content-Type": "text/plain; charset=utf-8" },
+  });
+}
+
 function csvCell(v: string | number | null): string {
   const s = String(v ?? "");
   return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
@@ -32,25 +40,27 @@ export async function GET(request: Request) {
     ? Number(yParam)
     : Number(dayKeyInTz(new Date(), tz).slice(0, 4));
 
-  const [{ data: expenses }, { data: payments }, trips, rates] =
-    await Promise.all([
+  // A failed read answers 500 with a message, never a CSV missing rows.
+  const loaded = await Promise.all([
     supabase
       .from("expenses")
       .select("expense_date, category, description, amount, qty, assignment, jobs(name), purchases(vendor)")
       .gte("expense_date", `${year}-01-01`)
-      .lte("expense_date", `${year}-12-31`),
+      .lte("expense_date", `${year}-12-31`).throwOnError(),
     // Income: each payment on the day it was received (cash basis).
     supabase
       .from("payments")
       .select("received_on, amount_cents, method, reference, invoices(invoice_number, customer_name)")
       .gte("received_on", `${year}-01-01`)
       .lte("received_on", `${year}-12-31`)
-      .order("received_on"),
+      .order("received_on").throwOnError(),
     // Mileage gets its OWN block below — never interleaved with expenses and
     // never added into NET PROFIT (§6.3).
     loadTrips(supabase, year),
     loadRatePeriods(supabase),
-  ]);
+  ]).catch((e: unknown) => e as Error);
+  if (loaded instanceof Error) return exportFailed("expenses", loaded);
+  const [{ data: expenses }, { data: payments }, trips, rates] = loaded;
 
   type Row = [string, string, string, string, string, number];
   const rows: Row[] = [];

@@ -23,16 +23,18 @@ export function ModifiersManager({ clientId }: { clientId: number }) {
   const supabase = createClient();
   const [modifiers, setModifiers] = useState<Modifier[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadFailed, setLoadFailed] = useState(false);
   const [seeding, setSeeding] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [newName, setNewName] = useState("");
   const [newValue, setNewValue] = useState("");
 
   async function load() {
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from("price_modifiers")
       .select("id, name, scope, math, value, active")
       .order("value", { ascending: true });
+    if (error) return setLoadFailed(true);
     setModifiers((data ?? []).map((m) => ({ ...m, value: Number(m.value) })));
     setLoading(false);
   }
@@ -89,6 +91,9 @@ export function ModifiersManager({ clientId }: { clientId: number }) {
     load();
   }
 
+  if (loadFailed) {
+    return <div className="px-4 py-4 text-2xs text-status-danger">Couldn&apos;t load this section, so it&apos;s hidden rather than shown empty. Refresh to try again.</div>;
+  }
   if (loading) {
     return <div className="px-4 py-4 text-2xs text-bone-400">Loading…</div>;
   }

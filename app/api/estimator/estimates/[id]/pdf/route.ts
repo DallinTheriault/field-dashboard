@@ -36,12 +36,12 @@ export async function GET(
         "id, job_id, computed_price, manual_override_price, resolved_travel_fee, estimated_at, created_at, jobs(name, address, phone, email), billing_entities(name, license_number, address, phone, email, default_footer_text, logo_path), travel_zones(label)",
       )
       .eq("id", estimateId)
-      .maybeSingle(),
+      .maybeSingle().throwOnError(),
     supabase
       .from("estimate_line_items")
       .select("description, qty, unit, resolved_client_amount")
       .eq("estimate_id", estimateId)
-      .order("sort_order"),
+      .order("sort_order").throwOnError(),
   ]);
 
   if (!est) {

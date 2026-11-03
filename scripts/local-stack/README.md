@@ -40,6 +40,13 @@ transaction, and records them in `_local_stack.migrations`. To test a migration
 against existing data, build without it (`APPLY_THROUGH=92 up.sh --fresh`), create data,
 then run `migrate.sh`.
 
+**Every batch** runs `scenarios/query-errors.sh` before it's reported, with the
+app built for production (`next build && next start`) on :3000: it opens every
+page and CSV export as owner and member and fails on any Supabase request that
+errors, so a query broken by a schema change can't pass as an empty page.
+`scenarios/failed-reads.sh` is the companion for changes to error handling: it
+fails one table's reads at a time and requires an error, never an empty page.
+
 **Scenarios** (`scenarios/`): browser and API checks per billing slice. For example,
 `scenarios/slice1.sh` rebuilds at v092, creates an estimate in the old builder,
 applies v093 and runs the price-book checks at phone width. They need the app running

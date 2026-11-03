@@ -44,15 +44,15 @@ export default async function NewJobInvoicePage({ params }: { params: Promise<{ 
     { data: settings },
     { data: drafts },
   ] = await Promise.all([
-    supabase.from("jobs").select("id, name, job_number, status, billing_entity_id").eq("id", jobId).maybeSingle(),
-    supabase.from("tasks").select("id, title, status, sort_order, qty, unit, unit_price, billable, invoice_id").eq("job_id", jobId),
+    supabase.from("jobs").select("id, name, job_number, status, billing_entity_id").eq("id", jobId).maybeSingle().throwOnError(),
+    supabase.from("tasks").select("id, title, status, sort_order, qty, unit, unit_price, billable, invoice_id").eq("job_id", jobId).throwOnError(),
     supabase
       .from("expenses")
       .select("id, description, qty, unit_price, amount, bill_markup, assignment, purchases(tax, subtotal)")
       .eq("job_id", jobId)
       .in("assignment", ["job_extra", "job_in_bid"])
       .is("invoiced_on", null)
-      .order("id"),
+      .order("id").throwOnError(),
     supabase
       .from("time_entries")
       .select("id, hours, entry_date")
@@ -60,20 +60,20 @@ export default async function NewJobInvoicePage({ params }: { params: Promise<{ 
       .is("invoice_id", null)
       .is("covered_at", null)
       .order("entry_date")
-      .order("id"),
-    supabase.from("billing_entities").select("id, name, invoice_prefix, is_default, active").order("created_at"),
-    supabase.from("estimates").select("billing_entity_id").eq("job_id", jobId).order("version", { ascending: false }),
+      .order("id").throwOnError(),
+    supabase.from("billing_entities").select("id, name, invoice_prefix, is_default, active").order("created_at").throwOnError(),
+    supabase.from("estimates").select("billing_entity_id").eq("job_id", jobId).order("version", { ascending: false }).throwOnError(),
     supabase
       .from("pricing_settings")
       .select("material_markup_pct, default_hourly_rate, skilled_hourly_rate, minimum_job_charge")
-      .maybeSingle(),
+      .maybeSingle().throwOnError(),
     supabase
       .from("invoices")
       .select("id, invoice_number, total_cents")
       .eq("job_id", jobId)
       .eq("status", "draft")
       .is("stripe_invoice_id", null)
-      .order("id"),
+      .order("id").throwOnError(),
   ]);
   if (!job) notFound();
 

@@ -124,7 +124,7 @@ export default async function ContactsPage({
         </div>
       )}
 
-      {rows.length === 0 ? (
+      {error ? null : rows.length === 0 ? (
         <div className="panel px-6 py-14 text-center">
           <div className="w-10 h-10 mx-auto rounded-full bg-ink-2 border border-line-strong flex items-center justify-center mb-3">
             <Users size={16} className="text-bone-400" strokeWidth={1.6} />

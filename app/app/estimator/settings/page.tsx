@@ -43,7 +43,7 @@ export default async function EstimatorSettingsPage() {
   const { data: clients } = await supabase
     .from("Clients")
     .select("id")
-    .limit(1);
+    .limit(1).throwOnError();
   const clientId = clients?.[0]?.id;
   if (!clientId) redirect("/app");
 

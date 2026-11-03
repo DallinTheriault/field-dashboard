@@ -18,7 +18,7 @@ export default async function ContactEditPage({
     .from("contacts")
     .select("*")
     .eq("id", id)
-    .maybeSingle();
+    .maybeSingle().throwOnError();
 
   if (!contact) notFound();
 

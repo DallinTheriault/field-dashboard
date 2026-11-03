@@ -29,7 +29,7 @@ export async function jobsWithoutSiteDays(supabase: SupabaseClient, year: number
     .is("site_days_done_at", null)
     .or(`and(start_datetime.gte.${from},start_datetime.lt.${to}),and(start_datetime.is.null,created_at.gte.${from},created_at.lt.${to})`)
     .order("start_datetime", { ascending: true, nullsFirst: false })
-    .order("created_at", { ascending: true });
+    .order("created_at", { ascending: true }).throwOnError();
   const jobs = (rows ?? []) as unknown as Array<
     JobLocationRow & {
       id: number;
@@ -43,8 +43,8 @@ export async function jobsWithoutSiteDays(supabase: SupabaseClient, year: number
   if (jobs.length === 0) return [];
   const ids = jobs.map((j) => j.id);
   const [{ data: hours }, { data: days }] = await Promise.all([
-    supabase.from("time_entries").select("job_id").in("job_id", ids),
-    supabase.from("job_site_days").select("job_id").in("job_id", ids),
+    supabase.from("time_entries").select("job_id").in("job_id", ids).throwOnError(),
+    supabase.from("job_site_days").select("job_id").in("job_id", ids).throwOnError(),
   ]);
   const onSite = new Set([...(hours ?? []), ...(days ?? [])].map((r) => Number(r.job_id)));
   const rank = (j: (typeof jobs)[number]) =>

@@ -23,6 +23,7 @@ function money(v: string, label: string, blank: "null" | "zero"): number | null 
 export function PricingSection({ clientId }: { clientId: number }) {
   const supabase = createClient();
   const [loading, setLoading] = useState(true);
+  const [loadFailed, setLoadFailed] = useState(false);
   const [form, setForm] = useState<Form>({ general: "", skilled: "", minimum: "150", markup: "0" });
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -30,10 +31,12 @@ export function PricingSection({ clientId }: { clientId: number }) {
 
   useEffect(() => {
     (async () => {
-      const { data: s } = await supabase
+      const { data: s, error } = await supabase
         .from("pricing_settings")
         .select("default_hourly_rate, skilled_hourly_rate, minimum_job_charge, material_markup_pct")
         .maybeSingle();
+      // A failed read must not leave default rates in a form that saves over the real ones.
+      if (error) return setLoadFailed(true);
       if (s) {
         const str = (v: unknown) => (v === null || v === undefined ? "" : String(Number(v)));
         setForm({
@@ -77,6 +80,9 @@ export function PricingSection({ clientId }: { clientId: number }) {
     setTimeout(() => setSaved(false), 2000);
   }
 
+  if (loadFailed) {
+    return <div className="px-4 py-4 text-2xs text-status-danger">Couldn&apos;t load this section, so it&apos;s hidden rather than shown empty. Refresh to try again.</div>;
+  }
   if (loading) {
     return <div className="px-4 py-4 text-2xs text-bone-400">Loading…</div>;
   }

@@ -17,11 +17,11 @@ export async function getEstimatorBundle(
         .select(
           "desired_annual_owner_pay, hours_worked_per_week, utilization_pct, margin_pct, material_markup_pct, minimum_job_charge, rounding_increment",
         )
-        .maybeSingle(),
+        .maybeSingle().throwOnError(),
       supabase
         .from("overhead_items")
         .select("monthly_amount")
-        .eq("active", true),
+        .eq("active", true).throwOnError(),
       supabase
         .from("service_catalog")
         .select(
@@ -30,26 +30,26 @@ export async function getEstimatorBundle(
         // PRICED rows sell at a fixed price; the engine only prices from hours.
         .in("type", ["MEASURED", "TASK"])
         .eq("active", true)
-        .order("name"),
+        .order("name").throwOnError(),
       supabase
         .from("materials")
         .select(
           "id, name, unit, unit_cost, coverage_sqft_per_unit, purchasable_unit_size, active",
         )
-        .eq("active", true),
+        .eq("active", true).throwOnError(),
       supabase
         .from("service_materials")
-        .select("id, service_id, material_id, basis, coats, qty_per_unit, flat_qty"),
+        .select("id, service_id, material_id, basis, coats, qty_per_unit, flat_qty").throwOnError(),
       supabase
         .from("price_modifiers")
         .select("id, name, scope, math, value, active")
         .eq("active", true)
-        .order("value"),
+        .order("value").throwOnError(),
       supabase
         .from("billing_entities")
         .select("id, name, invoice_prefix, is_default, active")
         .eq("active", true)
-        .order("created_at"),
+        .order("created_at").throwOnError(),
     ]);
 
   const s = settings.data;
