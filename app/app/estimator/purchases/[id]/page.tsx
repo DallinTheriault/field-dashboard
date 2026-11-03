@@ -40,7 +40,7 @@ export default async function PurchaseDetailPage({
   if (!Number.isInteger(purchaseId)) notFound();
 
   const supabase = await createClient();
-  const [{ data: purchase }, { data: items }, { data: jobRows }, { data: billingRows }, { data: stockRows }] = await Promise.all([
+  const [{ data: purchase }, { data: items }, { data: jobRows }, { data: billingRows }] = await Promise.all([
     supabase
       .from("purchases")
       .select(`id, vendor, purchase_date, source, subtotal, tax, total, receipt_path, receipt_paths, ${PURCHASE_SCAN_COLS}`)
@@ -62,15 +62,6 @@ export default async function PurchaseDetailPage({
       .order("created_at", { ascending: false })
       .limit(100).throwOnError(),
     supabase.from("job_billing").select(BILLING_COLS).throwOnError(),
-    // Stock categories already in use, offered when setting an item to stock.
-    supabase
-      .from("expenses")
-      .select("stock_category")
-      .eq("assignment", "stock")
-      .not("stock_category", "is", null)
-      .order("id", { ascending: false })
-      .limit(500)
-      .throwOnError(),
   ]);
   if (!purchase) notFound(); // RLS-scoped: another tenant's id is simply absent
   const receipt = toPendingReceipt(
@@ -101,7 +92,6 @@ export default async function PurchaseDetailPage({
       invoice: inv ? { number: inv.invoice_number, final: inv.status !== "draft" || !!inv.stripe_invoice_id } : null,
     };
   });
-  const categories = [...new Set((stockRows ?? []).map((r) => String(r.stock_category).trim()).filter(Boolean))].sort();
 
   return (
     <div className="max-w-3xl mx-auto px-4 py-6 space-y-5">
@@ -155,7 +145,6 @@ export default async function PurchaseDetailPage({
       <ReceiptItems
         items={rows}
         jobs={jobs}
-        categories={categories}
         tax={purchase.tax === null ? null : Number(purchase.tax)}
         subtotal={purchase.subtotal === null ? null : Number(purchase.subtotal)}
       />

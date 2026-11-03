@@ -6,6 +6,9 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import {
   ASSIGNMENTS,
   JOB_ASSIGNMENTS,
+  RECEIPT_ITEM_CATEGORY,
+  knownStockCategory,
+  stockTaxCategory,
   type Assignment,
 } from "@/lib/estimator/expenses";
 import {
@@ -71,7 +74,9 @@ export async function setItemAssignment(itemId: number, patch: AssignPatch): Pro
  *    a batch leaves it as it is and counts it in `locked`; on a DRAFT it may
  *    change, and the draft's lines follow (§6.4).
  * Items already set this way are left untouched (their "customer knows"
- * flag included).
+ * flag included). Stock as Tools or Consumables also files the item under
+ * that tax category (STOCK_TAX_CATEGORY); leaving stock puts a Tools item
+ * back under the receipt's. Totals never change, only the split.
  */
 export async function setItemsAssignment(
   itemIds: number[],
@@ -98,7 +103,7 @@ export async function setItemsAssignment(
 
   const { data: items, error: readErr } = await supabase
     .from("expenses")
-    .select("id, client_id, job_id, assignment, stock_category, invoiced_on, purchase_id")
+    .select("id, client_id, job_id, assignment, stock_category, category, invoiced_on, purchase_id")
     .in("id", ids);
   if (readErr) return { ok: false, error: readErr.message };
   if (!items || items.length !== ids.length) return { ok: false, error: "Item not found." };
@@ -120,7 +125,11 @@ export async function setItemsAssignment(
       return { ok: false, error: "Job not found." };
     }
   }
-  const stockCategory = patch.assignment === "stock" ? (patch.stockCategory ?? "").trim() || null : null;
+  // Tools / Consumables come back spelled as offered and set the tax
+  // category; any other label (a quick expense's) leaves it as it is.
+  const stockLabel = patch.assignment === "stock" ? (patch.stockCategory ?? "").trim() || null : null;
+  const stockCategory = knownStockCategory(stockLabel) ?? stockLabel;
+  const taxCategory = patch.assignment === "stock" ? stockTaxCategory(stockCategory) : null;
 
   // The invoices these items are on, in one read: final ones lock their items.
   const invoiceIds = [...new Set(items.map((it) => it.invoiced_on).filter((v): v is number => v !== null))];
@@ -144,9 +153,24 @@ export async function setItemsAssignment(
     };
   }
   const changing = open.filter(
-    (it) => it.assignment !== patch.assignment || (it.job_id ?? null) !== jobId || (it.stock_category ?? null) !== stockCategory,
+    (it) =>
+      it.assignment !== patch.assignment ||
+      (it.job_id ?? null) !== jobId ||
+      (it.stock_category ?? null) !== stockCategory ||
+      (taxCategory !== null && it.category !== taxCategory),
   );
   if (changing.length === 0) return { ok: true, changed: 0, locked };
+  // Leaving stock, an item filed under a stock category's tax line (Tools)
+  // goes back to the receipt's; one the user filed some other way stays.
+  const refile =
+    patch.assignment === "stock"
+      ? []
+      : changing.filter(
+          (it) =>
+            it.assignment === "stock" &&
+            it.category !== RECEIPT_ITEM_CATEGORY &&
+            it.category === stockTaxCategory(it.stock_category),
+        );
 
   // An item on a draft comes off it here; the draft is refreshed below.
   const { data: updated, error } = await supabase
@@ -155,6 +179,7 @@ export async function setItemsAssignment(
       assignment: patch.assignment,
       job_id: jobId,
       stock_category: stockCategory,
+      ...(taxCategory ? { category: taxCategory } : {}),
       customer_notified: patch.assignment === "job_extra" ? !!patch.customerNotified : false,
       invoiced_on: null,
     })
@@ -166,6 +191,16 @@ export async function setItemsAssignment(
   if (error) return { ok: false, error: error.message };
   if ((updated ?? []).length === 0) {
     return { ok: false, error: "You don't have permission to assign items." };
+  }
+  if (refile.length > 0) {
+    const { error: cErr } = await supabase
+      .from("expenses")
+      .update({ category: RECEIPT_ITEM_CATEGORY })
+      .in(
+        "id",
+        refile.map((it) => it.id),
+      );
+    if (cErr) return { ok: false, error: cErr.message };
   }
 
   // The draft invoices' lines follow the reassignment (§6.4).
@@ -347,7 +382,7 @@ export async function saveScannedReceipt(input: {
       client_id: clientId,
       purchase_id: purchase.id,
       expense_date: date || null,
-      category: "Materials & supplies",
+      category: RECEIPT_ITEM_CATEGORY,
       description: row.description.trim(),
       sku: row.sku,
       qty: row.qty !== null && Number.isFinite(row.qty) && row.qty > 0 ? row.qty : 1,

@@ -17,6 +17,8 @@ import {
   ASSIGNMENT_LABELS,
   EXPENSE_CATEGORIES,
   JOB_ASSIGNMENTS,
+  STOCK_CATEGORIES,
+  knownStockCategory,
   type Assignment,
 } from "@/lib/estimator/expenses";
 import {
@@ -376,12 +378,24 @@ function ItemRow({
                 </select>
               )}
               {assignment === "stock" && (
-                <input
+                // Tools / Consumables set the tax category too; an item's
+                // other label (a quick expense's) can stay as it is.
+                <select
                   value={stockCat}
                   onChange={(e) => setStockCat(e.target.value)}
-                  placeholder="Category (e.g. Tools)"
-                  className="w-36 text-sm"
-                />
+                  className="text-sm"
+                  aria-label="Stock category"
+                >
+                  <option value="">Category…</option>
+                  {STOCK_CATEGORIES.map((c) => (
+                    <option key={c} value={c}>
+                      {c}
+                    </option>
+                  ))}
+                  {item.stock_category && !knownStockCategory(item.stock_category) && (
+                    <option value={item.stock_category}>{item.stock_category}</option>
+                  )}
+                </select>
               )}
               <button
                 type="button"

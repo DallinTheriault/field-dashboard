@@ -3,7 +3,7 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { ChevronDown, ChevronRight, Loader2, Lock } from "lucide-react";
-import { taxFactor, type Assignment } from "@/lib/estimator/expenses";
+import { STOCK_CATEGORIES, STOCK_TAX_CATEGORY, knownStockCategory, taxFactor, type Assignment } from "@/lib/estimator/expenses";
 import { jobPickLabel, type JobPick } from "@/lib/jobs/address";
 import { setItemsAssignment } from "../purchase-actions";
 
@@ -44,13 +44,11 @@ const round2 = (n: number) => Math.round((n + 1e-9) * 100) / 100;
 export function ReceiptItems({
   items,
   jobs,
-  categories,
   tax,
   subtotal,
 }: {
   items: ReceiptItem[];
   jobs: JobPick[];
-  categories: string[];
   tax: number | null;
   subtotal: number | null;
 }) {
@@ -64,7 +62,7 @@ export function ReceiptItems({
   // The job and category last used here, so the next item starts on them.
   const [last, setLast] = useState<{ jobId: number | null; category: string }>(() => ({
     jobId: items.find((r) => r.jobId !== null)?.jobId ?? null,
-    category: items.find((r) => r.stockCategory)?.stockCategory ?? "",
+    category: knownStockCategory(items.find((r) => knownStockCategory(r.stockCategory))?.stockCategory) ?? "",
   }));
   const jobName = (id: number | null) => jobs.find((j) => j.id === id)?.name ?? (id ? `Job #${id}` : "");
   const factor = taxFactor(tax, subtotal);
@@ -73,6 +71,7 @@ export function ReceiptItems({
   function apply(ids: number[], t: Target, done: () => void) {
     if (!t.kind) return setErr("Pick how these items are used.");
     if (t.kind !== "stock" && !t.jobId) return setErr("Pick a job.");
+    if (t.kind === "stock" && !knownStockCategory(t.category)) return setErr("Pick Tools or Consumables.");
     const kind = t.kind;
     setErr(null);
     setNote(null);
@@ -92,7 +91,7 @@ export function ReceiptItems({
                 ...x,
                 assignment: kind,
                 jobId: kind === "stock" ? null : t.jobId,
-                stockCategory: kind === "stock" ? t.category.trim() || null : null,
+                stockCategory: kind === "stock" ? t.category : null,
                 invoice: null,
               }
             : x,
@@ -158,7 +157,6 @@ export function ReceiptItems({
               <TargetEditor
                 initial={{ kind: null, jobId: last.jobId, category: last.category }}
                 jobs={jobs}
-                categories={categories}
                 busy={pending}
                 saveLabel={`Apply to all ${editable.length} items`}
                 onSave={(t) => apply(editable.map((r) => r.id), t, () => setAllOpen(false))}
@@ -226,10 +224,9 @@ export function ReceiptItems({
                       initial={{
                         kind: it.assignment === "job_extra" || it.assignment === "job_in_bid" || it.assignment === "stock" ? it.assignment : null,
                         jobId: it.jobId ?? last.jobId,
-                        category: it.stockCategory ?? last.category,
+                        category: knownStockCategory(it.stockCategory) ?? last.category,
                       }}
                       jobs={jobs}
-                      categories={categories}
                       busy={pending}
                       saveLabel="Save"
                       onSave={(t) => apply([it.id], t, () => setOpenId(null))}
@@ -269,7 +266,6 @@ function chipTone(a: Assignment) {
 function TargetEditor({
   initial,
   jobs,
-  categories,
   busy,
   saveLabel,
   onSave,
@@ -278,7 +274,6 @@ function TargetEditor({
 }: {
   initial: Target;
   jobs: JobPick[];
-  categories: string[];
   busy: boolean;
   saveLabel: string;
   onSave: (t: Target) => void;
@@ -286,7 +281,6 @@ function TargetEditor({
   note?: string | null;
 }) {
   const [t, setT] = useState<Target>(initial);
-  const listId = "stock-categories";
   return (
     <div className="mt-2 space-y-2">
       <div className="flex flex-wrap gap-2" role="group" aria-label="Setting">
@@ -321,25 +315,31 @@ function TargetEditor({
         </select>
       )}
       {t.kind === "stock" && (
-        <>
-          <input
-            value={t.category}
-            onChange={(e) => setT({ ...t, category: e.target.value })}
-            placeholder="Category (e.g. Tools)"
-            list={listId}
-            className="w-full text-sm"
-            aria-label="Stock category"
-          />
-          <datalist id={listId}>
-            {categories.map((c) => (
-              <option key={c} value={c} />
-            ))}
-          </datalist>
-        </>
+        <div className="flex flex-wrap gap-2" role="group" aria-label="Stock category">
+          {STOCK_CATEGORIES.map((c) => (
+            <button
+              key={c}
+              type="button"
+              onClick={() => setT({ ...t, category: c })}
+              aria-pressed={t.category === c}
+              className={`flex-1 min-w-[104px] rounded-sm px-2.5 py-1.5 text-left shadow-inset-line ${
+                t.category === c ? "bg-field-500/15 border border-field-500/50" : "bg-ink-2 border border-transparent hover:bg-ink-3"
+              }`}
+            >
+              <div className="text-xs text-bone-100">{c}</div>
+              <div className="text-2xs text-bone-400 leading-tight">taxes: {STOCK_TAX_CATEGORY[c]}</div>
+            </button>
+          ))}
+        </div>
       )}
       {note && <p className="text-2xs text-bone-400">{note}</p>}
       <div className="flex gap-2">
-        <button type="button" onClick={() => onSave(t)} disabled={busy || !t.kind} className="btn-primary text-xs h-9">
+        <button
+          type="button"
+          onClick={() => onSave(t)}
+          disabled={busy || !t.kind || (t.kind === "stock" && !knownStockCategory(t.category))}
+          className="btn-primary text-xs h-9"
+        >
           {busy ? <Loader2 size={12} className="animate-spin" /> : saveLabel}
         </button>
         <button type="button" onClick={onCancel} className="btn-ghost text-xs h-9">
