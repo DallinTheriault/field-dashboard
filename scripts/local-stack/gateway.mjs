@@ -3,7 +3,7 @@
 // localhost. Usage: node gateway.mjs <port> <restPort> <authPort> <storagePort>
 //
 // Speed work (opt-in, off by default):
-//   GATEWAY_LOG=<file>       one line per request: start, end, ms, method, path.
+//   GATEWAY_LOG=<file>       one line per request: start, end, ms, method, path, status.
 //   GATEWAY_DELAY_MS=<n>     hold every request n ms, like prod's server-to-Supabase hop.
 //   GATEWAY_AUTH_DELAY_MS=<n> hold /auth/v1 requests n ms instead (the middleware's
 //                            call to Supabase Auth crosses the country on prod).
@@ -44,7 +44,7 @@ http
     const [prefix, target] = route;
     const path = req.url.slice(prefix.length) || "/";
     const t0 = Date.now();
-    if (LOG) res.on("finish", () => appendFileSync(LOG, `[GW] ${t0} ${Date.now()} ${Date.now() - t0}ms ${req.method} ${req.url.slice(0, 160)}\n`));
+    if (LOG) res.on("finish", () => appendFileSync(LOG, `[GW] ${t0} ${Date.now()} ${Date.now() - t0}ms ${req.method} ${req.url.slice(0, 160)} ${res.statusCode}\n`));
     const wait = prefix === "/auth/v1" ? AUTH_DELAY : DELAY;
     const go = () => {
     const upstream = http.request(

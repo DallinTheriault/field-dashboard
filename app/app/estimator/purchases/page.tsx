@@ -33,7 +33,7 @@ export default async function ExpenseIntakePage() {
     supabase
       .from("expenses")
       .select(
-        "id, expense_date, category, description, amount, qty, unit_price, sku, job_id, assignment, customer_notified, stock_category, invoiced_on, receipt_path, purchase_id, jobs(name), purchases(vendor, purchase_date, receipt_path, receipt_paths, source), invoices:invoiced_on(invoice_number)",
+        "id, expense_date, category, description, amount, qty, unit_price, sku, job_id, assignment, customer_notified, stock_category, invoiced_on, receipt_path, purchase_id, jobs(name), purchases(vendor, purchase_date, receipt_path, receipt_paths, source), invoices!expenses_invoice_same_tenant(invoice_number)",
       )
       .order("expense_date", { ascending: false })
       .order("id", { ascending: false })

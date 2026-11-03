@@ -70,7 +70,8 @@ export async function milesFromBase(
     .from("route_cache")
     .select("miles")
     .eq("client_id", clientId)
-    .or(`and(from_point.eq.${from},to_point.eq.${to}),and(from_point.eq.${to},to_point.eq.${from})`)
+    // Points are "lat,lon": quoted, or the comma splits the filter (PGRST100).
+    .or(`and(from_point.eq."${from}",to_point.eq."${to}"),and(from_point.eq."${to}",to_point.eq."${from}")`)
     .limit(1);
   if (cached?.[0]) return { status: "ok", miles: Math.round(Number(cached[0].miles) * 10) / 10, base: base.address, url };
   const r = await drivingMiles(a, b, turn);
