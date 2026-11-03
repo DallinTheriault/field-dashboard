@@ -44,12 +44,12 @@ export default async function PurchaseDetailPage({
       .from("purchases")
       .select(`id, vendor, purchase_date, source, subtotal, tax, total, receipt_path, receipt_paths, ${PURCHASE_SCAN_COLS}`)
       .eq("id", purchaseId)
-      .maybeSingle(),
+      .maybeSingle().throwOnError(),
     supabase
       .from("expenses")
       .select("id, description, sku, qty, unit_price, amount, assignment, job_id, jobs(name)")
       .eq("purchase_id", purchaseId)
-      .order("id"),
+      .order("id").throwOnError(),
     // Job picker for checking a read (same list as the Expenses page).
     supabase
       .from("jobs")
@@ -57,8 +57,8 @@ export default async function PurchaseDetailPage({
       .is("archived_at", null)
       .neq("status", "cancelled")
       .order("created_at", { ascending: false })
-      .limit(100),
-    supabase.from("job_billing").select(BILLING_COLS),
+      .limit(100).throwOnError(),
+    supabase.from("job_billing").select(BILLING_COLS).throwOnError(),
   ]);
   if (!purchase) notFound(); // RLS-scoped: another tenant's id is simply absent
   const receipt = toPendingReceipt(

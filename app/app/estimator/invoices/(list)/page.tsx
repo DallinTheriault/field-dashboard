@@ -61,7 +61,7 @@ export default async function InvoicesPage({
       )
       .not("invoice_number", "is", null)
       .order("created_at", { ascending: false })
-      .limit(500),
+      .limit(500).throwOnError(),
   ]);
   if (!session) redirect("/login");
   if (!canViewSettings(session.role)) redirect("/app");

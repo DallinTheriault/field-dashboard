@@ -41,18 +41,20 @@ export function EntitiesManager({ clientId }: { clientId: number }) {
   const supabase = createClient();
   const [entities, setEntities] = useState<Entity[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadFailed, setLoadFailed] = useState(false);
   const [editing, setEditing] = useState<number | "new" | null>(null);
   const [draft, setDraft] = useState<Draft>(EMPTY);
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
   async function load() {
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from("billing_entities")
       .select(
         "id, name, invoice_prefix, license_number, address, phone, email, payment_instructions, default_footer_text, logo_path, is_default, active",
       )
       .order("created_at", { ascending: true });
+    if (error) return setLoadFailed(true);
     setEntities(data ?? []);
     setLoading(false);
   }
@@ -176,6 +178,9 @@ export function EntitiesManager({ clientId }: { clientId: number }) {
     load();
   }
 
+  if (loadFailed) {
+    return <div className="px-4 py-4 text-2xs text-status-danger">Couldn&apos;t load this section, so it&apos;s hidden rather than shown empty. Refresh to try again.</div>;
+  }
   if (loading) {
     return <div className="px-4 py-4 text-2xs text-bone-400">Loading…</div>;
   }

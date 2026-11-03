@@ -37,7 +37,7 @@ export default async function ExpenseIntakePage() {
       )
       .order("expense_date", { ascending: false })
       .order("id", { ascending: false })
-      .limit(300),
+      .limit(300).throwOnError(),
     // Job picker source (JOB_NUMBERING_SPEC Part A): list JOBS with enough
     // context to tell two jobs for the same contact apart. Include completed
     // jobs — a late receipt legitimately belongs to a finished job — and
@@ -48,7 +48,7 @@ export default async function ExpenseIntakePage() {
       .is("archived_at", null)
       .neq("status", "cancelled")
       .order("created_at", { ascending: false })
-      .limit(100),
+      .limit(100).throwOnError(),
     // Every purchase — feeds BOTH the "waiting for items" queue (zero-item
     // subset) and the Receipts view (§6.2: the list is every purchase, not
     // only photographed ones). Newest first.
@@ -58,9 +58,9 @@ export default async function ExpenseIntakePage() {
         `id, vendor, purchase_date, source, total, tax, receipt_path, receipt_paths, ${PURCHASE_SCAN_COLS}, expenses(count)`,
       )
       .order("id", { ascending: false })
-      .limit(50),
+      .limit(50).throwOnError(),
     // Billing state for the job pickers (v099).
-    supabase.from("job_billing").select(BILLING_COLS),
+    supabase.from("job_billing").select(BILLING_COLS).throwOnError(),
   ]);
 
   const items: ExpenseItemRow[] = (itemRows ?? []).map((e) => {

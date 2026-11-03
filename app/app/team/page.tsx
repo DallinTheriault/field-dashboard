@@ -21,7 +21,7 @@ export default async function TeamPage() {
     .from("client_users")
     .select("id, auth_user_id, role, created_at")
     .eq("client_id", session.clientId)
-    .order("created_at", { ascending: true });
+    .order("created_at", { ascending: true }).throwOnError();
 
   const { data: usersData } = await admin.auth.admin.listUsers();
   const userById = new Map(

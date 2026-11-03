@@ -42,7 +42,7 @@ export async function GET(
         `id, invoice_number, status, stripe_invoice_id, job_id, created_at, due_terms, line_items, subtotal_cents, tax_rate_pct, tax_cents, total_cents, bill_to_contact_id, customer_name, customer_company, customer_address, customer_email, customer_phone, service_address, service_resident, work_order_number, job_number, stripe_hosted_invoice_url, jobs(${PARTIES_JOB_SELECT}), bill_to:contacts!invoices_bill_to_same_tenant(${PARTIES_PAYER_SELECT}), billing_entities(name, license_number, address, phone, email, default_footer_text, payment_instructions, logo_path)`,
       )
       .eq("id", invoiceId)
-      .maybeSingle(),
+      .maybeSingle().throwOnError(),
     getTenantTimezone(),
   ]);
   if (!inv) return NextResponse.json({ error: "Not found" }, { status: 404 });

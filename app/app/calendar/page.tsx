@@ -62,7 +62,7 @@ export default async function CalendarPage({
       .is("archived_at", null)
       .lte("start_datetime", windowEnd)
       .or(`end_datetime.gte."${windowStart}",and(end_datetime.is.null,start_datetime.gte."${windowStart}")`)
-      .order("start_datetime", { ascending: true });
+      .order("start_datetime", { ascending: true }).throwOnError();
   };
 
   // One round: the jobs load alongside the settings and role lookups (the
@@ -84,7 +84,7 @@ export default async function CalendarPage({
       .is("start_datetime", null)
       .not("status", "in", "(completed,cancelled)")
       .order("created_at", { ascending: false })
-      .limit(100),
+      .limit(100).throwOnError(),
   ]);
   if (!flags.calendar) {
     return (

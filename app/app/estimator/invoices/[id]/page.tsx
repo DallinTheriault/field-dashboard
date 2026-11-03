@@ -61,14 +61,14 @@ export default async function InvoiceDetailPage({
       `*, jobs(id, name, status, ${PARTIES_JOB_SELECT}), billing_entities(name, invoice_prefix), estimates:estimate_id(id), bill_to:contacts!invoices_bill_to_same_tenant(card_link_default, ${PARTIES_PAYER_SELECT})`,
     )
     .eq("id", invoiceId)
-    .maybeSingle();
+    .maybeSingle().throwOnError();
   if (!inv || !inv.invoice_number) notFound();
   const { data: paymentRows } = await supabase
     .from("payments")
     .select("id, received_on, amount_cents, method, reference")
     .eq("invoice_id", invoiceId)
     .order("received_on")
-    .order("id");
+    .order("id").throwOnError();
   const payments = (paymentRows ?? []) as Payment[];
 
   const job = inv.jobs as unknown as {
@@ -101,25 +101,25 @@ export default async function InvoiceDetailPage({
         supabase
           .from("tasks")
           .select("id, title, status, sort_order, qty, unit, unit_price, billable, invoice_id")
-          .eq("job_id", job.id),
+          .eq("job_id", job.id).throwOnError(),
         supabase
           .from("expenses")
           .select("id, description, qty, unit_price, amount, bill_markup, purchases(tax, subtotal)")
           .eq("job_id", job.id)
           .eq("assignment", "job_extra")
           .is("invoiced_on", null)
-          .order("id"),
-        supabase.from("pricing_settings").select("minimum_job_charge, material_markup_pct").maybeSingle(),
+          .order("id").throwOnError(),
+        supabase.from("pricing_settings").select("minimum_job_charge, material_markup_pct").maybeSingle().throwOnError(),
         supabase
           .from("estimates")
           .select("version, status, computed_price, manual_override_price")
-          .eq("job_id", job.id),
+          .eq("job_id", job.id).throwOnError(),
         supabase
           .from("expenses")
           .select("id, receipt_path, purchase:purchases(receipt_paths, receipt_path)")
           .eq("invoiced_on", invoiceId)
           .eq("attach_receipt", true)
-          .order("id"),
+          .order("id").throwOnError(),
       ]);
     const tasks: DraftTask[] = (taskRows ?? []).map((t) => ({
       id: t.id,

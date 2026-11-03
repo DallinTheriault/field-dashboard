@@ -59,6 +59,6 @@ export const getTenantContext = cache(async (): Promise<TenantContext | null> =>
       "id, business_name, business_short_name, is_active, brand_logo_url, brand_primary_color, timezone, feature_calendar_enabled, feature_estimator_enabled, feature_receipt_ai_enabled",
     )
     .order("id")
-    .limit(1);
+    .limit(1).throwOnError();
   return (data?.[0] as TenantContext | undefined) ?? null;
 });

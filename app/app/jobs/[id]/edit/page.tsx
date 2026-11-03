@@ -20,7 +20,7 @@ export default async function JobEditPage({
     .from("jobs")
     .select("*, property:properties(address, unit)")
     .eq("id", id)
-    .maybeSingle();
+    .maybeSingle().throwOnError();
 
   if (!job) notFound();
 

@@ -89,7 +89,7 @@ export default async function JobDetailPage({
   if (!/^\d+$/.test(id)) notFound();
   const jobId = Number(id);
   const jobP = Promise.resolve(
-    supabase.from("jobs").select("*, property:properties(id, address, unit)").eq("id", jobId).maybeSingle(),
+    supabase.from("jobs").select("*, property:properties(id, address, unit)").eq("id", jobId).maybeSingle().throwOnError(),
   );
   const [
     tz,
@@ -117,18 +117,18 @@ export default async function JobDetailPage({
     jobP.then(({ data }) => (data ? getTeamMembers(data.client_id) : [])),
     getActivityTimeline("job", jobId),
     getJobTags(jobId),
-    supabase.from("tags").select("*").order("use_count", { ascending: false }).order("created_at", { ascending: false }),
+    supabase.from("tags").select("*").order("use_count", { ascending: false }).order("created_at", { ascending: false }).throwOnError(),
     supabase
       .from("estimates")
       .select("id, version, status, computed_price, manual_override_price, estimated_at, estimate_line_items(resolved_labor_hours)")
       .eq("job_id", jobId)
-      .order("version", { ascending: false }),
+      .order("version", { ascending: false }).throwOnError(),
     supabase
       .from("expenses")
       .select("id")
       .eq("job_id", jobId)
       .eq("assignment", "job_extra")
-      .is("invoiced_on", null),
+      .is("invoiced_on", null).throwOnError(),
     // Tasks are the scoping list + punch list: visible to every member; edits
     // are owner/manager (RLS enforces; the UI hides controls for read-only
     // roles). The estimate-line count says which ones an estimate links to.
@@ -139,7 +139,7 @@ export default async function JobDetailPage({
       )
       .eq("job_id", jobId)
       .order("sort_order")
-      .order("id"),
+      .order("id").throwOnError(),
     // Job-attached expense items for the capture card's read-only list.
     // All roles may read (RLS select is tenant-wide); shows description /
     // cost / assignment only — no totals, hours, variance, or margin.
@@ -153,18 +153,18 @@ export default async function JobDetailPage({
         "id, description, amount, qty, unit_price, assignment, invoiced_on, bill_markup, attach_receipt, purchases(tax, subtotal), invoices(invoice_number, status, stripe_invoice_id)",
       )
       .eq("job_id", jobId)
-      .order("id", { ascending: false }),
+      .order("id", { ascending: false }).throwOnError(),
     // Trips that include this job (its days on site), a read-only line.
     supabase
       .from("mileage_entries")
       .select("miles")
       .neq("kind", "removed")
-      .or(`job_id.eq.${jobId},stops.cs.[{"job_id":${jobId}}]`),
+      .or(`job_id.eq.${jobId},stops.cs.[{"job_id":${jobId}}]`).throwOnError(),
     supabase
       .from("pricing_settings")
       .select("default_hourly_rate, skilled_hourly_rate, material_markup_pct")
-      .maybeSingle(),
-    supabase.from("job_billing").select(BILLING_COLS).eq("job_id", jobId).maybeSingle(),
+      .maybeSingle().throwOnError(),
+    supabase.from("job_billing").select(BILLING_COLS).eq("job_id", jobId).maybeSingle().throwOnError(),
     // Receipts scanned from this job and not saved yet (v100).
     supabase
       .from("purchases")
@@ -172,14 +172,14 @@ export default async function JobDetailPage({
       .eq("scan_job_id", jobId)
       .not("scan_status", "is", null)
       .order("id", { ascending: false })
-      .limit(20),
+      .limit(20).throwOnError(),
     // Hours for the actuals card (owner/manager).
     supabase
       .from("time_entries")
       .select("id, entry_date, hours, note, invoice_id, covered_at, invoice:invoices!time_entries_invoice_same_tenant(invoice_number, status, stripe_invoice_id)")
       .eq("job_id", jobId)
       .order("entry_date", { ascending: false })
-      .order("id", { ascending: false }),
+      .order("id", { ascending: false }).throwOnError(),
   ]);
 
   if (!job) notFound();
@@ -206,8 +206,8 @@ export default async function JobDetailPage({
   let siteDaysAsk: string[] | null = null;
   if (daysParam === "ask" && estimatorOn && canSeeInternals && job.status === "completed") {
     const [{ count: hourRows }, { count: dayRows }] = await Promise.all([
-      supabase.from("time_entries").select("*", { count: "exact", head: true }).eq("job_id", job.id),
-      supabase.from("job_site_days").select("*", { count: "exact", head: true }).eq("job_id", job.id),
+      supabase.from("time_entries").select("*", { count: "exact", head: true }).eq("job_id", job.id).throwOnError(),
+      supabase.from("job_site_days").select("*", { count: "exact", head: true }).eq("job_id", job.id).throwOnError(),
     ]);
     if ((hourRows ?? 0) === 0 && (dayRows ?? 0) === 0) {
       const startDay = job.start_datetime ? dayKeyInTz(job.start_datetime, tz) : null;

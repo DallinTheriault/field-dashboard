@@ -49,7 +49,7 @@ export default async function AdminClientsPage() {
         </div>
       )}
 
-      <ClientList title="Active" icon={Users} clients={active} empty="No active tenants." />
+      {!error && <ClientList title="Active" icon={Users} clients={active} empty="No active tenants." />}
       {inactive.length > 0 && (
         <div className="mt-6">
           <ClientList title="Inactive" icon={PauseCircle} clients={inactive} empty="" />

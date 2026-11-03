@@ -20,7 +20,7 @@ export async function getActivityTimeline(kind: "job" | "contact", id: number): 
 
   let jobIds: number[] = [id];
   if (kind === "contact") {
-    const { data: jobs } = await supabase.from("jobs").select("id").eq("contact_id", id);
+    const { data: jobs } = await supabase.from("jobs").select("id").eq("contact_id", id).throwOnError();
     jobIds = (jobs ?? []).map((j) => j.id as number);
     if (jobIds.length === 0) return [];
   }
@@ -30,7 +30,7 @@ export async function getActivityTimeline(kind: "job" | "contact", id: number): 
     .select("id, old_status, new_status, changed_by, changed_at, job_id")
     .in("job_id", jobIds)
     .order("changed_at", { ascending: false })
-    .limit(50);
+    .limit(50).throwOnError();
 
   return (data ?? []).map((s) => ({
     kind: "status_change" as const,

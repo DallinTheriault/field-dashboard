@@ -30,7 +30,7 @@ function receiptsQuery(supabase: Awaited<ReturnType<typeof createClient>>) {
     .select(`id, vendor, purchase_date, total, tax, receipt_paths, created_by, ${PURCHASE_SCAN_COLS}, expenses(count)`)
     .not("scan_status", "is", null)
     .order("id", { ascending: false })
-    .limit(20);
+    .limit(20).throwOnError();
 }
 
 /**
@@ -53,7 +53,7 @@ export default async function HomePage() {
       .not("status", "in", CLOSED)
       .order("start_datetime", { ascending: true, nullsFirst: false })
       .order("created_at", { ascending: false })
-      .limit(8),
+      .limit(8).throwOnError(),
     // Jobs a scanned receipt can be put on.
     supabase
       .from("jobs")
@@ -61,14 +61,14 @@ export default async function HomePage() {
       .is("archived_at", null)
       .neq("status", "cancelled")
       .order("created_at", { ascending: false })
-      .limit(200),
+      .limit(200).throwOnError(),
     // Billing state per job (v099): which jobs are ready to invoice, and the
     // picker's labels.
-    supabase.from("job_billing").select(BILLING_COLS),
+    supabase.from("job_billing").select(BILLING_COLS).throwOnError(),
     supabase.from("invoices")
       .select("id, invoice_number, customer_name, customer_company, total_cents, sent_at, created_at, jobs(address), payments(amount_cents)")
       .in("status", ["sent", "overdue"])
-      .not("invoice_number", "is", null),
+      .not("invoice_number", "is", null).throwOnError(),
     // Scanned receipts still to check.
     receiptsQuery(supabase),
   ]);
@@ -104,12 +104,12 @@ export default async function HomePage() {
   const [{ data: candJobs }, { data: tasks }, { data: extras }, { data: candInvoices }] = readyIds.length
     ? await Promise.all([
         supabase.from("jobs").select(`id, name, status, updated_at, ${JOB_LOCATION_SELECT}`).in("id", readyIds)
-          .is("archived_at", null),
+          .is("archived_at", null).throwOnError(),
         supabase.from("tasks").select("job_id, qty, unit_price, status").in("job_id", readyIds)
-          .eq("billable", true).is("invoice_id", null),
+          .eq("billable", true).is("invoice_id", null).throwOnError(),
         supabase.from("expenses").select("job_id, amount").in("job_id", readyIds)
-          .eq("assignment", "job_extra").is("invoiced_on", null),
-        supabase.from("invoices").select("id, job_id, status, stripe_invoice_id, invoice_number").in("job_id", readyIds),
+          .eq("assignment", "job_extra").is("invoiced_on", null).throwOnError(),
+        supabase.from("invoices").select("id, job_id, status, stripe_invoice_id, invoice_number").in("job_id", readyIds).throwOnError(),
       ])
     : [{ data: [] }, { data: [] }, { data: [] }, { data: [] }];
   const readyJobs = ((candJobs ?? []) as unknown as Array<Parameters<typeof jobAddress>[0] & {

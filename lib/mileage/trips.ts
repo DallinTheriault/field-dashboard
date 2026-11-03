@@ -33,7 +33,7 @@ export async function loadTrips(
     .gte("trip_date", `${year}-01-01`)
     .lte("trip_date", `${year}-12-31`)
     .order("trip_date", { ascending: true })
-    .order("id", { ascending: true });
+    .order("id", { ascending: true }).throwOnError();
   if (!opts.includeRemoved) q = q.neq("kind", "removed");
   const { data } = await q;
   return (data ?? []).map((t) => ({
@@ -55,7 +55,7 @@ export async function loadRatePeriods(supabase: SupabaseClient): Promise<Array<R
   const { data } = await supabase
     .from("mileage_rate_periods")
     .select("effective_from, rate_per_mile, note")
-    .order("effective_from", { ascending: true });
+    .order("effective_from", { ascending: true }).throwOnError();
   return (data ?? []).map((r) => ({
     effectiveFrom: String(r.effective_from).slice(0, 10),
     rate: Number(r.rate_per_mile),
@@ -69,6 +69,6 @@ export async function loadBases(supabase: SupabaseClient): Promise<BaseRecord[]>
   const { data } = await supabase
     .from("mileage_bases")
     .select("id, address, effective_from")
-    .order("effective_from", { ascending: true });
+    .order("effective_from", { ascending: true }).throwOnError();
   return (data ?? []).map((b) => ({ id: Number(b.id), address: String(b.address), effectiveFrom: String(b.effective_from).slice(0, 10) }));
 }

@@ -36,13 +36,13 @@ export default async function SettingsPage() {
         .select(
           "id, business_name, business_short_name, owner_first_name, owner_email, owner_phone, timezone, brand_logo_url, brand_primary_color, business_website, feature_receipt_ai_enabled",
         )
-        .limit(1),
+        .limit(1).throwOnError(),
       // Current user for "My profile" (their latest name, not the session's copy).
       supabase.auth.getUser(),
       supabase
         .from("receipt_scans")
         .select("id", { count: "exact", head: true })
-        .gte("created_at", monthStart.toISOString()),
+        .gte("created_at", monthStart.toISOString()).throwOnError(),
       admin.auth.admin.listUsers(),
     ]);
   if (!session) {
@@ -86,7 +86,7 @@ export default async function SettingsPage() {
         .from("client_users")
         .select("id, auth_user_id, role, created_at")
         .eq("client_id", session.clientId)
-        .order("created_at", { ascending: true }),
+        .order("created_at", { ascending: true }).throwOnError(),
       // Recent audit entries (last 25) for the activity log section
       admin
         .from("team_audit_log")
@@ -95,7 +95,7 @@ export default async function SettingsPage() {
         )
         .eq("client_id", session.clientId)
         .order("created_at", { ascending: false })
-        .limit(25),
+        .limit(25).throwOnError(),
     ]);
     const userById = new Map(
       (usersData?.users ?? []).map((u) => [u.id, u.email ?? null]),

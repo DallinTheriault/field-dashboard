@@ -7,6 +7,8 @@
 //   GATEWAY_DELAY_MS=<n>     hold every request n ms, like prod's server-to-Supabase hop.
 //   GATEWAY_AUTH_DELAY_MS=<n> hold /auth/v1 requests n ms instead (the middleware's
 //                            call to Supabase Auth crosses the country on prod).
+//   GATEWAY_FAIL=<regex>     answer GET /rest/v1 requests whose path matches with a
+//                            PostgREST-style 400, to check a failed read shows an error.
 import http from "node:http";
 import { appendFileSync } from "node:fs";
 
@@ -14,6 +16,7 @@ const [port, restPort, authPort, storagePort] = process.argv.slice(2).map(Number
 const LOG = process.env.GATEWAY_LOG;
 const DELAY = Number(process.env.GATEWAY_DELAY_MS ?? 0);
 const AUTH_DELAY = Number(process.env.GATEWAY_AUTH_DELAY_MS ?? DELAY);
+const FAIL = process.env.GATEWAY_FAIL ? new RegExp(process.env.GATEWAY_FAIL) : null;
 const routes = [
   ["/rest/v1", restPort],
   ["/auth/v1", authPort],
@@ -45,6 +48,10 @@ http
     const path = req.url.slice(prefix.length) || "/";
     const t0 = Date.now();
     if (LOG) res.on("finish", () => appendFileSync(LOG, `[GW] ${t0} ${Date.now()} ${Date.now() - t0}ms ${req.method} ${req.url.slice(0, 160)} ${res.statusCode}\n`));
+    if (FAIL && prefix === "/rest/v1" && req.method === "GET" && FAIL.test(path)) {
+      res.writeHead(400, cors(req, { "content-type": "application/json" }));
+      return res.end(JSON.stringify({ code: "TEST", details: null, hint: null, message: "failed on purpose (GATEWAY_FAIL)" }));
+    }
     const wait = prefix === "/auth/v1" ? AUTH_DELAY : DELAY;
     const go = () => {
     const upstream = http.request(

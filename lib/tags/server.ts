@@ -7,14 +7,14 @@ import type { Tag } from "./types";
  */
 export async function listTagsForClient(clientId: number): Promise<Tag[]> {
   const supabase = await createClient();
-  const { data, error } = await supabase
+  const { data } = await supabase
     .from("tags")
     .select("*")
     .eq("client_id", clientId)
     .order("use_count", { ascending: false })
-    .order("created_at", { ascending: false });
+    .order("created_at", { ascending: false }).throwOnError();
 
-  if (error || !data) return [];
+  if (!data) return [];
   return data as Tag[];
 }
 
@@ -23,12 +23,12 @@ export async function listTagsForClient(clientId: number): Promise<Tag[]> {
  */
 export async function getJobTags(jobId: number): Promise<Tag[]> {
   const supabase = await createClient();
-  const { data, error } = await supabase
+  const { data } = await supabase
     .from("job_tags")
     .select("tag:tags(*)")
-    .eq("job_id", jobId);
+    .eq("job_id", jobId).throwOnError();
 
-  if (error || !data) return [];
+  if (!data) return [];
   // Supabase types nested joins as arrays even when 1:1; cast through unknown
   return (data as unknown as Array<{ tag: Tag | null }>)
     .map((r) => r.tag)
@@ -40,12 +40,12 @@ export async function getJobTags(jobId: number): Promise<Tag[]> {
  */
 export async function getContactTags(contactId: number): Promise<Tag[]> {
   const supabase = await createClient();
-  const { data, error } = await supabase
+  const { data } = await supabase
     .from("contact_tags")
     .select("tag:tags(*)")
-    .eq("contact_id", contactId);
+    .eq("contact_id", contactId).throwOnError();
 
-  if (error || !data) return [];
+  if (!data) return [];
   return (data as unknown as Array<{ tag: Tag | null }>)
     .map((r) => r.tag)
     .filter((t): t is Tag => t !== null);
@@ -64,7 +64,7 @@ export async function getTagsByJobIds(
   const { data } = await supabase
     .from("job_tags")
     .select("job_id, tag:tags(*)")
-    .in("job_id", jobIds);
+    .in("job_id", jobIds).throwOnError();
 
   if (!data) return result;
   for (const row of data as unknown as Array<{ job_id: number; tag: Tag | null }>) {
@@ -88,7 +88,7 @@ export async function getTagsByContactIds(
   const { data } = await supabase
     .from("contact_tags")
     .select("contact_id, tag:tags(*)")
-    .in("contact_id", contactIds);
+    .in("contact_id", contactIds).throwOnError();
 
   if (!data) return result;
   for (const row of data as unknown as Array<{ contact_id: number; tag: Tag | null }>) {

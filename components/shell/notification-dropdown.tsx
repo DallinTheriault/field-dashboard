@@ -41,18 +41,22 @@ export function NotificationDropdown() {
   const [items, setItems] = useState<Notification[]>([]);
   const [unread, setUnread] = useState(0);
   const [loading, setLoading] = useState(false);
+  const [failed, setFailed] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
       const supabase = await browserSupabase();
-      const { data } = await supabase
+      const { data, error } = await supabase
         .from("notifications")
         .select("id, kind, title, body, link_url, read_at, created_at")
         .in("kind", SHOWN_KINDS)
         .order("created_at", { ascending: false })
         .limit(15);
+      // Keep the last good list; never show "No notifications" for a failed read.
+      setFailed(!!error);
+      if (error) return;
       setItems(data ?? []);
       setUnread((data ?? []).filter((n) => n.read_at === null).length);
     } finally {
@@ -198,6 +202,10 @@ export function NotificationDropdown() {
             {loading && items.length === 0 ? (
               <div className="p-6 text-center text-2xs text-bone-400">
                 Loading…
+              </div>
+            ) : failed && items.length === 0 ? (
+              <div className="p-6 text-center text-2xs text-status-danger">
+                Couldn&apos;t load notifications. Try again in a moment.
               </div>
             ) : items.length === 0 ? (
               <div className="p-6 text-center">

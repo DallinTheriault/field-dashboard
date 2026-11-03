@@ -106,6 +106,7 @@ export function CatalogManager({ clientId }: { clientId: number }) {
   // The price input shows once you choose your own price (or a row has one).
   const [ownPrice, setOwnPrice] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [loadFailed, setLoadFailed] = useState(false);
   const [editing, setEditing] = useState<number | "new" | null>(null);
   const [draft, setDraft] = useState<PriceBookDraft>(EMPTY_DRAFT);
   const [saving, setSaving] = useState(false);
@@ -116,7 +117,7 @@ export function CatalogManager({ clientId }: { clientId: number }) {
   const [linkValue, setLinkValue] = useState("");
 
   async function load() {
-    const [{ data: s }, { data: l }, { data: m }, { data: p }] =
+    const [{ data: s, error: sErr }, { data: l, error: lErr }, { data: m, error: mErr }, { data: p, error: pErr }] =
       await Promise.all([
         supabase
           .from("service_catalog")
@@ -138,6 +139,8 @@ export function CatalogManager({ clientId }: { clientId: number }) {
           .select("default_hourly_rate, skilled_hourly_rate")
           .maybeSingle(),
       ]);
+    // Never show an empty catalog for a failed read: editing it would start from nothing.
+    if (sErr || lErr || mErr || pErr) return setLoadFailed(true);
     setServices(
       (s ?? []).map((x) => ({
         ...x,
@@ -225,6 +228,9 @@ export function CatalogManager({ clientId }: { clientId: number }) {
     load();
   }
 
+  if (loadFailed) {
+    return <div className="px-4 py-4 text-2xs text-status-danger">Couldn&apos;t load this section, so it&apos;s hidden rather than shown empty. Refresh to try again.</div>;
+  }
   if (loading) {
     return <div className="px-4 py-4 text-2xs text-bone-400">Loading…</div>;
   }

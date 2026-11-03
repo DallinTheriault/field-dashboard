@@ -52,23 +52,23 @@ export default async function EstimateDetailPage({
           "*, jobs(id, name, address, status), billing_entities(name, invoice_prefix), travel_zones(label)",
         )
         .eq("id", estimateId)
-        .maybeSingle(),
+        .maybeSingle().throwOnError(),
       supabase
         .from("estimate_line_items")
         .select("*, tasks(title, task_photos(id, caption))")
         .eq("estimate_id", estimateId)
-        .order("sort_order"),
+        .order("sort_order").throwOnError(),
       supabase
         .from("estimate_materials")
         .select("*")
-        .eq("estimate_id", estimateId),
+        .eq("estimate_id", estimateId).throwOnError(),
       supabase
         .from("invoices")
         .select("id")
         .eq("estimate_id", estimateId)
         .order("created_at", { ascending: false })
         .limit(1)
-        .maybeSingle(),
+        .maybeSingle().throwOnError(),
     ]);
 
   if (!est) notFound();
@@ -78,7 +78,7 @@ export default async function EstimateDetailPage({
     .from("estimates")
     .select("id, version, status, computed_price, manual_override_price")
     .eq("job_id", est.job_id)
-    .order("version", { ascending: true });
+    .order("version", { ascending: true }).throwOnError();
   const versions = (versionRows ?? []).filter((v) => v.id !== est.id);
 
   const job = est.jobs as unknown as {

@@ -40,14 +40,14 @@ export default async function ReviseEstimatePage({
         "id, job_id, status, billing_entity_id, notes, manual_override_price, override_reason, jobs(id, name, address)",
       )
       .eq("id", estimateId)
-      .maybeSingle(),
+      .maybeSingle().throwOnError(),
     supabase
       .from("estimate_line_items")
       .select(
         "service_id, description, type, qty, unit, prep_modifier_id, resolved_hours_per_unit, sort_order, is_hardware, sku, resolved_unit_price, hardware_markup, task_id",
       )
       .eq("estimate_id", estimateId)
-      .order("sort_order"),
+      .order("sort_order").throwOnError(),
   ]);
 
   if (!est) notFound();
@@ -67,7 +67,7 @@ export default async function ReviseEstimatePage({
     .select("id, title, status")
     .eq("job_id", est.job_id)
     .order("sort_order")
-    .order("id");
+    .order("id").throwOnError();
 
   const rawLines: RawLine[] = (lineRows ?? []).map((r, i) =>
     r.is_hardware

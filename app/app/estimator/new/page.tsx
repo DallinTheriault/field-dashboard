@@ -38,13 +38,13 @@ export default async function NewEstimatePage({
       .from("jobs")
       .select("id, name, address")
       .eq("id", jobId)
-      .maybeSingle(),
+      .maybeSingle().throwOnError(),
     supabase
       .from("tasks")
       .select("id, title, status")
       .eq("job_id", jobId)
       .order("sort_order")
-      .order("id"),
+      .order("id").throwOnError(),
   ]);
   if (!job) redirect("/app/jobs");
 
