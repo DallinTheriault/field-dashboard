@@ -73,3 +73,15 @@ wait_http() {
   echo "$name did not come up; see $LOGS" >&2
   return 1
 }
+
+# Restart just the gateway, with knobs for scenarios, e.g.
+#   restart_gateway GATEWAY_FAIL='^/expenses\b'   or   restart_gateway GATEWAY_LOG=/tmp/gw.log
+# No arguments: back to plain.
+restart_gateway() {
+  kill "$(cat "$PG_RUN/gateway.pid")" 2>/dev/null || true
+  sleep 0.5
+  env "$@" setsid nohup node "$HERE/gateway.mjs" "$GATEWAY_PORT" "$REST_PORT" "$AUTH_PORT" "$STORAGE_PORT" \
+    > "$LOGS/gateway.log" 2>&1 < /dev/null &
+  echo $! > "$PG_RUN/gateway.pid"
+  wait_http "http://127.0.0.1:$GATEWAY_PORT/auth/v1/health" gateway
+}
