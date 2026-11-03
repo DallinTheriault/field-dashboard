@@ -130,12 +130,14 @@ export function ReceiptItems({
         {rows.length > 0 && (
           <ul className="text-2xs space-y-0.5" aria-label="Totals by setting">
             {[...buckets.entries()].map(([key, b]) => (
-              <li key={key} className="flex items-baseline gap-2">
-                <span className="flex-1 min-w-0 text-bone-300 truncate">{b.label}</span>
-                <span className="num text-bone-100">{usd.format(round2(b.amount))}</span>
-                {b.billed > 0 && factor !== 1 && (
-                  <span className="num text-bone-400">bills {usd.format(round2(b.billed))} with tax</span>
-                )}
+              <li key={key} className="flex items-start gap-2">
+                <span className="flex-1 min-w-0 text-bone-300 break-words">{b.label}</span>
+                <span className="text-right shrink-0">
+                  <span className="num text-bone-100">{usd.format(round2(b.amount))}</span>
+                  {b.billed > 0 && factor !== 1 && (
+                    <span className="block num text-bone-400">bills {usd.format(round2(b.billed))} with tax</span>
+                  )}
+                </span>
               </li>
             ))}
           </ul>
