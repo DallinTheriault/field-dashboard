@@ -5,6 +5,8 @@ import { METHOD_LABELS, type PaymentMethod } from "@/lib/invoices/payments";
 import { ALTERNATIVE_METHODS_NOTE } from "@/lib/estimator/mileage";
 import { loadRatePeriods, loadTrips } from "@/lib/mileage/trips";
 import { yearTotals } from "@/lib/mileage/plan";
+import { getTenantContext } from "@/lib/supabase/request-cache";
+import { exportFileName } from "@/lib/estimator/export-name";
 
 function exportFailed(what: string, e: Error) {
   console.error(`[csv] ${what} export failed`, e);
@@ -33,7 +35,7 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const tz = await getTenantTimezone();
+  const [tz, tenant] = await Promise.all([getTenantTimezone(), getTenantContext()]);
   const url = new URL(request.url);
   const yParam = url.searchParams.get("y") ?? "";
   const year = /^\d{4}$/.test(yParam)
@@ -122,7 +124,7 @@ export async function GET(request: Request) {
   return new NextResponse(lines.join("\r\n"), {
     headers: {
       "Content-Type": "text/csv",
-      "Content-Disposition": `attachment; filename="sharpline-pnl-${year}.csv"`,
+      "Content-Disposition": `attachment; filename="${exportFileName(tenant?.business_short_name || tenant?.business_name, "pnl", year)}"`,
       "Cache-Control": "private, no-store",
     },
   });

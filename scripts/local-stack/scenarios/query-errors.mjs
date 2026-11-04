@@ -2,6 +2,7 @@
 // as a member, and require every Supabase request each one makes, server- or
 // browser-side, to succeed. Catches a schema change that breaks a query, like
 // v096 dropping the foreign key the Expenses item list embedded through.
+// Signed out, each page goes to login without running a query.
 // Usage (gateway logging, see query-errors.sh): node query-errors.mjs <gatewayLog>
 import { readFileSync, statSync } from "node:fs";
 import { APP, PHONE, check, launch, login } from "./browser.mjs";
@@ -27,6 +28,18 @@ const PAGES = [
 const EXPORTS = ["/api/estimator/expenses/csv", "/api/estimator/mileage/csv"];
 const failedSince = (offset) =>
   readFileSync(LOG, "utf8").slice(offset).split("\n").filter((l) => /^\[GW\] .* [45]\d\d$/.test(l)).map((l) => l.split(" ").slice(4).join(" "));
+
+// Signed out: the middleware sends every app page to login before it renders,
+// so not one query runs (they used to, and failed, as signed out).
+for (const p of PAGES) {
+  const offset = statSync(LOG).size;
+  const r = await fetch(`${APP}${p}`, { redirect: "manual" });
+  await new Promise((done) => setTimeout(done, 200));
+  const queries = readFileSync(LOG, "utf8").slice(offset).split("\n").filter((l) => l.startsWith("[GW]") && l.includes("/rest/v1/"));
+  const to = r.headers.get("location") ?? "";
+  check(`signed out ${p}: sent to login, no queries`, r.status >= 300 && r.status < 400 && new URL(to, APP).pathname === "/login" && queries.length === 0,
+    `${r.status} ${to} ${queries.length} queries`);
+}
 
 const browser = await launch();
 for (const email of ["owner@cascade.test", "member@cascade.test"]) {

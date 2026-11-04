@@ -3,18 +3,21 @@
 import { useEffect, useState } from "react";
 import { ExternalLink } from "lucide-react";
 import type { PropertyMiles as Miles } from "@/lib/mileage/property-miles";
-import { propertyMilesNow } from "./mileage-actions";
 import { MapCredit } from "./map-credit";
 
 /** "18.5 mi from your base · Check in Google Maps" for a property (owner/manager). */
 export function PropertyMiles({ address }: { address: string }) {
   const [m, setM] = useState<Miles | null>(null);
+  // A plain request, not a server action: the lookup can wait seconds at the
+  // map services, and a pending action would hold up every tap on the page
+  // (marking the job Completed waited on it). Leaving the page cancels it.
   useEffect(() => {
-    let live = true;
-    propertyMilesNow(address).then((r) => live && r.ok && setM(r.data ?? null));
-    return () => {
-      live = false;
-    };
+    const ctl = new AbortController();
+    fetch(`/api/estimator/property-miles?address=${encodeURIComponent(address)}`, { signal: ctl.signal })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data: Miles | null) => data && setM(data))
+      .catch(() => {});
+    return () => ctl.abort();
   }, [address]);
   if (!m || m.status === "no_base") return null;
   if (m.status === "no_address") {

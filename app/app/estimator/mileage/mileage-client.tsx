@@ -12,13 +12,13 @@ import {
   deleteRatePeriod,
   deleteTrip,
   restoreTrip,
-  checkMapServices,
   saveBase,
   saveRatePeriod,
-  syncTripsNow,
   updateTrip,
 } from "./mileage-actions";
 import { MapCredit } from "./map-credit";
+import { syncTripsBatch } from "./sync-client";
+import type { ServiceCheck } from "@/lib/mileage/geo";
 
 const usd = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" });
 const num1 = new Intl.NumberFormat("en-US", { maximumFractionDigits: 1 });
@@ -66,6 +66,9 @@ export function MileageClient({
   // or down): "Try again" or the next visit picks up from there.
   const alive = useRef(true);
   const running = useRef(false);
+  // Asked to run while running (a save brought back new pending trips):
+  // go round again, since the running batches may predate the save.
+  const again = useRef(false);
   const [stalled, setStalled] = useState(false);
   useEffect(() => {
     alive.current = true;
@@ -74,24 +77,41 @@ export function MileageClient({
     };
   }, []);
   const runBatches = useCallback(async () => {
-    if (running.current) return;
+    if (running.current) {
+      again.current = true;
+      return;
+    }
     running.current = true;
     setWorking(true);
     setStalled(false);
-    for (let i = 0; i < 50 && alive.current; i++) {
-      const r = await syncTripsNow();
-      if (!alive.current) break;
-      router.refresh();
-      if (!r.ok) {
-        setErr(r.error);
-        break;
+    let stop = false;
+    do {
+      again.current = false;
+      // A batch that got no turn at the map services may just have overlapped
+      // another lookup (a save, another device): try it a couple more times
+      // before saying they're busy.
+      for (let i = 0, idle = 0; i < 50 && alive.current; i++) {
+        const r = await syncTripsBatch();
+        if (!alive.current) break;
+        router.refresh();
+        if (!r.ok) {
+          setErr(r.error);
+          stop = true;
+          break;
+        }
+        if (!r.data || r.data.pending === 0) break;
+        if (r.data.lookups > 0) {
+          idle = 0;
+          continue;
+        }
+        if (++idle >= 3) {
+          setStalled(true);
+          stop = true;
+          break;
+        }
+        await new Promise((done) => setTimeout(done, 2000));
       }
-      if (!r.data || r.data.pending === 0) break;
-      if (r.data.lookups === 0) {
-        setStalled(true);
-        break;
-      }
-    }
+    } while (again.current && !stop && alive.current);
     running.current = false;
     if (alive.current) setWorking(false);
   }, [router]);
@@ -564,15 +584,26 @@ function Bases({ bases, onError }: { bases: BaseRecord[]; onError: (m: string | 
   );
 }
 
+/** One request to each map service, through a route: an action would hold up taps while it waits. */
+async function checkServicesNow(): Promise<{ ok: true; data: { base: string; checks: ServiceCheck[] } } | { ok: false; error: string }> {
+  try {
+    const res = await fetch("/api/estimator/mileage/check");
+    const body = await res.json().catch(() => null);
+    return res.ok ? { ok: true, data: body } : { ok: false, error: body?.error ?? `Couldn't check (${res.status}).` };
+  } catch {
+    return { ok: false, error: "Couldn't reach Field to check." };
+  }
+}
+
 /** "Check map services": one request to each, from today's base. */
 function ServiceCheckRow() {
-  const [result, setResult] = useState<Awaited<ReturnType<typeof checkMapServices>> | null>(null);
+  const [result, setResult] = useState<{ ok: true; data: { base: string; checks: ServiceCheck[] } } | { ok: false; error: string } | null>(null);
   const [pending, start] = useTransition();
   const NAMES = { census: "US Census geocoder", nominatim: "OpenStreetMap (Nominatim)", valhalla: "Valhalla routing" };
   const SAID = { ok: "Reached", failed: "Couldn't reach", busy: "Didn't ask", off: "Not using" };
   return (
     <div className="px-4 py-3 border-t border-line-subtle space-y-2" data-testid="service-check">
-      <button type="button" disabled={pending} onClick={() => start(async () => setResult(await checkMapServices()))} className="btn-ghost text-xs min-h-[36px]">
+      <button type="button" disabled={pending} onClick={() => start(async () => setResult(await checkServicesNow()))} className="btn-ghost text-xs min-h-[36px]">
         {pending ? <Loader2 size={11} className="animate-spin" /> : null}
         Check map services
       </button>

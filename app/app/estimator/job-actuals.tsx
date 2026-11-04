@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { Clock, Lock, Plus, Trash2 } from "lucide-react";
 import { browserSupabase } from "@/lib/supabase/lazy-client";
-import { syncTripsNow } from "./mileage/mileage-actions";
+import { syncTripsBatch } from "./mileage/sync-client";
 
 type TimeEntry = {
   id: number;
@@ -181,7 +181,7 @@ export function JobActuals({
     setNote("");
     load();
     // A day on site is a round trip: mileage follows the hours on its own.
-    void syncTripsNow();
+    void syncTripsBatch({ keepalive: true });
   }
 
   async function removeTime(id: number) {
@@ -190,7 +190,7 @@ export function JobActuals({
     const { error } = await supabase.from("time_entries").delete().eq("id", id);
     if (error) setErr(error.message);
     load();
-    void syncTripsNow();
+    void syncTripsBatch({ keepalive: true });
   }
 
   if (loading) {

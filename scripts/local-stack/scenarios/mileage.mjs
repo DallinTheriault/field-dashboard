@@ -235,13 +235,22 @@ check("…typing the miles saves them, and they stay", !!(await until(async () =
 
 // --- Completing a job with no hours asks which days ---------------------------------------------------
 const j7 = await mk("Gil Twoday", "600 Maple St, Riverton, UT 84065", "2026-10-16T09:00:00-06:00", "2026-10-17T17:00:00-06:00");
+// Slow map services: the job page's miles box is still waiting on them when
+// the job is marked Completed, and the question must not wait with it (it
+// did while the miles box ran as a server action: up to ~30 s).
+await geo.script({ delay: { census: 6000, valhalla: 6000 } });
 await page.goto(`${APP}/app/jobs/${j7.id}`);
 await page.getByRole("button", { name: "Change status" }).click();
+const tDone = Date.now();
 await page.getByRole("button", { name: "Completed", exact: true }).click();
 const dialog = page.getByRole("dialog", { name: "Which days were you there?" });
 await dialog.waitFor({ timeout: 20_000 }).catch(() => {});
+const askedAfter = Date.now() - tDone;
 check("completing a job with no hours asks \"Which days were you there?\", every scheduled day ticked",
   (await dialog.count()) === 1 && (await dialog.getByLabel("2026-10-16").isChecked()) && (await dialog.getByLabel("2026-10-17").isChecked()));
+check("…at once, while the miles box is still waiting on the map services", askedAfter < 3000 && (await page.getByTestId("property-miles").count()) === 0,
+  `${askedAfter} ms`);
+await geo.script({ delay: {} });
 await dialog.getByLabel("2026-10-17").uncheck();
 await dialog.getByRole("button", { name: "Save days" }).click();
 await dialog.waitFor({ state: "detached" });
@@ -251,9 +260,10 @@ check("…untick the days you weren't there: the rest become trips", days7.map((
 await page.goto(`${APP}/app/jobs/${j1.id}`);
 await page.getByRole("button", { name: "Change status" }).click();
 await page.getByRole("button", { name: "Completed", exact: true }).click();
-await page.waitForURL(/days=ask/);
-await page.waitForLoadState("networkidle");
+await until(async () => (await adminGet(`jobs?id=eq.${j1.id}&select=status`))[0]?.status === "completed");
+await page.waitForTimeout(1500);
 check("no question when hours are logged", (await page.getByRole("dialog", { name: "Which days were you there?" }).count()) === 0);
+
 
 // --- Catch-up ---------------------------------------------------------------------------------------------
 const j8 = await mk("Hal Gap", "700 Spruce St, Bluffdale, UT 84065", "2026-08-20T09:00:00-06:00", null, "completed");
@@ -304,6 +314,36 @@ for (const [label, path] of [["the invoice builder", `/app/jobs/${j3.id}/invoice
   const text = await main.innerText();
   check(`mileage never shows up on ${label}`, !/mileage|\bmiles?\b|\btravel\b/i.test(text), text.match(/.{0,40}(mileage|miles?|travel).{0,40}/i)?.[0]);
 }
+
+// Logging hours starts a trip lookup in the background; leaving the page
+// right after must not wait on it (it did while that ran as a server action).
+const jLeave = await mk("Hal Hours", "710 Cedar St, Draper, UT 84020");
+await geo.script({ delay: { census: 6000, valhalla: 6000 } });
+await page.goto(`${APP}/app/jobs/${jLeave.id}`);
+await page.getByLabel("Hours").fill("2");
+await page.getByRole("button", { name: "Log time" }).click();
+await page.waitForFunction(() => document.querySelector('input[inputmode="decimal"]')?.value === "");
+const tLeave = Date.now();
+await page.getByRole("link", { name: "Back to jobs" }).click();
+await page.waitForURL((u) => new URL(u).pathname === "/app/jobs");
+await page.locator("main h1").waitFor();
+const leftAfter = Date.now() - tLeave;
+check("leaving a job right after logging hours doesn't wait on its trip lookup", leftAfter < 3000, `${leftAfter} ms`);
+await geo.script({ delay: {} });
+// Let the lookups started here finish before the next scenario counts the
+// map services' requests: that day's trip, and the job's miles box (which
+// keeps going on the server after the page is left, and lands in the caches).
+await until(async () => {
+  const t = (await allTrips()).filter((x) => x.job_id === jLeave.id || (x.stops ?? []).some((st) => st.job_id === jLeave.id));
+  return t.length > 0 && t.every((x) => x.miles_status !== "pending");
+}, 60_000);
+await until(async () => {
+  const g = (await adminGet(`geocode_cache?client_id=eq.8&address=eq.${encodeURIComponent("710 Cedar St, Draper, UT 84020")}&select=status,lat,lon`))[0];
+  if (!g) return false;
+  if (g.status !== "ok") return true;
+  const key = `${Number(g.lat).toFixed(5)},${Number(g.lon).toFixed(5)}`;
+  return (await adminGet(`route_cache?client_id=eq.8&select=miles&or=${encodeURIComponent(`(from_point.eq."${key}",to_point.eq."${key}")`)}`)).length > 0;
+}, 90_000);
 
 // --- Members --------------------------------------------------------------------------------------------
 const mp = await login(browser, "member@cascade.test", PHONE);

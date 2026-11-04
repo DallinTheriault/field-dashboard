@@ -30,11 +30,14 @@ const db = async () => Object.fromEntries((await adminGet(`expenses?purchase_id=
 const browser = await launch();
 const page = await login(browser, "owner@cascade.test", PHONE);
 // The year's P&L as the Money page and the CSV for taxes show it.
+let fileName = "";
 const money = async () => {
   await page.goto(`${APP}/app/estimator/expenses?y=2026`);
   await page.getByText("Where it went").waitFor();
   const text = await page.locator("main").innerText();
-  const csv = await (await page.request.get(`${APP}/api/estimator/expenses/csv?y=2026`)).text();
+  const res = await page.request.get(`${APP}/api/estimator/expenses/csv?y=2026`);
+  const csv = await res.text();
+  fileName = res.headers()["content-disposition"] ?? "";
   const rows = csv.split("\r\n").map((l) => l.split(","));
   const expenseSum = rows.filter((r) => r[1] === "expense").reduce((t, r) => t + Number(r.at(-1)), 0);
   return { expenses: /Expenses\s+(\$[\d,]+\.\d\d)/i.exec(text)?.[1], text, csv, expenseSum: Math.round(expenseSum * 100) / 100 };
@@ -93,6 +96,9 @@ check("CSV: the expense rows add up the same", after.expenseSum === before.expen
 check("Money page: Where it went has a Tools & equipment line", /Tools & equipment\s+\$[\d,]+\.\d\d/.test(after.text));
 const line = (name) => after.csv.split("\r\n").find((l) => l.includes(`${name} @ ${VENDOR},`)) ?? "";
 check("CSV: the wrench's row says Tools & equipment", line("Pipe wrench 14 in").split(",")[2] === "Tools & equipment", line("Pipe wrench 14 in"));
+const biz = (await adminGet("Clients?id=eq.8&select=business_name,business_short_name"))[0];
+const first = String(biz.business_short_name || biz.business_name).toLowerCase().split(/[^a-z0-9]+/)[0];
+check("CSV: named after the business, not Sharpline", /filename="[a-z0-9-]+-pnl-2026\.csv"/.test(fileName) && fileName.includes(`"${first}`) && !fileName.includes("sharpline"), fileName);
 check("CSV: the gloves' row says Materials & supplies", line("Work gloves").split(",")[2] === "Materials & supplies", line("Work gloves"));
 await page.goto(url);
 await page.reload();
