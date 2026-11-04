@@ -156,6 +156,11 @@ export type InvoiceRow = {
   kind?: "labor" | "minimum";
   /** On the invoice at $0.00 because the minimum charge covers it. */
   covered?: boolean;
+  /**
+   * A row of the job's accepted estimate ("per estimate"); the draft claims
+   * that estimate (invoices.estimate_id), so it's never billed twice.
+   */
+  estimate_id?: number;
 };
 
 /**

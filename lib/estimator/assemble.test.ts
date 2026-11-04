@@ -2,24 +2,21 @@ import { describe, expect, it } from "vitest";
 import {
   buildEngineSettings,
   buildSavePayload,
+  missingRate,
   priceEstimate,
   toEngineLine,
   type EstimatorBundle,
   type RawLine,
 } from "./assemble";
 
-/** Synthetic settings: $120k pay, 40 hr/wk, 75% util, $1,000/mo overhead. */
+/** The same four numbers as Business › Pricing: $110 general, $125 skilled. */
 const BUNDLE: EstimatorBundle = {
   settings: {
-    desired_annual_owner_pay: 120000,
-    hours_worked_per_week: 40,
-    utilization_pct: 0.75,
-    margin_pct: 0.4,
+    default_hourly_rate: 110,
+    skilled_hourly_rate: 125,
     material_markup_pct: 0,
     minimum_job_charge: 150,
-    rounding_increment: 5,
   },
-  monthlyOverhead: 1000,
   services: [
     {
       id: 10,
@@ -30,6 +27,7 @@ const BUNDLE: EstimatorBundle = {
       flat_labor_hours: null,
       is_placeholder: false,
       active: true,
+      rate_type: "general",
     },
     {
       id: 11,
@@ -40,6 +38,7 @@ const BUNDLE: EstimatorBundle = {
       flat_labor_hours: 1.5,
       is_placeholder: false,
       active: true,
+      rate_type: "skilled",
     },
   ],
   materials: [
@@ -89,11 +88,56 @@ const adHoc: RawLine = {
 };
 
 describe("buildEngineSettings", () => {
-  it("derives the loaded rate from pay + overhead + billable hours", () => {
+  it("prices from Business › Pricing: no hidden margin or rounding", () => {
     const s = buildEngineSettings(BUNDLE);
-    // (120000/12 + 1000) / (40 × 52/12 × 0.75 = 130) = 11000/130
-    expect(s.loadedLaborRate).toBeCloseTo(84.61538461538461, 10);
-    expect(s.marginPct).toBe(0.4);
+    expect(s.loadedLaborRate).toBe(110);
+    expect(s.marginPct).toBe(0);
+    expect(s.roundingIncrement).toBe(0);
+    expect(s.minimumJobCharge).toBe(150);
+  });
+});
+
+describe("pricing at Field's rates", () => {
+  it("Job 14's estimate: 2 hr of ad-hoc labor sells at the $110 general rate, not ~$116", () => {
+    const line: RawLine = { ...adHoc, description: "Light prep and Touch Up Paint", qty: 1, hoursPerUnit: 2 };
+    const priced = priceEstimate([line], BUNDLE);
+    expect(priced.result.price).toBe(220);
+    expect(priced.rows[0].amount).toBe(220);
+  });
+
+  it("a skilled catalog task sells at the skilled rate", () => {
+    const toilet: RawLine = { ...adHoc, serviceId: 11, description: "Toilet swap", qty: 1, hoursPerUnit: null };
+    // 1.5 hr × $125 = $187.50
+    expect(priceEstimate([toilet], BUNDLE).result.price).toBe(187.5);
+  });
+
+  it("the minimum job charge still applies, to the cent", () => {
+    const small: RawLine = { ...adHoc, qty: 1, hoursPerUnit: 0.5 };
+    expect(priceEstimate([small], BUNDLE).result.price).toBe(150);
+  });
+
+  it("materials and marked-up parts take the material markup; at-cost parts don't", () => {
+    const marked: EstimatorBundle = { ...BUNDLE, settings: { ...BUNDLE.settings!, material_markup_pct: 0.2, minimum_job_charge: 0 } };
+    const part = (markup: boolean): RawLine => ({
+      ...adHoc,
+      qty: 1,
+      hoursPerUnit: null,
+      isHardware: true,
+      unitPrice: 100,
+      hardwareMarkup: markup,
+    });
+    expect(priceEstimate([part(true)], marked).result.price).toBe(120);
+    expect(priceEstimate([part(false)], marked).result.price).toBe(100);
+  });
+
+  it("says which rate is missing instead of pricing labor at $0", () => {
+    const noSkilled: EstimatorBundle = { ...BUNDLE, settings: { ...BUNDLE.settings!, skilled_hourly_rate: null } };
+    const toilet: RawLine = { ...adHoc, serviceId: 11, qty: 1, hoursPerUnit: null };
+    expect(missingRate([adHoc], noSkilled)).toBeNull();
+    expect(missingRate([toilet], noSkilled)).toMatch(/skilled hourly rate/);
+    expect(missingRate([adHoc], { ...BUNDLE, settings: null })).toMatch(/general hourly rate/);
+    const part: RawLine = { ...adHoc, isHardware: true, unitPrice: 10 };
+    expect(missingRate([part], { ...BUNDLE, settings: null })).toBeNull();
   });
 });
 
@@ -161,8 +205,9 @@ describe("buildSavePayload (Snapshot Rule)", () => {
 
   it("freezes every pricing input into the payload", () => {
     const p = snapshot(BUNDLE);
-    expect(p.estimate.resolved_loaded_rate).toBeCloseTo(84.6154, 3);
-    expect(p.estimate.resolved_margin_pct).toBe(0.4);
+    expect(p.estimate.resolved_loaded_rate).toBe(110);
+    expect(p.estimate.resolved_margin_pct).toBe(0);
+    expect(p.estimate.resolved_rounding_increment).toBe(0);
     // Estimates never carry a travel fee (mileage is never billed).
     expect(p.estimate.resolved_travel_fee).toBe(0);
     expect(p.estimate.travel_zone_id).toBeNull();
@@ -170,6 +215,8 @@ describe("buildSavePayload (Snapshot Rule)", () => {
     // Catalog line froze the service's hours/unit and prep multiplier
     expect(p.lines[0].resolved_hours_per_unit).toBeCloseTo(0.01, 9);
     expect(p.lines[0].resolved_prep_multiplier).toBeCloseTo(1.6, 9);
+    // Each line froze the rate its hours sold at
+    expect(p.lines[0].resolved_loaded_rate).toBe(110);
     // Ad-hoc line froze its manual hours
     expect(p.lines[1].resolved_hours_per_unit).toBe(1);
     expect(p.lines[1].resolved_labor_hours).toBe(2);
@@ -220,15 +267,14 @@ describe("buildSavePayload (Snapshot Rule)", () => {
 
   it("settings changes change NEW payloads only — a frozen payload is inert data", () => {
     const before = snapshot(BUNDLE);
-    // Hostile settings edit: double the pay target, gut the margin.
+    // Settings edit: raise the general rate.
     const mutated: EstimatorBundle = {
       ...BUNDLE,
-      settings: { ...BUNDLE.settings!, desired_annual_owner_pay: 240000, margin_pct: 0.1 },
-      monthlyOverhead: 4000,
+      settings: { ...BUNDLE.settings!, default_hourly_rate: 140 },
     };
     const after = snapshot(mutated);
     expect(after.estimate.computed_price).not.toBe(before.estimate.computed_price);
     // The earlier payload is untouched by the bundle mutation.
-    expect(before.estimate.resolved_loaded_rate).toBeCloseTo(84.6154, 3);
+    expect(before.estimate.resolved_loaded_rate).toBe(110);
   });
 });

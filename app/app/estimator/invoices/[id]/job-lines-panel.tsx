@@ -9,7 +9,7 @@ import { addToDraftInvoice, refreshDraftExtras } from "../../job-invoice-actions
 const usd = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" });
 
 export type AvailableLine = {
-  kind: "task" | "extra";
+  kind: "task" | "extra" | "estimate";
   id: number;
   title: string;
   detail: string | null;
@@ -19,8 +19,9 @@ export type AvailableLine = {
 
 /**
  * What the job has that this draft doesn't: lines still waiting for a price
- * (they block sending), finished lines and extras added since the draft was
- * made, and open lines, listed so one can go on the invoice on purpose.
+ * (they block sending), its accepted estimate when no invoice has it,
+ * finished lines and extras added since the draft was made, and open lines,
+ * listed so one can go on the invoice on purpose.
  */
 export function JobLinesPanel({
   invoiceId,
@@ -47,6 +48,7 @@ export function JobLinesPanel({
   }
 
   const groups: Array<[string, AvailableLine[]]> = [
+    ["Accepted estimate, not on any invoice", available.filter((a) => a.kind === "estimate")],
     ["Finished, not on this invoice", available.filter((a) => a.kind === "task" && a.done)],
     ["Bill-to-customer receipts not on any invoice", available.filter((a) => a.kind === "extra")],
     ["Not done yet", available.filter((a) => a.kind === "task" && !a.done)],
@@ -101,7 +103,10 @@ export function JobLinesPanel({
                     disabled={busy !== null}
                     onClick={() =>
                       run(`${a.kind}-${a.id}`, () =>
-                        addToDraftInvoice(invoiceId, a.kind === "task" ? { taskIds: [a.id] } : { expenseIds: [a.id] }),
+                        addToDraftInvoice(
+                          invoiceId,
+                          a.kind === "task" ? { taskIds: [a.id] } : a.kind === "estimate" ? { estimateId: a.id } : { expenseIds: [a.id] },
+                        ),
                       )
                     }
                     className="btn-secondary text-xs min-h-[44px]"

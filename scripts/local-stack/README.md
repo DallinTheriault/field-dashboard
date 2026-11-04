@@ -43,7 +43,10 @@ then run `migrate.sh`.
 **Every batch** runs `scenarios/query-errors.sh` before it's reported, with the
 app built for production (`next build && next start`) on :3000: it opens every
 page and CSV export as owner and member and fails on any Supabase request that
-errors, so a query broken by a schema change can't pass as an empty page.
+errors, so a query broken by a schema change can't pass as an empty page. It also
+runs `node scenarios/embed-check.mjs`: every literal `.from().select()` with an embed
+in `app/` and `lib/`, once, as the owner, so an embed a schema change made ambiguous
+fails even on a page no scenario opens.
 `scenarios/failed-reads.sh` is the companion for changes to error handling: it
 fails one table's reads at a time and requires an error, never an empty page.
 

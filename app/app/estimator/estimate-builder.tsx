@@ -17,6 +17,7 @@ import {
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import {
+  missingRate,
   priceEstimate,
   type EstimatorBundle,
   type RawLine,
@@ -42,7 +43,7 @@ type UILine = {
   isHardware: boolean;
   sku: string;
   unitPriceStr: string;
-  hardwareMarkup: boolean; // true = mark up by margin; false = at cost
+  hardwareMarkup: boolean; // true = plus your material markup; false = at cost
   /** Optional link to a job task — traceability only, never pricing. */
   taskId: number | null;
 };
@@ -166,6 +167,7 @@ export function EstimateBuilder({
   );
 
   const rawLines = useMemo(() => lines.map(toRaw), [lines]);
+  const noRate = useMemo(() => missingRate(rawLines, bundle), [rawLines, bundle]);
   const priced = useMemo(
     () => priceEstimate(rawLines, bundle),
     [rawLines, bundle],
@@ -286,6 +288,7 @@ export function EstimateBuilder({
       flat_labor_hours: hours,
       is_placeholder: false,
       active: true,
+      rate_type: "general",
     });
     patchLine(l.key, { serviceId: data.id, hoursStr: "" });
   }
@@ -310,7 +313,7 @@ export function EstimateBuilder({
     router.push(`/app/estimator/${result.data!.estimateId}`);
   }
 
-  const canSave = lines.length > 0 && bundle.settings !== null;
+  const canSave = lines.length > 0 && noRate === null;
 
   return (
     <div className="max-w-2xl mx-auto px-4 py-6 pb-56 md:pb-32 space-y-5">
@@ -342,15 +345,14 @@ export function EstimateBuilder({
           ))}
       </header>
 
-      {!bundle.settings && (
-        <div className="form-error flex items-center gap-2">
+      {noRate && (
+        <div className="form-error flex items-center gap-2" data-testid="estimate-needs-rate">
           <TriangleAlert size={14} className="shrink-0" />
           <span>
-            Pricing settings aren&apos;t set up yet —{" "}
+            {noRate}{" "}
             <Link href="/app/estimator/settings" className="underline">
-              set pay, hours and margin
-            </Link>{" "}
-            first so estimates have a defensible rate.
+              Open Pricing
+            </Link>
           </span>
         </div>
       )}
@@ -447,7 +449,7 @@ export function EstimateBuilder({
                             ? "border-field-500/40 text-field-500 bg-field-500/10"
                             : "border-line-strong text-bone-300"
                         }`}
-                        title="Tap to toggle whether your margin applies to this part"
+                        title="Tap to toggle whether your material markup applies to this part"
                       >
                         {l.hardwareMarkup ? "marked up" : "at cost"}
                       </button>
@@ -698,23 +700,24 @@ export function EstimateBuilder({
           ) : (
             <div className="flex items-center gap-4 text-2xs text-bone-400">
               <span>
-                Cost{" "}
+                Labor{" "}
                 <span className="num text-bone-300">
-                  {usd.format(priced.result.jobCost)}
+                  {usd.format(priced.result.laborCost)}
                 </span>
               </span>
               <span>
-                Margin{" "}
+                Materials &amp; parts{" "}
                 <span className="num text-bone-300">
-                  {Math.round(priced.result.marginPct * 100)}%
+                  {usd.format(
+                    priced.result.materialCostMarked +
+                      priced.result.hardwareMarkupCost +
+                      priced.result.hardwarePassThroughCost,
+                  )}
                 </span>
               </span>
-              <span>
-                Markup{" "}
-                <span className="num text-bone-300">
-                  {Math.round(priced.result.effectiveMarkupPct * 100)}%
-                </span>
-              </span>
+              {priced.result.minimumApplied && (
+                <span className="text-status-lead">Minimum charge</span>
+              )}
               <span>
                 Hours{" "}
                 <span className="num text-bone-300">

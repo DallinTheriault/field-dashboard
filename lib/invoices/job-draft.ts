@@ -80,12 +80,23 @@ export function invoiceTotals(rows: Array<Pick<InvoiceRow, "amount">>, taxRatePc
   return { subtotalCents, taxCents, totalCents: subtotalCents + taxCents };
 }
 
-/** The task, expense and hour ids a set of rows bills, i.e. what the draft claims. */
-export function claimsOf(rows: InvoiceRow[]): { taskIds: number[]; expenseIds: number[]; hourIds: number[] } {
+/** The task, expense, hour and estimate ids a set of rows bills, i.e. what the draft claims. */
+export function claimsOf(rows: InvoiceRow[]): {
+  taskIds: number[];
+  expenseIds: number[];
+  hourIds: number[];
+  estimateIds: number[];
+} {
   const taskIds = rows.flatMap((r) => (Number.isInteger(r.task_id) ? [r.task_id as number] : []));
   const expenseIds = rows.flatMap((r) => (Number.isInteger(r.extra_expense_id) ? [r.extra_expense_id as number] : []));
   const hourIds = rows.flatMap((r) => (Array.isArray(r.time_entry_ids) ? r.time_entry_ids.filter(Number.isInteger) : []));
-  return { taskIds: [...new Set(taskIds)], expenseIds: [...new Set(expenseIds)], hourIds: [...new Set(hourIds)] };
+  const estimateIds = rows.flatMap((r) => (Number.isInteger(r.estimate_id) ? [r.estimate_id as number] : []));
+  return {
+    taskIds: [...new Set(taskIds)],
+    expenseIds: [...new Set(expenseIds)],
+    hourIds: [...new Set(hourIds)],
+    estimateIds: [...new Set(estimateIds)],
+  };
 }
 
 // --- Hours, minimum charge -------------------------------------------------------------
@@ -167,10 +178,12 @@ export function partRow(p: PartUsed, claim: boolean): InvoiceRow {
 }
 
 /**
- * A minimum invoice: each work line and each part used at $0.00, then one
- * minimum charge line. Parts stay job costs; they just aren't billed.
+ * A minimum invoice: each estimate row, work line and part used at $0.00,
+ * then one minimum charge line. Parts stay job costs; they just aren't billed.
  */
 export function minimumRows(input: {
+  /** The accepted estimate's rows: covered, they still claim the estimate. */
+  estimate?: InvoiceRow[];
   work: DraftTask[];
   billToCustomer: Array<Pick<ExtraItem, "id" | "description" | "qty">>;
   included: PartUsed[];
@@ -178,6 +191,7 @@ export function minimumRows(input: {
   minimum: number;
 }): InvoiceRow[] {
   return [
+    ...(input.estimate ?? []).map(coveredRow),
     ...input.work.map((t) => coveredRow(taskRow(t))),
     ...input.billToCustomer.map((x) => partRow(x, true)),
     ...input.included.map((p) => partRow(p, false)),

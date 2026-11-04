@@ -14,13 +14,15 @@ import {
   taskRow,
   type DraftTask,
 } from "@/lib/invoices/job-draft";
+import { loadEstimateOffer } from "@/lib/invoices/estimate-offer";
 import { InvoiceBuilder, type BuilderPart } from "./create-invoice-form";
 
 const usd = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" });
 
 /**
- * Create an invoice from the job: what it bills (work lines, logged hours,
- * receipt lines), itemized or as the minimum charge, plus the letterhead (it
+ * Create an invoice from the job: what it bills (its accepted estimate, work
+ * lines, logged hours, receipt lines), itemized or as the minimum charge, plus
+ * the letterhead (it
  * sets the invoice number's prefix, so it's chosen here, not on the draft),
  * tax and terms. Review and edits happen on the draft.
  */
@@ -43,6 +45,7 @@ export default async function NewJobInvoicePage({ params }: { params: Promise<{ 
     { data: estimates },
     { data: settings },
     { data: drafts },
+    offer,
   ] = await Promise.all([
     supabase.from("jobs").select("id, name, job_number, status, billing_entity_id").eq("id", jobId).maybeSingle().throwOnError(),
     supabase.from("tasks").select("id, title, status, sort_order, qty, unit, unit_price, billable, invoice_id").eq("job_id", jobId).throwOnError(),
@@ -74,6 +77,7 @@ export default async function NewJobInvoicePage({ params }: { params: Promise<{ 
       .eq("status", "draft")
       .is("stripe_invoice_id", null)
       .order("id").throwOnError(),
+    loadEstimateOffer(supabase, jobId),
   ]);
   if (!job) notFound();
 
@@ -137,8 +141,19 @@ export default async function NewJobInvoicePage({ params }: { params: Promise<{ 
         </div>
       )}
 
+      {offer.claimedBy && (
+        <div className="panel px-4 py-3 text-sm text-bone-300" data-testid="estimate-claimed">
+          This job&apos;s estimate is on{" "}
+          <Link href={`/app/estimator/invoices/${offer.claimedBy.invoice_id}`} className="text-field-500 underline">
+            {offer.claimedBy.invoice_number ?? "another invoice"}
+          </Link>
+          , so it isn&apos;t billed again here.
+        </div>
+      )}
+
       <InvoiceBuilder
         jobId={jobId}
+        estimate={offer.estimate ? { id: offer.estimate.id, version: offer.estimate.version, rows: offer.estimate.rows } : null}
         work={work.map(taskRow)}
         hours={(hourRows ?? []).map((h) => ({ id: Number(h.id), hours: Number(h.hours), date: String(h.entry_date) }))}
         parts={parts}

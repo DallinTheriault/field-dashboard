@@ -44,7 +44,7 @@ export default async function EstimateDetailPage({
   if (!Number.isInteger(estimateId)) notFound();
 
   const supabase = await createClient();
-  const [{ data: est }, { data: lines }, { data: materials }, { data: invoice }] =
+  const [{ data: est }, { data: lines }, { data: materials }] =
     await Promise.all([
       supabase
         .from("estimates")
@@ -62,23 +62,29 @@ export default async function EstimateDetailPage({
         .from("estimate_materials")
         .select("*")
         .eq("estimate_id", estimateId).throwOnError(),
-      supabase
-        .from("invoices")
-        .select("id")
-        .eq("estimate_id", estimateId)
-        .order("created_at", { ascending: false })
-        .limit(1)
-        .maybeSingle().throwOnError(),
     ]);
 
   if (!est) notFound();
 
-  // Sibling versions of this job's estimate — "agreed vs performed" history.
-  const { data: versionRows } = await supabase
-    .from("estimates")
-    .select("id, version, status, computed_price, manual_override_price")
-    .eq("job_id", est.job_id)
-    .order("version", { ascending: true }).throwOnError();
+  // Sibling versions of this job's estimate — "agreed vs performed" history —
+  // and the invoice (not voided) that bills one of them, if any: only one
+  // version of a job's estimate is ever billed.
+  const [{ data: versionRows }, { data: invoice }] = await Promise.all([
+    supabase
+      .from("estimates")
+      .select("id, version, status, computed_price, manual_override_price")
+      .eq("job_id", est.job_id)
+      .order("version", { ascending: true }).throwOnError(),
+    supabase
+      .from("invoices")
+      .select("id")
+      .eq("job_id", est.job_id)
+      .not("estimate_id", "is", null)
+      .neq("status", "voided")
+      .order("id", { ascending: false })
+      .limit(1)
+      .maybeSingle().throwOnError(),
+  ]);
   const versions = (versionRows ?? []).filter((v) => v.id !== est.id);
 
   const job = est.jobs as unknown as {
@@ -248,15 +254,31 @@ export default async function EstimateDetailPage({
         </div>
         <div className="px-4 py-3 space-y-3">
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-            {[
-              { label: "Cost", value: usd.format(Number(est.computed_cost ?? 0)) },
-              { label: "Margin", value: `${Math.round(margin * 100)}%` },
-              {
-                label: "Loaded rate",
-                value: `${usd.format(Number(est.resolved_loaded_rate ?? 0))}/hr`,
-              },
-              { label: "Labor hours", value: totalHours.toFixed(1) },
-            ].map((m) => (
+            {(margin > 0
+              ? // Priced before v105: a loaded rate plus a margin, frozen as saved.
+                [
+                  { label: "Cost", value: usd.format(Number(est.computed_cost ?? 0)) },
+                  { label: "Margin", value: `${Math.round(margin * 100)}%` },
+                  {
+                    label: "Loaded rate",
+                    value: `${usd.format(Number(est.resolved_loaded_rate ?? 0))}/hr`,
+                  },
+                  { label: "Labor hours", value: totalHours.toFixed(1) },
+                ]
+              : // Priced at your rates (Business › Pricing), frozen as saved.
+                [
+                  { label: "Before minimum", value: usd.format(Number(est.computed_cost ?? 0)) },
+                  {
+                    label: "General rate",
+                    value: `${usd.format(Number(est.resolved_loaded_rate ?? 0))}/hr`,
+                  },
+                  {
+                    label: "Material markup",
+                    value: `${Math.round(Number(est.resolved_material_markup_pct ?? 0) * 100)}%`,
+                  },
+                  { label: "Labor hours", value: totalHours.toFixed(1) },
+                ]
+            ).map((m) => (
               <div key={m.label} className="bg-ink-2 rounded-sm px-3 py-2 shadow-inset-line">
                 <div className="label-eyebrow">{m.label}</div>
                 <div className="num text-sm text-bone-50 mt-0.5">{m.value}</div>

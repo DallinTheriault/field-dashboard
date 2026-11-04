@@ -13,16 +13,19 @@ import {
   type JobPricingResult,
   type ClientRow,
 } from "./engine";
-import { loadedLaborRate, monthlyBillableHours } from "./rates";
+import { RATE_LABEL, type RateType } from "./price-book";
 
+/**
+ * The pricing settings estimates use: the same four numbers as the rest of
+ * Field (Business › Pricing). Labor sells at the general or skilled rate,
+ * materials and marked-up parts at cost plus the material markup, and the
+ * job at least the minimum. No hidden margin, overhead or rounding (v105).
+ */
 export type PricingSettingsRow = {
-  desired_annual_owner_pay: number;
-  hours_worked_per_week: number;
-  utilization_pct: number;
-  margin_pct: number;
+  default_hourly_rate: number | null;
+  skilled_hourly_rate: number | null;
   material_markup_pct: number;
   minimum_job_charge: number;
-  rounding_increment: number;
 };
 
 export type ServiceRow = {
@@ -34,6 +37,8 @@ export type ServiceRow = {
   flat_labor_hours: number | null;
   is_placeholder: boolean;
   active: boolean;
+  /** Which hourly rate its hours sell at. */
+  rate_type: RateType;
 };
 
 export type MaterialRow = {
@@ -75,7 +80,6 @@ export type EntityRow = {
 
 export type EstimatorBundle = {
   settings: PricingSettingsRow | null;
-  monthlyOverhead: number;
   services: ServiceRow[];
   materials: MaterialRow[];
   links: ServiceMaterialRow[];
@@ -112,27 +116,38 @@ export type RawLine = {
 
 export function buildEngineSettings(bundle: EstimatorBundle): EngineSettings {
   const s = bundle.settings;
-  if (!s) {
-    return {
-      loadedLaborRate: 0,
-      marginPct: 0.4,
-      materialMarkupPct: 0,
-      minimumJobCharge: 150,
-      roundingIncrement: 5,
-    };
-  }
-  const mbh = monthlyBillableHours(s.hours_worked_per_week, s.utilization_pct);
   return {
-    loadedLaborRate: loadedLaborRate(
-      s.desired_annual_owner_pay,
-      bundle.monthlyOverhead,
-      mbh,
-    ),
-    marginPct: s.margin_pct,
-    materialMarkupPct: s.material_markup_pct,
-    minimumJobCharge: s.minimum_job_charge,
-    roundingIncrement: s.rounding_increment,
+    // Lines bring their own rate (toEngineLine); this is the general rate.
+    loadedLaborRate: s?.default_hourly_rate ?? 0,
+    marginPct: 0,
+    materialMarkupPct: s?.material_markup_pct ?? 0,
+    minimumJobCharge: s?.minimum_job_charge ?? 0,
+    roundingIncrement: 0,
   };
+}
+
+/** Which rate a line's hours sell at: its catalog service's, else general. */
+export function lineRateType(raw: RawLine, bundle: EstimatorBundle): RateType {
+  const service = raw.serviceId ? bundle.services.find((s) => s.id === raw.serviceId) : undefined;
+  return service?.rate_type ?? "general";
+}
+
+function rateOf(type: RateType, bundle: EstimatorBundle): number | null {
+  const s = bundle.settings;
+  const v = type === "skilled" ? s?.skilled_hourly_rate : s?.default_hourly_rate;
+  return v === null || v === undefined ? null : v;
+}
+
+/**
+ * Why these lines can't be priced yet: a rate they need isn't set. Null when
+ * they can. Parts need no rate.
+ */
+export function missingRate(rawLines: RawLine[], bundle: EstimatorBundle): string | null {
+  const needed = [...new Set(rawLines.filter((l) => !l.isHardware).map((l) => lineRateType(l, bundle)))];
+  const missing = needed.filter((t) => rateOf(t, bundle) === null);
+  if (missing.length === 0) return null;
+  const names = missing.map((t) => RATE_LABEL[t].toLowerCase()).join(" and ");
+  return `Set your ${names} hourly rate${missing.length > 1 ? "s" : ""} in Business › Pricing first; this estimate's labor sells at ${missing.length > 1 ? "them" : "it"}.`;
 }
 
 export function prepMultiplierFor(
@@ -192,12 +207,14 @@ export function toEngineLine(
         })
     : [];
 
+  const laborRate = rateOf(lineRateType(raw, bundle), bundle) ?? 0;
   if (service) {
     return service.type === "MEASURED"
       ? {
           key: index,
           type: "MEASURED",
           qty: raw.qty,
+          laborRate,
           laborHoursPerUnit: service.labor_hours_per_unit ?? 0,
           prepMultiplier: prepMultiplierFor(raw.prepModifierId, bundle),
           materials,
@@ -206,6 +223,7 @@ export function toEngineLine(
           key: index,
           type: "TASK",
           qty: raw.qty,
+          laborRate,
           flatLaborHours: service.flat_labor_hours ?? 0,
           prepMultiplier: prepMultiplierFor(raw.prepModifierId, bundle),
           materials,
@@ -217,6 +235,7 @@ export function toEngineLine(
     key: index,
     type: "TASK",
     qty: raw.qty,
+    laborRate,
     flatLaborHours: raw.hoursPerUnit ?? 0,
     prepMultiplier: prepMultiplierFor(raw.prepModifierId, bundle),
     materials: [],
@@ -307,7 +326,7 @@ export function buildSavePayload(args: {
         r.baseHours > 0 ? r.laborHours / r.baseHours : 1,
       resolved_hours_per_unit: hoursPerUnit,
       resolved_labor_hours: r.laborHours,
-      resolved_loaded_rate: settings.loadedLaborRate,
+      resolved_loaded_rate: r.laborRate,
       resolved_labor_cost: r.laborCost,
       resolved_material_cost: r.materialCost,
       resolved_line_cost: r.lineCost,
