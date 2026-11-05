@@ -27,6 +27,13 @@ type Entry = {
   href?: string;
   external?: boolean;
   onSelect?: () => void | Promise<void>;
+  /**
+   * The entry changed data the page shows: refresh after it. Entries that
+   * only copy or open a dialog don't: a refresh started then overlaps the
+   * dialog's own save, and Next drops both page updates (the page kept
+   * showing "Ready to invoice" after Mark paid until something else moved).
+   */
+  refreshAfter?: boolean;
   /** Replaces the label briefly after selection (copy confirmations). */
   doneLabel?: string;
 };
@@ -157,6 +164,7 @@ export function JobOptionsMenu({
         const r = await undoPaidOutside(jobId);
         if (!r.ok) alert(r.error);
       },
+      refreshAfter: true,
     });
   }
   if (showNewEstimate) {
@@ -230,7 +238,7 @@ export function JobOptionsMenu({
                 onClick={async () => {
                   await e.onSelect?.();
                   if (!e.doneLabel) setOpen(false);
-                  router.refresh();
+                  if (e.refreshAfter) router.refresh();
                 }}
                 className={cls}
               >
