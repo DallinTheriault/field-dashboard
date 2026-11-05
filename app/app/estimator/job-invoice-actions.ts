@@ -11,6 +11,7 @@ import {
 } from "@/lib/estimator/expenses";
 import { getEstimatorStripe, STRIPE_NOT_CONFIGURED } from "@/lib/estimator/stripe";
 import { loadEstimateOffer, type EstimateOffer } from "@/lib/invoices/estimate-offer";
+import { billedTwiceMessage } from "@/lib/invoices/estimate-rows";
 import {
   applyMinimum,
   claimsOf,
@@ -346,6 +347,13 @@ export async function createInvoiceFromJob(
       ...buildExtraInvoiceRows(extras, price.markup).rows,
     ];
   }
+  // An estimate line linked to a priced job line: the estimate on this draft
+  // (or already billed) and the job line would bill the same work twice.
+  const twice = offer.linkedTwice.filter((l) => offeredId !== null || rows.some((r) => r.task_id === l.taskId));
+  if (twice.length > 0) {
+    await undo();
+    return { ok: false, error: billedTwiceMessage(twice) };
+  }
   const totals = invoiceTotals(rows, taxRatePct);
 
   // The RPC claims exactly the lines, extras, hours and estimate the rows carry.
@@ -492,13 +500,18 @@ export async function addToDraftInvoice(
     Number.isInteger(add.estimateId) && !carried.estimateIds.includes(add.estimateId as number) ? (add.estimateId as number) : null;
   if (taskIds.length === 0 && expenseIds.length === 0 && estimateId === null) return { ok: true };
   let estimateRows: InvoiceRow[] = [];
-  if (estimateId !== null) {
+  if (estimateId !== null || taskIds.length > 0) {
     const offer = await estimateOffer(supabase, d.inv.job_id);
     if ("error" in offer) return { ok: false, error: offer.error };
-    if (offer.estimate?.id !== estimateId) {
-      return { ok: false, error: "That estimate is already on an invoice or isn't the job's accepted one. Reload the page." };
+    if (estimateId !== null) {
+      if (offer.estimate?.id !== estimateId) {
+        return { ok: false, error: "That estimate is already on an invoice or isn't the job's accepted one. Reload the page." };
+      }
+      estimateRows = offer.estimate.rows;
     }
-    estimateRows = offer.estimate.rows;
+    // The estimate and a job line it's linked to would bill the same work twice.
+    const twice = offer.linkedTwice.filter((l) => estimateId !== null || taskIds.includes(l.taskId));
+    if (twice.length > 0) return { ok: false, error: billedTwiceMessage(twice) };
   }
   const tasks = (await jobTasks(supabase, d.inv.job_id)).filter((t) => taskIds.includes(t.id));
   if (tasks.some((t) => t.invoice_id !== null || !t.billable)) {

@@ -58,3 +58,31 @@ export function estimateToBill(
     .sort((a, b) => b.version - a.version || b.id - a.id)[0];
   return { estimateId: newest?.id ?? null, claimedBy: null };
 }
+
+/** An estimate line linked to a job line ("Link to task" in the estimate builder). */
+export type EstimateLink = {
+  line: string;
+  taskId: number;
+  taskTitle: string;
+  billable: boolean;
+  unitPrice: number | null;
+};
+
+/**
+ * Links that would bill the same work twice: the job line has its own price
+ * and is billable, so it bills on top of the estimate line that covers it.
+ */
+export function pricedTwice(links: EstimateLink[]): EstimateLink[] {
+  return links.filter((l) => l.billable && l.unitPrice !== null);
+}
+
+/** Why the draft is refused, naming each estimate line and job line. */
+export function billedTwiceMessage(links: EstimateLink[]): string {
+  const titles = [...new Set(links.map((l) => `"${l.taskTitle}"`))].join(", ");
+  if (links.length === 1) {
+    const [l] = links;
+    return `On the estimate, "${l.line}" is linked to the job line "${l.taskTitle}", which has its own price, so this invoice would bill that work twice. Mark ${titles} not billable on the job (the estimate prices it), then try again.`;
+  }
+  const pairs = links.map((l) => `"${l.line}" → "${l.taskTitle}"`).join(", ");
+  return `On the estimate, these lines are linked to job lines that have their own prices, so this invoice would bill that work twice: ${pairs}. Mark ${titles} not billable on the job (the estimate prices them), then try again.`;
+}

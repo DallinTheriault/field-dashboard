@@ -281,7 +281,7 @@ export async function repriceEstimate(estimateId: number): Promise<Result> {
     supabase
       .from("estimates")
       .select(
-        "id, job_id, billing_entity_id, notes, manual_override_price, override_reason",
+        "id, job_id, status, billing_entity_id, notes, manual_override_price, override_reason",
       )
       .eq("id", estimateId)
       .maybeSingle(),
@@ -294,6 +294,10 @@ export async function repriceEstimate(estimateId: number): Promise<Result> {
       .order("sort_order"),
   ]);
   if (!est) return { ok: false, error: "Estimate not found." };
+  // The customer agreed to an accepted estimate's price: changing it is a new version.
+  if (est.status !== "draft" && est.status !== "sent") {
+    return { ok: false, error: "Only a draft or sent estimate can be repriced. Start a new version to change an accepted one." };
+  }
 
   const rawLines: RawLine[] = (lineRows ?? []).map((r, i) =>
     r.is_hardware

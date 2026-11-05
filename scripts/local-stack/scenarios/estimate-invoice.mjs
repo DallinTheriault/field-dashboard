@@ -54,6 +54,11 @@ check("2 hr of work prices at the $110 general rate: $220.00 (not ~$116/hr)",
 await page.waitForLoadState("networkidle");
 await page.getByRole("button", { name: "Accepted" }).click();
 await eventually(async () => (await adminGet(`estimates?id=eq.${estimateId}&select=status`))[0].status === "accepted");
+await page.reload();
+await page.waitForLoadState("networkidle");
+check("an accepted estimate offers no Reprice (the customer agreed to its price)",
+  (await page.getByRole("button", { name: "Reprice at current settings" }).count()) === 0 &&
+  (await page.getByRole("link", { name: "New version" }).count()) === 1);
 
 // 2. Work done: hours logged, receipt items billed to the customer, job completed ------------------------
 await owner.post("time_entries", { client_id: 8, job_id: job.id, entry_date: "2026-11-02", hours: 4 });
@@ -161,5 +166,59 @@ r = await adminCall("POST", "rpc/invoice_void", { p_invoice_id: draftId });
 await page.goto(`${APP}/app/jobs/${job.id}/invoice`);
 await page.getByTestId("invoice-preview").waitFor();
 check("after a void, the builder offers the estimate again", (await page.getByTestId("builder-estimate").count()) === 1);
+
+// 8. An estimate line linked to a priced job line: refused, never billed twice -------------------------------
+const job2 = (await owner.post("jobs", {
+  client_id: 8, name: `Linked ${RUN}`, status: "in_progress", source: "manual", address: "8 Link St, Provo, UT 84601",
+})).body[0];
+const prep = (await owner.post("tasks", {
+  client_id: 8, job_id: job2.id, title: "Prep walls", status: "done", qty: 1, unit: "each", unit_price: 150, billable: true, sort_order: 1,
+})).body[0];
+await page.goto(`${APP}/app/estimator/new?job=${job2.id}`);
+await page.getByPlaceholder("Search catalog…").waitFor();
+await page.waitForLoadState("networkidle");
+await page.getByRole("button", { name: "Service (hours)" }).click();
+await page.getByPlaceholder("Describe the work…").fill("Prep and paint walls");
+await page.locator('input[placeholder="0"]').last().fill("3");
+await page.getByLabel("Link to task").selectOption(String(prep.id));
+await Promise.all([page.waitForURL(/\/app\/estimator\/\d+$/), page.getByRole("button", { name: "Save estimate" }).click()]);
+const estimate2 = Number(page.url().split("/").pop());
+await page.waitForLoadState("networkidle");
+await page.getByRole("button", { name: "Accepted" }).click();
+await eventually(async () => (await adminGet(`estimates?id=eq.${estimate2}&select=status`))[0].status === "accepted");
+await owner.patch(`jobs?id=eq.${job2.id}`, { status: "completed" });
+const builder2 = async () => {
+  await page.goto(`${APP}/app/jobs/${job2.id}/invoice`);
+  await page.getByTestId("invoice-preview").waitFor();
+  await page.waitForLoadState("networkidle");
+};
+await builder2();
+const twice = page.getByTestId("estimate-linked-twice");
+check("estimate line linked to a priced job line: the builder says it would bill twice, and won't make the draft",
+  (await twice.count()) === 1 && /"Prep and paint walls" is linked to the job line "Prep walls"/.test(await twice.innerText()) &&
+  (await page.getByRole("button", { name: "Create draft" }).isDisabled()), (await twice.count()) ? await twice.innerText() : "no message");
+// Marking the job line not billable (the estimate prices it) lets the draft through, with the estimate only.
+await owner.patch(`tasks?id=eq.${prep.id}`, { billable: false });
+await builder2();
+check("…until the job line is marked not billable", (await page.getByTestId("estimate-linked-twice").count()) === 0);
+await page.getByRole("button", { name: "Create draft" }).click();
+await page.waitForURL(/\/app\/estimator\/invoices\/\d+$/);
+const draft2 = Number(page.url().split("/").pop());
+d = await inv(draft2);
+check("…and the draft bills the estimate, not the job line", d.estimate_id === estimate2 && d.subtotal_cents === 33000 &&
+  !d.line_items.some((x) => x.task_id === prep.id), JSON.stringify(d.line_items).slice(0, 200));
+// The job line made billable again: neither the draft nor a new draft can take it.
+await owner.patch(`tasks?id=eq.${prep.id}`, { billable: true });
+await page.goto(`${APP}/app/estimator/invoices/${draft2}`);
+await page.waitForLoadState("networkidle");
+await page.locator('[data-available="Prep walls"]').getByRole("button", { name: "Add Prep walls" }).click();
+const refused = page.getByTestId("job-lines").locator(".form-error");
+await refused.waitFor({ timeout: 15_000 }).catch(() => {});
+check("adding the linked job line to the draft is refused",
+  /bill that work twice/.test((await refused.count()) ? await refused.innerText() : "") &&
+  (await adminGet(`tasks?id=eq.${prep.id}&select=invoice_id`))[0].invoice_id === null);
+await builder2();
+check("…and so is a new draft with it", (await page.getByTestId("estimate-linked-twice").count()) === 1 &&
+  (await page.getByRole("button", { name: "Create draft" }).isDisabled()));
 
 await browser.close();

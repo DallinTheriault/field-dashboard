@@ -134,7 +134,8 @@ export function EstimateActionsBar({
           btn("accepted", "Accepted", <ThumbsUp size={13} />, () => mark("accepted"), "btn-primary")}
         {(status === "draft" || status === "sent") &&
           btn("lost", "Lost", <ThumbsDown size={13} />, () => mark("lost"))}
-        {status !== "lost" &&
+        {/* Accepted: the customer agreed to this price; a change is a new version. */}
+        {(status === "draft" || status === "sent") &&
           btn("reprice", "Reprice at current settings", <RefreshCcw size={13} />, reprice)}
         {status === "draft" &&
           btn("delete", "Delete", <Trash2 size={13} />, remove, "btn-danger")}

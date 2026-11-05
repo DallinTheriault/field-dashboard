@@ -46,6 +46,7 @@ export function InvoiceBuilder({
   defaultEntityId,
   openCount,
   unpriced,
+  billedTwice,
 }: {
   jobId: number;
   /** The job's accepted estimate no invoice has taken yet, as it bills. */
@@ -60,6 +61,8 @@ export function InvoiceBuilder({
   /** Work lines not done yet (listed on the draft to add on purpose), and lines still needing a price. */
   openCount: number;
   unpriced: string[];
+  /** Why this draft can't be made: an estimate line and a priced job line bill the same work. */
+  billedTwice: string | null;
 }) {
   const router = useRouter();
   const estimateRows = estimate?.rows ?? [];
@@ -363,8 +366,18 @@ export function InvoiceBuilder({
             <input value={dueTerms} onChange={(e) => setDueTerms(e.target.value)} className="w-full min-h-[44px]" />
           </label>
         </div>
+        {billedTwice && (
+          <div className="form-error" data-testid="estimate-linked-twice">
+            {billedTwice}
+          </div>
+        )}
         {err && <div className="form-error">{err}</div>}
-        <button type="button" onClick={create} disabled={busy || entityId === null} className="btn-primary text-sm min-h-[44px]">
+        <button
+          type="button"
+          onClick={create}
+          disabled={busy || entityId === null || billedTwice !== null}
+          className="btn-primary text-sm min-h-[44px]"
+        >
           {busy ? <Loader2 size={13} className="animate-spin" /> : <Receipt size={13} />}
           Create draft
         </button>

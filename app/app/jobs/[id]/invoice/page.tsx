@@ -15,6 +15,7 @@ import {
   type DraftTask,
 } from "@/lib/invoices/job-draft";
 import { loadEstimateOffer } from "@/lib/invoices/estimate-offer";
+import { billedTwiceMessage } from "@/lib/invoices/estimate-rows";
 import { InvoiceBuilder, type BuilderPart } from "./create-invoice-form";
 
 const usd = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" });
@@ -115,6 +116,9 @@ export default async function NewJobInvoicePage({ params }: { params: Promise<{ 
   });
   const rate = (v: unknown) => (v === null || v === undefined ? null : Number(v));
   const active = (entities ?? []).filter((e) => e.active);
+  // The estimate (offered here, or already billed) linked to a priced job line
+  // this draft would bill too: refused rather than billed twice.
+  const twice = offer.linkedTwice.filter((l) => offer.estimate !== null || work.some((t) => t.id === l.taskId));
   const defaultEntity = pickBillingEntity(
     job.billing_entity_id,
     (estimates ?? []).map((e) => e.billing_entity_id),
@@ -163,6 +167,7 @@ export default async function NewJobInvoicePage({ params }: { params: Promise<{ 
         defaultEntityId={defaultEntity}
         openCount={open.length}
         unpriced={unpriced.map((t) => t.title)}
+        billedTwice={twice.length > 0 ? billedTwiceMessage(twice) : null}
       />
     </div>
   );
