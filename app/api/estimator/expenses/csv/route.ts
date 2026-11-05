@@ -52,7 +52,7 @@ export async function GET(request: Request) {
     // Income: each payment on the day it was received (cash basis).
     supabase
       .from("payments")
-      .select("received_on, amount_cents, method, reference, invoices(invoice_number, customer_name)")
+      .select("received_on, amount_cents, method, reference, invoices!payments_invoice_same_tenant(invoice_number, customer_name)")
       .gte("received_on", `${year}-01-01`)
       .lte("received_on", `${year}-12-31`)
       .order("received_on").throwOnError(),

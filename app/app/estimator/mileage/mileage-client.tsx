@@ -267,7 +267,7 @@ export function MileageClient({
         )}
       </section>
 
-      <Bases bases={bases} onError={setErr} />
+      <Bases bases={bases} onError={setErr} onChanged={() => void runBatches()} />
       <Rates rates={rates} onError={setErr} />
       <MapCredit className="px-1" />
     </div>
@@ -495,7 +495,16 @@ function AddTrip({ today, onError }: { today: string; onError: (m: string | null
 
 /* ---------- bases ---------- */
 
-function Bases({ bases, onError }: { bases: BaseRecord[]; onError: (m: string | null) => void }) {
+/** Bases: a save or delete is stored at once; the trips it covers are then worked out in the background. */
+function Bases({
+  bases,
+  onError,
+  onChanged,
+}: {
+  bases: BaseRecord[];
+  onError: (m: string | null) => void;
+  onChanged: () => void;
+}) {
   const router = useRouter();
   const [editId, setEditId] = useState<number | "new" | null>(bases.length === 0 ? "new" : null);
   const [address, setAddress] = useState("");
@@ -539,6 +548,7 @@ function Bases({ bases, onError }: { bases: BaseRecord[]; onError: (m: string | 
                   const r = await deleteBase(b.id);
                   if (!r.ok) onError(r.error);
                   router.refresh();
+                  if (r.ok) onChanged();
                 });
               }}
               className="btn-ghost text-2xs min-h-[36px] text-bone-500 hover:text-status-danger"
@@ -571,6 +581,7 @@ function Bases({ bases, onError }: { bases: BaseRecord[]; onError: (m: string | 
                   if (!r.ok) return onError(r.error);
                   setEditId(null);
                   router.refresh();
+                  onChanged();
                 })
               }
               className="btn-primary text-xs min-h-[40px] ml-auto"

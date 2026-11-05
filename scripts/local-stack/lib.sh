@@ -79,7 +79,11 @@ wait_http() {
 # No arguments: back to plain.
 restart_gateway() {
   kill "$(cat "$PG_RUN/gateway.pid")" 2>/dev/null || true
-  sleep 0.5
+  # setsid can fork, so the saved pid isn't always the gateway itself: stop
+  # any gateway still running, or the new one can't take the port and the old
+  # one (perhaps failing requests on purpose) keeps answering.
+  pkill -f "$HERE/gateway.mjs" 2>/dev/null || true
+  for _ in $(seq 1 20); do pgrep -f "$HERE/gateway.mjs" >/dev/null || break; sleep 0.2; done
   env "$@" setsid nohup node "$HERE/gateway.mjs" "$GATEWAY_PORT" "$REST_PORT" "$AUTH_PORT" "$STORAGE_PORT" \
     > "$LOGS/gateway.log" 2>&1 < /dev/null &
   echo $! > "$PG_RUN/gateway.pid"

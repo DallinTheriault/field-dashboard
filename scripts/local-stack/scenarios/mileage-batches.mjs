@@ -116,9 +116,13 @@ await bases.getByLabel("Base address").fill(BASE_B);
 await bases.getByLabel("Starts on").fill("2026-09-27");
 await bases.getByRole("button", { name: "Save base" }).click();
 await bases.getByText(BASE_B).waitFor();
+// Saves don't wait on the map services: the page works the trips out after,
+// and the second base (saved while the first's batches ran) brings a second
+// pass. Done is every day priced from the base in effect that day.
+const fromItsBase = (x) => x.start_address === (x.trip_date < "2026-09-27" ? BASE_A : BASE_B);
 const all = await until(async () => {
   const t = await trips("2026-01-01", "2026-12-31");
-  return t.length === 13 && t.every((x) => x.miles_status === "ok") ? t : null;
+  return t.length === 13 && t.every((x) => x.miles_status === "ok" && fromItsBase(x)) ? t : null;
 }, 180_000);
 const firstMs = Date.now() - t0;
 await settled();

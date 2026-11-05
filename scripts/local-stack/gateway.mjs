@@ -47,7 +47,7 @@ http
     const [prefix, target] = route;
     const path = req.url.slice(prefix.length) || "/";
     const t0 = Date.now();
-    if (LOG) res.on("finish", () => appendFileSync(LOG, `[GW] ${t0} ${Date.now()} ${Date.now() - t0}ms ${req.method} ${req.url.slice(0, 160)} ${res.statusCode}\n`));
+    if (LOG) res.on("finish", () => appendFileSync(LOG, `[GW] ${t0} ${Date.now()} ${Date.now() - t0}ms ${req.method} ${req.url} ${res.statusCode}\n`));
     if (FAIL && prefix === "/rest/v1" && req.method === "GET" && FAIL.test(path)) {
       res.writeHead(400, cors(req, { "content-type": "application/json" }));
       return res.end(JSON.stringify({ code: "TEST", details: null, hint: null, message: "failed on purpose (GATEWAY_FAIL)" }));

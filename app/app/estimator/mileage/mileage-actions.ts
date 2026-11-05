@@ -3,7 +3,7 @@
 import { createAdminClient } from "@/lib/supabase/admin";
 import { requireWriter } from "@/lib/estimator/auth";
 import { getTenantTimezone, dayKeyInTz } from "@/lib/dates";
-import { revalidateMileage, syncBatch } from "@/lib/mileage/sync-run";
+import { revalidateMileage } from "@/lib/mileage/sync-run";
 import { baseOn, daysBetween } from "@/lib/mileage/plan";
 import { failLoudly, logIfFailed } from "@/lib/actions/fail-loudly";
 
@@ -21,17 +21,12 @@ function cleanMiles(v: number | string): number | null {
 const revalidate = revalidateMileage;
 
 /**
- * Every action here ends well inside the server's 60 s limit: lookups start
- * only within a budget, and each request gives up after 8 s. After a change
- * (a base, days on site) a short batch covers the usual one or two days;
- * anything left stays pending for the Mileage page's batches. Lookups
- * nobody is waiting on run through routes instead (/api/estimator/mileage/
- * sync and /check, /api/estimator/property-miles): while an action waits on
- * the map services, every tap on the page waits with it.
+ * No save here waits on the map services: it records the change, and the
+ * screen then works out the trips in the background through
+ * /api/estimator/mileage/sync (the Mileage page's batches, or a keepalive
+ * batch from the days-on-site dialog). While an action waits on the map
+ * services, every tap on the page waits with it, so lookups never run in one.
  */
-const AFTER_CHANGE_MS = 10_000;
-
-const sync = (clientId: number, budgetMs = AFTER_CHANGE_MS) => syncBatch(clientId, budgetMs);
 
 /* ---------- trips ---------- */
 
@@ -196,7 +191,6 @@ export async function restoreTrip(id: number): Promise<Result> {
       .update({ kind: "auto", miles_status: "pending" })
       .eq("id", row.id);
     if (error) return { ok: false, error: error.message };
-    await sync(auth.clientId);
     revalidate([row.job_id]);
     return { ok: true };
   });
@@ -206,7 +200,8 @@ export async function restoreTrip(id: number): Promise<Result> {
 
 /**
  * Where trips start, from a date on. Adding or changing one recalculates the
- * automatic trips it covers; edited and manual trips stay as they are.
+ * automatic trips it covers (in the background, once saved); edited and
+ * manual trips stay as they are.
  */
 export async function saveBase(input: { id?: number | null; address: string; effectiveFrom: string }): Promise<Result> {
   return failLoudly(async () => {
@@ -227,7 +222,6 @@ export async function saveBase(input: { id?: number | null; address: string; eff
     if (error) {
       return { ok: false, error: error.code === "23505" ? "There's already a base starting that day." : error.message };
     }
-    await sync(auth.clientId);
     revalidate();
     return { ok: true };
   });
@@ -240,7 +234,6 @@ export async function deleteBase(id: number): Promise<Result> {
     const admin = createAdminClient();
     const { error } = await admin.from("mileage_bases").delete().eq("id", Number(id)).eq("client_id", auth.clientId);
     if (error) return { ok: false, error: error.message };
-    await sync(auth.clientId);
     revalidate();
     return { ok: true };
   });
@@ -322,7 +315,7 @@ export async function siteDaysToAsk(jobId: number): Promise<Result<{ days: strin
   });
 }
 
-/** Save the days on site for a job (replacing any entered before), then work out the trips. */
+/** Save the days on site for a job (replacing any entered before); the screen works out the trips after. */
 export async function setJobSiteDays(jobId: number, days: string[]): Promise<Result> {
   return failLoudly(async () => {
     const auth = await requireWriter();
@@ -341,7 +334,6 @@ export async function setJobSiteDays(jobId: number, days: string[]): Promise<Res
       if (error) return { ok: false, error: error.message };
     }
     logIfFailed("days on site done", await admin.from("jobs").update({ site_days_done_at: new Date().toISOString() }).eq("id", job.id));
-    await sync(auth.clientId);
     revalidate([job.id]);
     return { ok: true };
   });

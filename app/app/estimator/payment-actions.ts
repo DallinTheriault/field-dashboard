@@ -79,7 +79,7 @@ export async function deletePayment(paymentId: number): Promise<Result> {
 
     const { data: pay } = await supabase
       .from("payments")
-      .select("id, invoice_id, method, invoices(stripe_invoice_id)")
+      .select("id, invoice_id, method, invoices!payments_invoice_same_tenant(stripe_invoice_id)")
       .eq("id", paymentId)
       .maybeSingle().throwOnError();
     if (!pay) return { ok: false, error: "Payment not found." };

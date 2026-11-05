@@ -4,6 +4,7 @@ import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Loader2, Plus, X } from "lucide-react";
 import { markNoSiteDays, setJobSiteDays } from "./mileage-actions";
+import { syncTripsBatch } from "./sync-client";
 
 const fmtDay = (d: string) =>
   new Date(`${d}T12:00:00Z`).toLocaleDateString("en-US", { timeZone: "UTC", weekday: "short", month: "short", day: "numeric" });
@@ -11,7 +12,8 @@ const fmtDay = (d: string) =>
 /**
  * The days on site for a job, starting from its scheduled days, every one
  * checked: untick the days you weren't there, add any that are missing.
- * Saving works out that day's trips.
+ * Saving stores the days at once; their trips are worked out after, in the
+ * background.
  */
 export function SiteDaysForm({
   jobId,
@@ -25,6 +27,7 @@ export function SiteDaysForm({
   /** Catch-up: offer "I wasn't on site". */
   allowNone?: boolean;
 }) {
+  const router = useRouter();
   const [days, setDays] = useState<string[]>(initialDays);
   const [checked, setChecked] = useState<Set<string>>(new Set(initialDays));
   const [adding, setAdding] = useState("");
@@ -44,6 +47,9 @@ export function SiteDaysForm({
       if (!none && picked.length === 0) return setErr("Tick at least one day, or add one.");
       const r = none ? await markNoSiteDays(jobId) : await setJobSiteDays(jobId, picked);
       if (!r.ok) return setErr(r.error);
+      // Saved: the trips are worked out in the background (keepalive, so
+      // leaving the page doesn't stop it), and the page shows them when done.
+      if (!none) void syncTripsBatch({ keepalive: true }).then(() => router.refresh());
       onDone();
     });
 

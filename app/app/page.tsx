@@ -66,7 +66,7 @@ export default async function HomePage() {
     // picker's labels.
     supabase.from("job_billing").select(BILLING_COLS).throwOnError(),
     supabase.from("invoices")
-      .select("id, invoice_number, customer_name, customer_company, total_cents, sent_at, created_at, jobs(address), payments(amount_cents)")
+      .select("id, invoice_number, customer_name, customer_company, total_cents, sent_at, created_at, jobs(address), payments!payments_invoice_same_tenant(amount_cents)")
       .in("status", ["sent", "overdue"])
       .not("invoice_number", "is", null).throwOnError(),
     // Scanned receipts still to check.

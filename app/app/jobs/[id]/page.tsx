@@ -150,7 +150,7 @@ export default async function JobDetailPage({
     supabase
       .from("expenses")
       .select(
-        "id, description, amount, qty, unit_price, assignment, invoiced_on, bill_markup, attach_receipt, purchases(tax, subtotal), invoices(invoice_number, status, stripe_invoice_id)",
+        "id, description, amount, qty, unit_price, assignment, invoiced_on, bill_markup, attach_receipt, purchases(tax, subtotal), invoices!expenses_invoice_same_tenant(invoice_number, status, stripe_invoice_id)",
       )
       .eq("job_id", jobId)
       .order("id", { ascending: false }).throwOnError(),
