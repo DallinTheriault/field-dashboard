@@ -4,7 +4,7 @@ import { tracedFetch } from './perf-trace';
 
 /**
  * Refreshes the user's session cookie on every request and guards protected routes.
- * Unauthenticated users hitting /app/* or /dashboard/* are redirected to /login,
+ * Unauthenticated users hitting /app/* are redirected to /login,
  * before any page renders (the app layout's own check came too late: the page
  * had already started its queries, which then failed as signed out).
  *
@@ -46,7 +46,7 @@ export async function updateSession(request: NextRequest) {
 
   const pathname = request.nextUrl.pathname;
   const isProtected =
-    pathname === '/app' || pathname.startsWith('/app/') || pathname.startsWith('/dashboard');
+    pathname === '/app' || pathname.startsWith('/app/');
   const isAuthPage = pathname === '/login';
 
   if (!user && isProtected) {
@@ -58,7 +58,7 @@ export async function updateSession(request: NextRequest) {
 
   if (user && isAuthPage) {
     const url = request.nextUrl.clone();
-    url.pathname = '/dashboard';
+    url.pathname = '/app';
     return NextResponse.redirect(url);
   }
 

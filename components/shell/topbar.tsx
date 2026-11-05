@@ -1,7 +1,6 @@
 import Link from "next/link";
 import { cn } from "@/lib/cn";
 import { Logo } from "@/components/ui/logo";
-import { NotificationDropdown } from "./notification-dropdown";
 import { ThemeToggle } from "./theme-toggle";
 import { NavDrawerTrigger } from "./nav-drawer-trigger";
 
@@ -83,7 +82,6 @@ export function Topbar({
         {/* Right cluster */}
         <div className="flex items-center gap-1 shrink-0">
           <ThemeToggle />
-          <NotificationDropdown />
 
           <div className="hidden md:flex items-center gap-2 pl-3 ml-1 border-l border-line">
             <div className="flex flex-col items-end leading-none">

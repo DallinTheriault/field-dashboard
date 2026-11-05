@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { dayKeyInTz, getTenantTimezone } from "@/lib/dates";
 import { METHOD_LABELS, type PaymentMethod } from "@/lib/invoices/payments";
-import { ALTERNATIVE_METHODS_NOTE } from "@/lib/estimator/mileage";
+import { ALTERNATIVE_METHODS_NOTE } from "@/lib/mileage/tax-note";
 import { loadRatePeriods, loadTrips } from "@/lib/mileage/trips";
 import { yearTotals } from "@/lib/mileage/plan";
 import { getTenantContext } from "@/lib/supabase/request-cache";
