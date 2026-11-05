@@ -57,7 +57,7 @@ export async function runScanJob(
     .update({ scan_status: "scanning" })
     .eq("id", purchaseId)
     .eq("scan_status", "queued")
-    .select("id, client_id, receipt_paths, scan_paths");
+    .select("id, client_id, receipt_paths, scan_paths").throwOnError();
   const purchase = claimed?.[0] as
     | { id: number; client_id: number; receipt_paths: string[] | null; scan_paths: string[] | null }
     | undefined;
@@ -89,11 +89,17 @@ export async function runScanJob(
 
   // The entitlement is checked again here: the route checked it when the
   // scan was asked for, but it can be switched off in between.
-  const { data: flagRow } = await admin
+  const { data: flagRow, error: flagErr } = await admin
     .from("Clients")
     .select("feature_receipt_ai_enabled")
     .eq("id", clientId)
     .maybeSingle();
+  if (flagErr) {
+    // Claimed already: end the scan, never leave it "scanning".
+    console.error("[scan] entitlement read failed", flagErr.message);
+    await finish({ scan_status: "needs_entry", scan_error: "Couldn't check that receipt reading is on. Try reading it again." });
+    return { outcome: "needs_entry", reason: "api_error" };
+  }
   if (!flagRow?.feature_receipt_ai_enabled) {
     await meter("rejected");
     await finish({ scan_status: "needs_entry", scan_error: "AI receipt scanning isn't enabled for this account." });

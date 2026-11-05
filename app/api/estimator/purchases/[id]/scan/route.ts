@@ -43,7 +43,7 @@ export async function POST(
     .select("client_id")
     .eq("auth_user_id", user.id)
     .order("created_at", { ascending: true })
-    .limit(1);
+    .limit(1).throwOnError();
   const clientId = clientUsers?.[0]?.client_id;
   if (!clientId) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
@@ -51,7 +51,7 @@ export async function POST(
     .from("purchases")
     .select("id, client_id, receipt_paths")
     .eq("id", purchaseId)
-    .maybeSingle();
+    .maybeSingle().throwOnError();
   if (!purchase || purchase.client_id !== clientId) {
     return NextResponse.json({ error: "Purchase not found" }, { status: 404 });
   }
@@ -61,7 +61,7 @@ export async function POST(
     .from("Clients")
     .select("feature_receipt_ai_enabled")
     .eq("id", clientId)
-    .maybeSingle();
+    .maybeSingle().throwOnError();
   if (!flagRow?.feature_receipt_ai_enabled) {
     const { error } = await admin.from("receipt_scans").insert({
       client_id: clientId,

@@ -189,21 +189,30 @@ export function JobEditForm({
     const toRemove = initialJobTags.filter((t) => !currentIds.has(t.id));
     const toAdd = selectedTags.filter((t) => !initialIds.has(t.id));
 
+    // The job is saved; a tag change that fails is said, not skipped.
+    const tagErrors: string[] = [];
     if (toRemove.length > 0) {
-      await supabase
+      const { error: rmErr } = await supabase
         .from("job_tags")
         .delete()
         .eq("job_id", job.id)
         .in("tag_id", toRemove.map((t) => t.id));
+      if (rmErr) tagErrors.push(rmErr.message);
     }
     if (toAdd.length > 0) {
-      await supabase.from("job_tags").insert(
+      const { error: addErr } = await supabase.from("job_tags").insert(
         toAdd.map((t) => ({
           job_id: job.id,
           tag_id: t.id,
           client_id: job.client_id,
         })),
       );
+      if (addErr) tagErrors.push(addErr.message);
+    }
+    if (tagErrors.length > 0) {
+      setSaving(false);
+      setErr(`Saved, but the tags didn't: ${tagErrors.join("; ")}`);
+      return;
     }
 
     setSaving(false);

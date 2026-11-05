@@ -32,7 +32,7 @@ export async function POST(request: Request) {
     .select("client_id, role")
     .eq("auth_user_id", user.id)
     .in("role", ["owner", "manager"])
-    .limit(1);
+    .limit(1).throwOnError();
 
   const clientId = clientUsers?.[0]?.client_id;
   if (!clientId) {

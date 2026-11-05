@@ -5,8 +5,9 @@
  * It's checked when its chain has `.throwOnError()`, or when the awaited
  * result's `error` is read: destructured and used (directly, from a
  * `Promise.all([...])` element, or in a `.then(({ error }) => …)` callback),
- * or read as `result.error`. A query kept in a variable is judged where it's
- * awaited. Anything else (a bare `await`, `{ data }` only, a query returned
+ * or read as `result.error`, or passed to logIfFailed() (a best-effort write
+ * after one that already happened). A query kept in a variable is judged
+ * where it's used. Anything else (a bare `await`, `{ data }` only, a query returned
  * unchecked) fails: a failed query must never look like "no rows".
  */
 
@@ -111,11 +112,20 @@ export default {
 
     /** `await <expr>`: judge where its result goes. */
     function checkAwait(awaitNode, at) {
-      const p = unwrap(awaitNode);
+      // cond ? await a : await b — judged where the conditional's value goes
+      let cur = awaitNode;
+      let p = unwrap(cur);
+      while (p?.type === "ConditionalExpression" && (p.consequent === cur || p.alternate === cur)) {
+        cur = p;
+        p = unwrap(cur);
+      }
+      awaitNode = cur;
       if (p?.type === "VariableDeclarator" && p.init === awaitNode) return checkBound(p.id, at);
       if (p?.type === "AssignmentExpression" && p.right === awaitNode) return checkBound(p.left, at);
       // (await q).error
       if (p?.type === "MemberExpression" && p.object === awaitNode && !p.computed && p.property.name === "error") return true;
+      // logIfFailed("label", await q): a best-effort write, its failure logged
+      if (p?.type === "CallExpression" && p.callee.type === "Identifier" && p.callee.name === "logIfFailed" && p.arguments.includes(awaitNode)) return true;
       context.report({ node: at, messageId: "unchecked" });
       return true;
     }
@@ -123,6 +133,7 @@ export default {
     /** A chain's last link: where does it go? */
     function checkTop(top, names, at) {
       if (names.includes("throwOnError")) return;
+      if (names.includes("getPublicUrl")) return; // synchronous, nothing to fail
       const p = unwrap(top);
       if (!p) return context.report({ node: at, messageId: "unchecked" });
 
@@ -176,8 +187,14 @@ export default {
       let used = false;
       for (const r of readsOf(id)) {
         const { top, names } = chainTop(r.identifier);
-        const p = unwrap(top);
-        if (p?.type === "AssignmentExpression" && p.right === top && p.left.type === "Identifier" && p.left.name === id.name) continue;
+        // q = q.eq(…), or q = cond ? q.in(…) : q.is(…): still building, not using.
+        let cur = top;
+        let p = unwrap(cur);
+        while (p?.type === "ConditionalExpression" && (p.consequent === cur || p.alternate === cur)) {
+          cur = p;
+          p = unwrap(cur);
+        }
+        if (p?.type === "AssignmentExpression" && p.right === cur && p.left.type === "Identifier" && p.left.name === id.name) continue;
         used = true;
         checkTop(top, names, r.identifier);
       }

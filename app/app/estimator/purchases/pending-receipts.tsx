@@ -39,7 +39,9 @@ export function useScanFollow(readingIds: number[]) {
     const since = Date.now();
     const timer = window.setInterval(async () => {
       const supabase = await browserSupabase();
-      const { data } = await supabase.from("purchases").select("id, scan_status").in("id", ids);
+      const { data, error } = await supabase.from("purchases").select("id, scan_status").in("id", ids);
+      // A failed check isn't "finished": look again next tick (the stale limit still ends it).
+      if (error && Date.now() - since <= SCAN_STALE_MS + 15_000) return;
       const moved =
         (data ?? []).length < ids.length ||
         (data ?? []).some((r) => r.scan_status !== "queued" && r.scan_status !== "scanning");

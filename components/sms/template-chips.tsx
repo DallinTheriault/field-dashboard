@@ -36,13 +36,14 @@ export function TemplateChips({
     let cancelled = false;
     (async () => {
       const supabase = createClient();
-      const { data } = await supabase
+      const { data, error } = await supabase
         .from("sms_reply_templates")
         .select("id, label, body, sort_order")
         .is("archived_at", null)
         .order("sort_order", { ascending: true })
         .order("created_at", { ascending: true })
         .limit(50);
+      if (error) console.error("[sms templates]", error.message);
       if (!cancelled) {
         setTemplates(data ?? []);
         setLoading(false);

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { randomUUID } from "node:crypto";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { logIfFailed } from "@/lib/supabase/log-if-failed";
 
 const MAX_BYTES = 8 * 1024 * 1024;
 const ALLOWED_MIME = new Set([
@@ -39,7 +40,7 @@ export async function POST(
     .select("client_id, role")
     .eq("auth_user_id", user.id)
     .in("role", ["owner", "manager"])
-    .limit(1);
+    .limit(1).throwOnError();
   const clientId = clientUsers?.[0]?.client_id;
   if (!clientId) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
@@ -47,7 +48,7 @@ export async function POST(
     .from("tasks")
     .select("id, client_id, job_id")
     .eq("id", taskId)
-    .maybeSingle();
+    .maybeSingle().throwOnError();
   if (!task || task.client_id !== clientId) {
     return NextResponse.json({ error: "Task not found" }, { status: 404 });
   }
@@ -95,7 +96,7 @@ export async function POST(
     .single();
   if (insertErr || !photo) {
     // Don't leave an orphaned object behind the failed row.
-    await admin.storage.from("job-photos").remove([path]);
+    logIfFailed("remove orphaned photo", await admin.storage.from("job-photos").remove([path]));
     return NextResponse.json(
       { error: insertErr?.message ?? "Photo save failed" },
       { status: 500 },

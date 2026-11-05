@@ -9,6 +9,7 @@ import {
   JOB_ASSIGNMENTS,
   type Assignment,
 } from "@/lib/estimator/expenses";
+import { failLoudly, logIfFailed } from "@/lib/actions/fail-loudly";
 
 type Result<T = undefined> = { ok: true; data?: T } | { ok: false; error: string };
 
@@ -33,7 +34,7 @@ async function jobInTenant(
     .from("jobs")
     .select("id, client_id")
     .eq("id", jobId)
-    .maybeSingle();
+    .maybeSingle().throwOnError();
   return !!data && data.client_id === clientId;
 }
 
@@ -62,47 +63,49 @@ export async function createJobExpense(input: {
   qty: number;
   assignment: Assignment;
 }): Promise<Result> {
-  const auth = await requireMember();
-  if (!auth.ok) return auth;
-  const { clientId, role } = auth;
+  return failLoudly(async () => {
+    const auth = await requireMember();
+    if (!auth.ok) return auth;
+    const { clientId, role } = auth;
 
-  const jobId = Number(input.jobId);
-  const description = (input.description ?? "").trim();
-  const price = Number(input.pricePerEach);
-  const qty = Number(input.qty);
-  const assignment = input.assignment;
+    const jobId = Number(input.jobId);
+    const description = (input.description ?? "").trim();
+    const price = Number(input.pricePerEach);
+    const qty = Number(input.qty);
+    const assignment = input.assignment;
 
-  if (!description) return { ok: false, error: "Name the item." };
-  if (!Number.isFinite(price) || price < 0) {
-    return { ok: false, error: "Price must be 0 or more." };
-  }
-  if (!ASSIGNMENTS.includes(assignment)) {
-    return { ok: false, error: "Invalid assignment." };
-  }
-  if (!assignmentAllowedForRole(role, assignment)) {
-    return { ok: false, error: "You can't set that assignment." };
-  }
+    if (!description) return { ok: false, error: "Name the item." };
+    if (!Number.isFinite(price) || price < 0) {
+      return { ok: false, error: "Price must be 0 or more." };
+    }
+    if (!ASSIGNMENTS.includes(assignment)) {
+      return { ok: false, error: "Invalid assignment." };
+    }
+    if (!assignmentAllowedForRole(role, assignment)) {
+      return { ok: false, error: "You can't set that assignment." };
+    }
 
-  const admin = createAdminClient();
-  const isJob = JOB_ASSIGNMENTS.includes(assignment);
-  if (isJob && !(await jobInTenant(admin, jobId, clientId))) {
-    return { ok: false, error: "Job not found." };
-  }
+    const admin = createAdminClient();
+    const isJob = JOB_ASSIGNMENTS.includes(assignment);
+    if (isJob && !(await jobInTenant(admin, jobId, clientId))) {
+      return { ok: false, error: "Job not found." };
+    }
 
-  const q = Number.isFinite(qty) && qty > 0 ? qty : 1;
-  const { error } = await admin.from("expenses").insert({
-    client_id: clientId,
-    ...assignmentColumns(assignment, jobId),
-    expense_date: todayISO(),
-    category: "Materials & supplies",
-    description,
-    qty: q,
-    unit_price: round2(price),
-    amount: round2(price * q),
+    const q = Number.isFinite(qty) && qty > 0 ? qty : 1;
+    const { error } = await admin.from("expenses").insert({
+      client_id: clientId,
+      ...assignmentColumns(assignment, jobId),
+      expense_date: todayISO(),
+      category: "Materials & supplies",
+      description,
+      qty: q,
+      unit_price: round2(price),
+      amount: round2(price * q),
+    });
+    if (error) return { ok: false, error: error.message };
+
+    revalidatePath(`/app/jobs/${jobId}`);
+    revalidatePath("/app/estimator/purchases");
+    return { ok: true };
   });
-  if (error) return { ok: false, error: error.message };
-
-  revalidatePath(`/app/jobs/${jobId}`);
-  revalidatePath("/app/estimator/purchases");
-  return { ok: true };
 }

@@ -78,21 +78,30 @@ export function ContactEditForm({
     const toRemove = initialTags.filter((t) => !currentIds.has(t.id));
     const toAdd = tags.filter((t) => !initialIds.has(t.id));
 
+    // The contact is saved; a tag change that fails is said, not skipped.
+    const tagErrors: string[] = [];
     if (toRemove.length > 0) {
-      await supabase
+      const { error: rmErr } = await supabase
         .from("contact_tags")
         .delete()
         .eq("contact_id", contact.id)
         .in("tag_id", toRemove.map((t) => t.id));
+      if (rmErr) tagErrors.push(rmErr.message);
     }
     if (toAdd.length > 0) {
-      await supabase.from("contact_tags").insert(
+      const { error: addErr } = await supabase.from("contact_tags").insert(
         toAdd.map((t) => ({
           contact_id: contact.id,
           tag_id: t.id,
           client_id: contact.client_id,
         })),
       );
+      if (addErr) tagErrors.push(addErr.message);
+    }
+    if (tagErrors.length > 0) {
+      setSaving(false);
+      setErr(`Saved, but the tags didn't: ${tagErrors.join("; ")}`);
+      return;
     }
 
     setSaving(false);

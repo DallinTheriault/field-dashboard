@@ -121,7 +121,8 @@ export function MaterialsManager({ clientId }: { clientId: number }) {
     const { error } = await supabase.from("materials").delete().eq("id", m.id);
     if (error) {
       // Referenced by catalog links or estimates — deactivate instead.
-      await supabase.from("materials").update({ active: false }).eq("id", m.id);
+      const { error: offErr } = await supabase.from("materials").update({ active: false }).eq("id", m.id);
+      if (offErr) setErr(`Couldn't delete "${m.name}": ${offErr.message}`);
     }
     load();
   }

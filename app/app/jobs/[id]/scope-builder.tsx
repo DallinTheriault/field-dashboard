@@ -376,7 +376,7 @@ function PriceBookPicker({
     if (entries || loading.current) return;
     loading.current = true;
     const supabase = await browserSupabase();
-    const [{ data: rows, error }, { data: used }] = await Promise.all([
+    const [{ data: rows, error }, { data: used, error: usedErr }] = await Promise.all([
       supabase
         .from("service_catalog")
         .select("id, name, type, unit, unit_price, typical_hours, labor_hours_per_unit, flat_labor_hours, rate_type")
@@ -391,7 +391,7 @@ function PriceBookPicker({
     ]);
     // A failed read leaves the picker unloaded (tried again on next focus),
     // not empty as if there were no saved services.
-    if (error) {
+    if (error || usedErr) {
       loading.current = false;
       return;
     }

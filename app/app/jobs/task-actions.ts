@@ -2,6 +2,7 @@
 
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { failLoudly, logIfFailed } from "@/lib/actions/fail-loudly";
 
 type Result = { ok: true } | { ok: false; error: string };
 
@@ -16,27 +17,29 @@ type Result = { ok: true } | { ok: false; error: string };
  * full server render per delete.
  */
 export async function deleteTaskPhoto(photoId: number): Promise<Result> {
-  const supabase = await createClient();
-  const { data: photo } = await supabase
-    .from("task_photos")
-    .select("id, storage_path")
-    .eq("id", photoId)
-    .maybeSingle();
-  if (!photo) return { ok: false, error: "Photo not found." };
+  return failLoudly(async () => {
+    const supabase = await createClient();
+    const { data: photo } = await supabase
+      .from("task_photos")
+      .select("id, storage_path")
+      .eq("id", photoId)
+      .maybeSingle().throwOnError();
+    if (!photo) return { ok: false, error: "Photo not found." };
 
-  const { data: deleted, error } = await supabase
-    .from("task_photos")
-    .delete()
-    .eq("id", photoId)
-    .select("id");
-  if (error) return { ok: false, error: error.message };
-  if ((deleted ?? []).length === 0) {
-    return { ok: false, error: "You don't have permission to delete photos." };
-  }
+    const { data: deleted, error } = await supabase
+      .from("task_photos")
+      .delete()
+      .eq("id", photoId)
+      .select("id");
+    if (error) return { ok: false, error: error.message };
+    if ((deleted ?? []).length === 0) {
+      return { ok: false, error: "You don't have permission to delete photos." };
+    }
 
-  const admin = createAdminClient();
-  await admin.storage.from("job-photos").remove([photo.storage_path]);
-  return { ok: true };
+    const admin = createAdminClient();
+    logIfFailed("remove photo file", await admin.storage.from("job-photos").remove([photo.storage_path]));
+    return { ok: true };
+  });
 }
 
 /**
@@ -45,29 +48,31 @@ export async function deleteTaskPhoto(photoId: number): Promise<Result> {
  * removed after the row delete clears RLS.
  */
 export async function deleteTask(taskId: number): Promise<Result> {
-  const supabase = await createClient();
-  const { data: task } = await supabase
-    .from("tasks")
-    .select("id, task_photos(storage_path)")
-    .eq("id", taskId)
-    .maybeSingle();
-  if (!task) return { ok: false, error: "Task not found." };
-  const paths = ((task.task_photos as unknown as Array<{ storage_path: string }>) ?? [])
-    .map((p) => p.storage_path);
+  return failLoudly(async () => {
+    const supabase = await createClient();
+    const { data: task } = await supabase
+      .from("tasks")
+      .select("id, task_photos(storage_path)")
+      .eq("id", taskId)
+      .maybeSingle().throwOnError();
+    if (!task) return { ok: false, error: "Task not found." };
+    const paths = ((task.task_photos as unknown as Array<{ storage_path: string }>) ?? [])
+      .map((p) => p.storage_path);
 
-  const { data: deleted, error } = await supabase
-    .from("tasks")
-    .delete()
-    .eq("id", taskId)
-    .select("id");
-  if (error) return { ok: false, error: error.message };
-  if ((deleted ?? []).length === 0) {
-    return { ok: false, error: "You don't have permission to delete tasks." };
-  }
+    const { data: deleted, error } = await supabase
+      .from("tasks")
+      .delete()
+      .eq("id", taskId)
+      .select("id");
+    if (error) return { ok: false, error: error.message };
+    if ((deleted ?? []).length === 0) {
+      return { ok: false, error: "You don't have permission to delete tasks." };
+    }
 
-  if (paths.length > 0) {
-    const admin = createAdminClient();
-    await admin.storage.from("job-photos").remove(paths);
-  }
-  return { ok: true };
+    if (paths.length > 0) {
+      const admin = createAdminClient();
+      logIfFailed("remove photo files", await admin.storage.from("job-photos").remove(paths));
+    }
+    return { ok: true };
+  });
 }

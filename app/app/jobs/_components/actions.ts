@@ -9,6 +9,7 @@ import { toE164US } from "@/lib/sms/phone";
 import { findOrCreateProperty, repointJobAddress } from "@/lib/jobs/properties";
 import { getTenantTimezone } from "@/lib/dates";
 import { whenError, whenToColumns, withLength, type When } from "@/lib/schedule";
+import { failLoudly, logIfFailed } from "@/lib/actions/fail-loudly";
 
 const VALID_STATUSES = [
   "lead",
@@ -52,7 +53,7 @@ async function requireWriterClientId(verb: "create" | "edit" = "create"): Promis
     .from("client_users")
     .select("client_id, role")
     .eq("auth_user_id", user.id)
-    .in("role", ["owner", "manager"]);
+    .in("role", ["owner", "manager"]).throwOnError();
 
   const allowed = memberships ?? [];
   if (allowed.length === 0) {
@@ -96,186 +97,188 @@ export type CreateJobInput = {
  * a cross-tenant id is impossible even if the UI is bypassed.
  */
 export async function createJob(input: CreateJobInput): Promise<CreateJobResult> {
-  const status = (input.status ?? "lead").trim();
-  if (!VALID_STATUSES.includes(status as (typeof VALID_STATUSES)[number])) {
-    return { ok: false, error: "Invalid status." };
-  }
-
-  const whenProblem = input.when ? whenError(input.when) : null;
-  if (whenProblem) return { ok: false, error: whenProblem };
-
-  const gate = await requireWriterClientId();
-  if (!gate.ok) return gate;
-  const { clientId } = gate;
-
-  const admin = createAdminClient();
-  // Saved with the job, so a scheduled job is never left without its date.
-  const schedule = input.when?.date
-    ? withLength(whenToColumns(input.when, await getTenantTimezone()), input.lengthMinutes)
-    : null;
-
-  // ---- 1. Resolve the contact -------------------------------------------
-  let contact: {
-    id: number;
-    name: string | null;
-    phone: string | null;
-    email: string | null;
-  };
-
-  if (input.contactId != null) {
-    const { data: c } = await admin
-      .from("contacts")
-      .select("id, client_id, name, phone, email")
-      .eq("id", input.contactId)
-      .maybeSingle();
-    if (!c || c.client_id !== clientId) {
-      return { ok: false, error: "Contact not found." };
+  return failLoudly(async () => {
+    const status = (input.status ?? "lead").trim();
+    if (!VALID_STATUSES.includes(status as (typeof VALID_STATUSES)[number])) {
+      return { ok: false, error: "Invalid status." };
     }
-    contact = { id: c.id, name: c.name, phone: c.phone, email: c.email };
-  } else {
-    // Manual path — need a name + a normalizable phone.
-    const name = (input.name ?? "").trim();
-    const rawPhone = (input.phone ?? "").trim();
-    if (!name) return { ok: false, error: "Name is required." };
-    if (!rawPhone) return { ok: false, error: "Phone is required." };
-    const phone = toE164US(rawPhone);
-    if (!phone) {
-      return {
-        ok: false,
-        error: "Phone must be a 10-digit US number (e.g. 801-555-1234).",
-      };
-    }
-    // Match-or-create by (client_id, phone), same as the original flow.
-    const { data: existing } = await admin
-      .from("contacts")
-      .select("id, name, phone, email")
-      .eq("client_id", clientId)
-      .eq("phone", phone)
-      .maybeSingle();
-    if (existing) {
-      contact = {
-        id: existing.id,
-        name: existing.name,
-        phone: existing.phone,
-        email: existing.email,
-      };
-    } else {
-      const { data: created, error: cErr } = await admin
+
+    const whenProblem = input.when ? whenError(input.when) : null;
+    if (whenProblem) return { ok: false, error: whenProblem };
+
+    const gate = await requireWriterClientId();
+    if (!gate.ok) return gate;
+    const { clientId } = gate;
+
+    const admin = createAdminClient();
+    // Saved with the job, so a scheduled job is never left without its date.
+    const schedule = input.when?.date
+      ? withLength(whenToColumns(input.when, await getTenantTimezone()), input.lengthMinutes)
+      : null;
+
+    // ---- 1. Resolve the contact -------------------------------------------
+    let contact: {
+      id: number;
+      name: string | null;
+      phone: string | null;
+      email: string | null;
+    };
+
+    if (input.contactId != null) {
+      const { data: c } = await admin
         .from("contacts")
-        .insert({
-          client_id: clientId,
-          phone,
-          name,
-          first_contacted_at: new Date().toISOString(),
-          last_contacted_at: new Date().toISOString(),
-        })
-        .select("id, name, phone, email")
-        .single();
-      if (cErr || !created) {
-        return { ok: false, error: "Failed to create contact. Try again." };
+        .select("id, client_id, name, phone, email")
+        .eq("id", input.contactId)
+        .maybeSingle().throwOnError();
+      if (!c || c.client_id !== clientId) {
+        return { ok: false, error: "Contact not found." };
       }
-      contact = {
-        id: created.id,
-        name: created.name,
-        phone: created.phone,
-        email: created.email,
-      };
+      contact = { id: c.id, name: c.name, phone: c.phone, email: c.email };
+    } else {
+      // Manual path — need a name + a normalizable phone.
+      const name = (input.name ?? "").trim();
+      const rawPhone = (input.phone ?? "").trim();
+      if (!name) return { ok: false, error: "Name is required." };
+      if (!rawPhone) return { ok: false, error: "Phone is required." };
+      const phone = toE164US(rawPhone);
+      if (!phone) {
+        return {
+          ok: false,
+          error: "Phone must be a 10-digit US number (e.g. 801-555-1234).",
+        };
+      }
+      // Match-or-create by (client_id, phone), same as the original flow.
+      const { data: existing } = await admin
+        .from("contacts")
+        .select("id, name, phone, email")
+        .eq("client_id", clientId)
+        .eq("phone", phone)
+        .maybeSingle().throwOnError();
+      if (existing) {
+        contact = {
+          id: existing.id,
+          name: existing.name,
+          phone: existing.phone,
+          email: existing.email,
+        };
+      } else {
+        const { data: created, error: cErr } = await admin
+          .from("contacts")
+          .insert({
+            client_id: clientId,
+            phone,
+            name,
+            first_contacted_at: new Date().toISOString(),
+            last_contacted_at: new Date().toISOString(),
+          })
+          .select("id, name, phone, email")
+          .single();
+        if (cErr || !created) {
+          return { ok: false, error: "Failed to create contact. Try again." };
+        }
+        contact = {
+          id: created.id,
+          name: created.name,
+          phone: created.phone,
+          email: created.email,
+        };
+      }
     }
-  }
 
-  // ---- 2. Resolve the property + the displayed address -------------------
-  let propertyId: number;
-  let jobAddress: string;
+    // ---- 2. Resolve the property + the displayed address -------------------
+    let propertyId: number;
+    let jobAddress: string;
 
-  if (input.propertyId != null) {
-    const { data: prop } = await admin
-      .from("properties")
-      .select("id, client_id, contact_id, address, unit")
-      .eq("id", input.propertyId)
-      .maybeSingle();
-    if (!prop || prop.client_id !== clientId || prop.contact_id !== contact.id) {
-      return { ok: false, error: "Property not found for this contact." };
-    }
-    const typedUnit = (input.unit ?? "").trim() || null;
-    if (typedUnit && typedUnit !== prop.unit) {
-      // §5.3 — a new unit at a known property auto-saves as its own property
-      // (same address, new unit). An existing match is reused. No prompt.
+    if (input.propertyId != null) {
+      const { data: prop } = await admin
+        .from("properties")
+        .select("id, client_id, contact_id, address, unit")
+        .eq("id", input.propertyId)
+        .maybeSingle().throwOnError();
+      if (!prop || prop.client_id !== clientId || prop.contact_id !== contact.id) {
+        return { ok: false, error: "Property not found for this contact." };
+      }
+      const typedUnit = (input.unit ?? "").trim() || null;
+      if (typedUnit && typedUnit !== prop.unit) {
+        // §5.3 — a new unit at a known property auto-saves as its own property
+        // (same address, new unit). An existing match is reused. No prompt.
+        const resolved = await findOrCreateProperty(
+          admin,
+          clientId,
+          contact.id,
+          prop.address,
+          typedUnit,
+        );
+        if (!resolved) return { ok: false, error: "Failed to save the unit." };
+        propertyId = resolved;
+        jobAddress = composeAddress(prop.address, typedUnit);
+      } else {
+        propertyId = prop.id;
+        jobAddress = composeAddress(prop.address, prop.unit);
+      }
+    } else {
+      // New address (manual path, or "new property" for a known contact).
+      const baseAddress = (input.address ?? "").trim();
+      if (!baseAddress) return { ok: false, error: "Address is required." };
+      const typedUnit = (input.unit ?? "").trim() || null;
       const resolved = await findOrCreateProperty(
         admin,
         clientId,
         contact.id,
-        prop.address,
+        baseAddress,
         typedUnit,
       );
-      if (!resolved) return { ok: false, error: "Failed to save the unit." };
+      if (!resolved) return { ok: false, error: "Failed to save the property." };
       propertyId = resolved;
-      jobAddress = composeAddress(prop.address, typedUnit);
-    } else {
-      propertyId = prop.id;
-      jobAddress = composeAddress(prop.address, prop.unit);
+      jobAddress = composeAddress(baseAddress, typedUnit);
     }
-  } else {
-    // New address (manual path, or "new property" for a known contact).
-    const baseAddress = (input.address ?? "").trim();
-    if (!baseAddress) return { ok: false, error: "Address is required." };
-    const typedUnit = (input.unit ?? "").trim() || null;
-    const resolved = await findOrCreateProperty(
-      admin,
-      clientId,
-      contact.id,
-      baseAddress,
-      typedUnit,
-    );
-    if (!resolved) return { ok: false, error: "Failed to save the property." };
-    propertyId = resolved;
-    jobAddress = composeAddress(baseAddress, typedUnit);
-  }
 
-  // ---- 3. Optional bill-to override --------------------------------------
-  let billToContactId: number | null = null;
-  if (input.billToContactId != null) {
-    const { data: bc } = await admin
-      .from("contacts")
-      .select("id, client_id")
-      .eq("id", input.billToContactId)
-      .maybeSingle();
-    if (!bc || bc.client_id !== clientId) {
-      return { ok: false, error: "Bill-to contact not found." };
+    // ---- 3. Optional bill-to override --------------------------------------
+    let billToContactId: number | null = null;
+    if (input.billToContactId != null) {
+      const { data: bc } = await admin
+        .from("contacts")
+        .select("id, client_id")
+        .eq("id", input.billToContactId)
+        .maybeSingle().throwOnError();
+      if (!bc || bc.client_id !== clientId) {
+        return { ok: false, error: "Bill-to contact not found." };
+      }
+      billToContactId = bc.id;
     }
-    billToContactId = bc.id;
-  }
 
-  // ---- 4. Insert the job -------------------------------------------------
-  const { data: newJob, error: jobErr } = await admin
-    .from("jobs")
-    .insert({
-      client_id: clientId,
-      name: contact.name ?? (input.name ?? "").trim(),
-      phone: contact.phone,
-      email: contact.email,
-      address: jobAddress,
-      status,
-      contact_id: contact.id,
-      property_id: propertyId,
-      bill_to_contact_id: billToContactId,
-      ...(schedule ?? {}),
-      service: (input.service ?? "").trim() || null,
-      source: "manual",
-    })
-    .select("id")
-    .single();
+    // ---- 4. Insert the job -------------------------------------------------
+    const { data: newJob, error: jobErr } = await admin
+      .from("jobs")
+      .insert({
+        client_id: clientId,
+        name: contact.name ?? (input.name ?? "").trim(),
+        phone: contact.phone,
+        email: contact.email,
+        address: jobAddress,
+        status,
+        contact_id: contact.id,
+        property_id: propertyId,
+        bill_to_contact_id: billToContactId,
+        ...(schedule ?? {}),
+        service: (input.service ?? "").trim() || null,
+        source: "manual",
+      })
+      .select("id")
+      .single();
 
-  if (jobErr || !newJob) {
-    console.error("[create-job] job insert failed", jobErr);
-    return {
-      ok: false,
-      error: jobErr?.message ?? "Failed to create job. Try again.",
-    };
-  }
+    if (jobErr || !newJob) {
+      console.error("[create-job] job insert failed", jobErr);
+      return {
+        ok: false,
+        error: jobErr?.message ?? "Failed to create job. Try again.",
+      };
+    }
 
-  revalidatePath("/app/jobs");
-  revalidatePath("/app");
-  return { ok: true, jobId: newJob.id };
+    revalidatePath("/app/jobs");
+    revalidatePath("/app");
+    return { ok: true, jobId: newJob.id };
+  });
 }
 
 /**
@@ -288,18 +291,20 @@ export async function updateJobAddress(
   address: string,
   unit: string,
 ): Promise<{ ok: true } | { ok: false; error: string }> {
-  const gate = await requireWriterClientId("edit");
-  if (!gate.ok) return gate;
+  return failLoudly(async () => {
+    const gate = await requireWriterClientId("edit");
+    if (!gate.ok) return gate;
 
-  const result = await repointJobAddress(createAdminClient(), gate.clientId, jobId, {
-    address,
-    unit,
+    const result = await repointJobAddress(createAdminClient(), gate.clientId, jobId, {
+      address,
+      unit,
+    });
+    if (!result.ok) return result;
+
+    revalidatePath(`/app/jobs/${jobId}`);
+    revalidatePath("/app/jobs");
+    return { ok: true };
   });
-  if (!result.ok) return result;
-
-  revalidatePath(`/app/jobs/${jobId}`);
-  revalidatePath("/app/jobs");
-  return { ok: true };
 }
 
 /**
@@ -315,14 +320,16 @@ export async function createJobManual(formData: {
   lengthMinutes?: number | null;
   service?: string;
 }): Promise<CreateJobResult> {
-  return createJob({
-    name: formData.name,
-    phone: formData.phone,
-    address: formData.address,
-    status: formData.status,
-    when: formData.when,
-    lengthMinutes: formData.lengthMinutes,
-    service: formData.service,
+  return failLoudly(async () => {
+    return createJob({
+      name: formData.name,
+      phone: formData.phone,
+      address: formData.address,
+      status: formData.status,
+      when: formData.when,
+      lengthMinutes: formData.lengthMinutes,
+      service: formData.service,
+    });
   });
 }
 
@@ -368,7 +375,7 @@ export async function searchContacts(query: string): Promise<ContactHit[]> {
     .is("archived_at", null)
     .or(ors.join(","))
     .order("last_contacted_at", { ascending: false, nullsFirst: false })
-    .limit(8);
+    .limit(8).throwOnError();
   return (data ?? []) as ContactHit[];
 }
 
@@ -391,6 +398,6 @@ export async function getContactProperties(
     .from("properties")
     .select("id, address, unit, label")
     .eq("contact_id", contactId)
-    .order("created_at", { ascending: true });
+    .order("created_at", { ascending: true }).throwOnError();
   return (data ?? []) as PropertyHit[];
 }

@@ -27,14 +27,14 @@ export async function GET(
   }
 
   const [{ data: inv }, { data: item }] = await Promise.all([
-    supabase.from("invoices").select("id, invoice_number").eq("id", invoiceId).maybeSingle(),
+    supabase.from("invoices").select("id, invoice_number").eq("id", invoiceId).maybeSingle().throwOnError(),
     supabase
       .from("expenses")
       .select("id, client_id, receipt_path, purchase:purchases(receipt_paths, receipt_path)")
       .eq("id", itemId)
       .eq("invoiced_on", invoiceId)
       .eq("attach_receipt", true)
-      .maybeSingle(),
+      .maybeSingle().throwOnError(),
   ]);
   if (!inv || !item) return NextResponse.json({ error: "Not found" }, { status: 404 });
 

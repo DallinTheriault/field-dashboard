@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { inTenantFolder } from "@/lib/estimator/receipt-paths";
+import { logIfFailed } from "@/lib/supabase/log-if-failed";
 
 const MAX_BYTES = 8 * 1024 * 1024; // 8 MB — phone photos of receipts
 const ALLOWED_MIME = new Set([
@@ -34,7 +35,7 @@ async function authorizeExpense(idRaw: string) {
     .select("client_id, role")
     .eq("auth_user_id", user.id)
     .in("role", ["owner", "manager"])
-    .limit(1);
+    .limit(1).throwOnError();
   const clientId = clientUsers?.[0]?.client_id;
   if (!clientId) return { status: 403 as const, error: "Forbidden" };
 
@@ -42,7 +43,7 @@ async function authorizeExpense(idRaw: string) {
     .from("expenses")
     .select("id, client_id, receipt_path")
     .eq("id", expenseId)
-    .maybeSingle();
+    .maybeSingle().throwOnError();
   if (!expense || expense.client_id !== clientId) {
     return { status: 404 as const, error: "Expense not found" };
   }
@@ -135,7 +136,7 @@ export async function DELETE(
 
   const admin = createAdminClient();
   if (auth.expense.receipt_path && inTenantFolder(auth.clientId, auth.expense.receipt_path)) {
-    await admin.storage.from("receipts").remove([auth.expense.receipt_path]);
+    logIfFailed("remove receipt file", await admin.storage.from("receipts").remove([auth.expense.receipt_path]));
   }
   const { error } = await admin
     .from("expenses")

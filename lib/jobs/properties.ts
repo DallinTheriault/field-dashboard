@@ -20,7 +20,7 @@ export async function findOrCreateProperty(
     .eq("contact_id", contactId)
     .eq("address", address);
   match = unit === null ? match.is("unit", null) : match.eq("unit", unit);
-  const { data: existing } = await match.maybeSingle();
+  const { data: existing } = await match.maybeSingle().throwOnError();
   if (existing) return existing.id;
 
   const { data: created, error } = await admin
@@ -60,7 +60,7 @@ export async function repointJobAddress(
     .from("jobs")
     .select("id, client_id, contact_id")
     .eq("id", jobId)
-    .maybeSingle();
+    .maybeSingle().throwOnError();
   if (!job || job.client_id !== clientId) return { ok: false, error: "Job not found." };
 
   const base = input.address.trim();

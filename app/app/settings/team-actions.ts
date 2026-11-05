@@ -10,6 +10,7 @@ import {
   canChangeRole,
   canRemoveRole,
 } from "@/lib/permissions/roles";
+import { failLoudly, logIfFailed } from "@/lib/actions/fail-loudly";
 
 type Result = { ok: true } | { ok: false; error: string };
 
@@ -27,98 +28,103 @@ export async function addTeamMemberByEmail(
   email: string,
   role: Role,
 ): Promise<{ ok: true; newLogin: boolean } | { ok: false; error: string }> {
-  const cleanedEmail = email.trim().toLowerCase();
-  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanedEmail)) {
-    return { ok: false, error: "Invalid email address." };
-  }
-  if (!isValidRole(role)) {
-    return { ok: false, error: "Invalid role." };
-  }
-
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) return { ok: false, error: "Not signed in." };
-
-  const { data: callerMembership } = await supabase
-    .from("client_users")
-    .select("role")
-    .eq("auth_user_id", user.id)
-    .eq("client_id", clientId)
-    .maybeSingle();
-
-  if (
-    !callerMembership ||
-    !isValidRole(callerMembership.role) ||
-    !canAddRole(callerMembership.role, role)
-  ) {
-    return {
-      ok: false,
-      error:
-        callerMembership?.role === "manager"
-          ? "Managers can only add members. Ask an owner to add managers or owners."
-          : "You don't have permission to add team members.",
-    };
-  }
-
-  const admin = createAdminClient();
-  // Look up the auth user by email
-  const { data: usersData, error: lookupErr } =
-    await admin.auth.admin.listUsers({ perPage: 1000 });
-  if (lookupErr) {
-    return { ok: false, error: `Lookup failed: ${lookupErr.message}` };
-  }
-  let target = usersData.users.find(
-    (u) => (u.email ?? "").toLowerCase() === cleanedEmail,
-  );
-  const newLogin = !target;
-  if (!target) {
-    const { data: created, error: createErr } =
-      await admin.auth.admin.createUser({ email: cleanedEmail, email_confirm: true });
-    if (createErr || !created.user) {
-      return { ok: false, error: `Couldn't make a login for ${cleanedEmail}: ${createErr?.message ?? "unknown error"}` };
+  return failLoudly(async () => {
+    const cleanedEmail = email.trim().toLowerCase();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanedEmail)) {
+      return { ok: false, error: "Invalid email address." };
     }
-    target = created.user;
-  }
+    if (!isValidRole(role)) {
+      return { ok: false, error: "Invalid role." };
+    }
 
-  const { data: existing } = await admin
-    .from("client_users")
-    .select("id, role")
-    .eq("auth_user_id", target.id)
-    .eq("client_id", clientId)
-    .maybeSingle();
+    const supabase = await createClient();
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+    if (!user) return { ok: false, error: "Not signed in." };
 
-  if (existing) {
-    return {
-      ok: false,
-      error: `${cleanedEmail} is already a ${existing.role} on this team.`,
-    };
-  }
+    const { data: callerMembership } = await supabase
+      .from("client_users")
+      .select("role")
+      .eq("auth_user_id", user.id)
+      .eq("client_id", clientId)
+      .maybeSingle().throwOnError();
 
-  const { error: insertErr } = await admin.from("client_users").insert({
-    auth_user_id: target.id,
-    client_id: clientId,
-    role,
+    if (
+      !callerMembership ||
+      !isValidRole(callerMembership.role) ||
+      !canAddRole(callerMembership.role, role)
+    ) {
+      return {
+        ok: false,
+        error:
+          callerMembership?.role === "manager"
+            ? "Managers can only add members. Ask an owner to add managers or owners."
+            : "You don't have permission to add team members.",
+      };
+    }
+
+    const admin = createAdminClient();
+    // Look up the auth user by email
+    const { data: usersData, error: lookupErr } =
+      await admin.auth.admin.listUsers({ perPage: 1000 });
+    if (lookupErr) {
+      return { ok: false, error: `Lookup failed: ${lookupErr.message}` };
+    }
+    let target = usersData.users.find(
+      (u) => (u.email ?? "").toLowerCase() === cleanedEmail,
+    );
+    const newLogin = !target;
+    if (!target) {
+      const { data: created, error: createErr } =
+        await admin.auth.admin.createUser({ email: cleanedEmail, email_confirm: true });
+      if (createErr || !created.user) {
+        return { ok: false, error: `Couldn't make a login for ${cleanedEmail}: ${createErr?.message ?? "unknown error"}` };
+      }
+      target = created.user;
+    }
+
+    const { data: existing } = await admin
+      .from("client_users")
+      .select("id, role")
+      .eq("auth_user_id", target.id)
+      .eq("client_id", clientId)
+      .maybeSingle().throwOnError();
+
+    if (existing) {
+      return {
+        ok: false,
+        error: `${cleanedEmail} is already a ${existing.role} on this team.`,
+      };
+    }
+
+    const { error: insertErr } = await admin.from("client_users").insert({
+      auth_user_id: target.id,
+      client_id: clientId,
+      role,
+    });
+
+    if (insertErr) {
+      return { ok: false, error: insertErr.message };
+    }
+
+    // Audit log entry
+    logIfFailed(
+      "team audit log",
+      await admin.from("team_audit_log").insert({
+        client_id: clientId,
+        actor_user_id: user.id,
+        actor_role_at_time: callerMembership.role,
+        action: "member_added",
+        target_user_id: target.id,
+        target_email: cleanedEmail,
+        new_role: role,
+      }),
+    );
+
+    revalidatePath("/app/settings");
+    return { ok: true, newLogin };
   });
-
-  if (insertErr) {
-    return { ok: false, error: insertErr.message };
-  }
-
-  // Audit log entry
-  await admin.from("team_audit_log").insert({
-    client_id: clientId,
-    actor_user_id: user.id,
-    actor_role_at_time: callerMembership.role,
-    action: "member_added",
-    target_user_id: target.id,
-    target_email: cleanedEmail,
-    new_role: role,
-  });
-
-  revalidatePath("/app/settings");
-  return { ok: true, newLogin };
 }
 
 /**
@@ -129,89 +135,94 @@ export async function removeTeamMember(
   clientId: number,
   membershipId: number,
 ): Promise<Result> {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) return { ok: false, error: "Not signed in." };
+  return failLoudly(async () => {
+    const supabase = await createClient();
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+    if (!user) return { ok: false, error: "Not signed in." };
 
-  const { data: callerMembership } = await supabase
-    .from("client_users")
-    .select("role")
-    .eq("auth_user_id", user.id)
-    .eq("client_id", clientId)
-    .maybeSingle();
-
-  if (!callerMembership || !isValidRole(callerMembership.role)) {
-    return { ok: false, error: "You don't have permission." };
-  }
-
-  const admin = createAdminClient();
-  const { data: target } = await admin
-    .from("client_users")
-    .select("id, auth_user_id, role")
-    .eq("id", membershipId)
-    .eq("client_id", clientId)
-    .maybeSingle();
-
-  if (!target || !isValidRole(target.role)) {
-    return { ok: false, error: "Member not found." };
-  }
-
-  if (target.auth_user_id === user.id) {
-    return { ok: false, error: "You can't remove yourself." };
-  }
-
-  if (!canRemoveRole(callerMembership.role, target.role)) {
-    return {
-      ok: false,
-      error:
-        callerMembership.role === "manager"
-          ? "Managers can only remove members."
-          : "You don't have permission to remove this person.",
-    };
-  }
-
-  // Don't allow removing the last owner
-  if (target.role === "owner") {
-    const { count } = await admin
+    const { data: callerMembership } = await supabase
       .from("client_users")
-      .select("id", { count: "exact", head: true })
+      .select("role")
+      .eq("auth_user_id", user.id)
       .eq("client_id", clientId)
-      .eq("role", "owner");
-    if ((count ?? 0) <= 1) {
+      .maybeSingle().throwOnError();
+
+    if (!callerMembership || !isValidRole(callerMembership.role)) {
+      return { ok: false, error: "You don't have permission." };
+    }
+
+    const admin = createAdminClient();
+    const { data: target } = await admin
+      .from("client_users")
+      .select("id, auth_user_id, role")
+      .eq("id", membershipId)
+      .eq("client_id", clientId)
+      .maybeSingle().throwOnError();
+
+    if (!target || !isValidRole(target.role)) {
+      return { ok: false, error: "Member not found." };
+    }
+
+    if (target.auth_user_id === user.id) {
+      return { ok: false, error: "You can't remove yourself." };
+    }
+
+    if (!canRemoveRole(callerMembership.role, target.role)) {
       return {
         ok: false,
-        error: "Can't remove the last owner. Promote someone else first.",
+        error:
+          callerMembership.role === "manager"
+            ? "Managers can only remove members."
+            : "You don't have permission to remove this person.",
       };
     }
-  }
 
-  // Get email for audit log before delete
-  const { data: targetUser } = await admin.auth.admin.getUserById(
-    target.auth_user_id,
-  );
-  const targetEmail = targetUser?.user?.email ?? "(unknown)";
+    // Don't allow removing the last owner
+    if (target.role === "owner") {
+      const { count } = await admin
+        .from("client_users")
+        .select("id", { count: "exact", head: true })
+        .eq("client_id", clientId)
+        .eq("role", "owner").throwOnError();
+      if ((count ?? 0) <= 1) {
+        return {
+          ok: false,
+          error: "Can't remove the last owner. Promote someone else first.",
+        };
+      }
+    }
 
-  const { error } = await admin
-    .from("client_users")
-    .delete()
-    .eq("id", membershipId);
+    // Get email for audit log before delete
+    const { data: targetUser } = await admin.auth.admin.getUserById(
+      target.auth_user_id,
+    );
+    const targetEmail = targetUser?.user?.email ?? "(unknown)";
 
-  if (error) return { ok: false, error: error.message };
+    const { error } = await admin
+      .from("client_users")
+      .delete()
+      .eq("id", membershipId);
 
-  await admin.from("team_audit_log").insert({
-    client_id: clientId,
-    actor_user_id: user.id,
-    actor_role_at_time: callerMembership.role,
-    action: "member_removed",
-    target_user_id: target.auth_user_id,
-    target_email: targetEmail,
-    old_role: target.role,
+    if (error) return { ok: false, error: error.message };
+
+    logIfFailed(
+      "team audit log",
+      await admin.from("team_audit_log").insert({
+        client_id: clientId,
+        actor_user_id: user.id,
+        actor_role_at_time: callerMembership.role,
+        action: "member_removed",
+        target_user_id: target.auth_user_id,
+        target_email: targetEmail,
+        old_role: target.role,
+      }),
+    );
+
+    revalidatePath("/app/settings");
+    return { ok: true };
   });
-
-  revalidatePath("/app/settings");
-  return { ok: true };
 }
 
 /**
@@ -225,92 +236,97 @@ export async function changeTeamMemberRole(
   membershipId: number,
   newRole: Role,
 ): Promise<Result> {
-  if (!isValidRole(newRole)) {
-    return { ok: false, error: "Invalid role." };
-  }
+  return failLoudly(async () => {
+    if (!isValidRole(newRole)) {
+      return { ok: false, error: "Invalid role." };
+    }
 
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) return { ok: false, error: "Not signed in." };
+    const supabase = await createClient();
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+    if (!user) return { ok: false, error: "Not signed in." };
 
-  const { data: callerMembership } = await supabase
-    .from("client_users")
-    .select("role")
-    .eq("auth_user_id", user.id)
-    .eq("client_id", clientId)
-    .maybeSingle();
-
-  if (!callerMembership || !isValidRole(callerMembership.role)) {
-    return { ok: false, error: "You don't have permission." };
-  }
-
-  const admin = createAdminClient();
-  const { data: target } = await admin
-    .from("client_users")
-    .select("id, auth_user_id, role")
-    .eq("id", membershipId)
-    .eq("client_id", clientId)
-    .maybeSingle();
-
-  if (!target || !isValidRole(target.role)) {
-    return { ok: false, error: "Member not found." };
-  }
-  if (target.auth_user_id === user.id) {
-    return { ok: false, error: "You can't change your own role." };
-  }
-  if (target.role === newRole) return { ok: true }; // no-op
-
-  if (!canChangeRole(callerMembership.role, target.role, newRole)) {
-    return {
-      ok: false,
-      error:
-        callerMembership.role === "manager"
-          ? "Managers can only promote members or demote managers."
-          : "You don't have permission to change this role.",
-    };
-  }
-
-  // Don't allow demoting the last owner
-  if (target.role === "owner" && newRole !== "owner") {
-    const { count } = await admin
+    const { data: callerMembership } = await supabase
       .from("client_users")
-      .select("id", { count: "exact", head: true })
+      .select("role")
+      .eq("auth_user_id", user.id)
       .eq("client_id", clientId)
-      .eq("role", "owner");
-    if ((count ?? 0) <= 1) {
+      .maybeSingle().throwOnError();
+
+    if (!callerMembership || !isValidRole(callerMembership.role)) {
+      return { ok: false, error: "You don't have permission." };
+    }
+
+    const admin = createAdminClient();
+    const { data: target } = await admin
+      .from("client_users")
+      .select("id, auth_user_id, role")
+      .eq("id", membershipId)
+      .eq("client_id", clientId)
+      .maybeSingle().throwOnError();
+
+    if (!target || !isValidRole(target.role)) {
+      return { ok: false, error: "Member not found." };
+    }
+    if (target.auth_user_id === user.id) {
+      return { ok: false, error: "You can't change your own role." };
+    }
+    if (target.role === newRole) return { ok: true }; // no-op
+
+    if (!canChangeRole(callerMembership.role, target.role, newRole)) {
       return {
         ok: false,
-        error: "Can't demote the last owner. Promote someone else first.",
+        error:
+          callerMembership.role === "manager"
+            ? "Managers can only promote members or demote managers."
+            : "You don't have permission to change this role.",
       };
     }
-  }
 
-  const { error } = await admin
-    .from("client_users")
-    .update({ role: newRole })
-    .eq("id", membershipId);
+    // Don't allow demoting the last owner
+    if (target.role === "owner" && newRole !== "owner") {
+      const { count } = await admin
+        .from("client_users")
+        .select("id", { count: "exact", head: true })
+        .eq("client_id", clientId)
+        .eq("role", "owner").throwOnError();
+      if ((count ?? 0) <= 1) {
+        return {
+          ok: false,
+          error: "Can't demote the last owner. Promote someone else first.",
+        };
+      }
+    }
 
-  if (error) return { ok: false, error: error.message };
+    const { error } = await admin
+      .from("client_users")
+      .update({ role: newRole })
+      .eq("id", membershipId);
 
-  // Audit log
-  const { data: targetUser } = await admin.auth.admin.getUserById(
-    target.auth_user_id,
-  );
-  const targetEmail = targetUser?.user?.email ?? "(unknown)";
+    if (error) return { ok: false, error: error.message };
 
-  await admin.from("team_audit_log").insert({
-    client_id: clientId,
-    actor_user_id: user.id,
-    actor_role_at_time: callerMembership.role,
-    action: "role_changed",
-    target_user_id: target.auth_user_id,
-    target_email: targetEmail,
-    old_role: target.role,
-    new_role: newRole,
+    // Audit log
+    const { data: targetUser } = await admin.auth.admin.getUserById(
+      target.auth_user_id,
+    );
+    const targetEmail = targetUser?.user?.email ?? "(unknown)";
+
+    logIfFailed(
+      "team audit log",
+      await admin.from("team_audit_log").insert({
+        client_id: clientId,
+        actor_user_id: user.id,
+        actor_role_at_time: callerMembership.role,
+        action: "role_changed",
+        target_user_id: target.auth_user_id,
+        target_email: targetEmail,
+        old_role: target.role,
+        new_role: newRole,
+      }),
+    );
+
+    revalidatePath("/app/settings");
+    return { ok: true };
   });
-
-  revalidatePath("/app/settings");
-  return { ok: true };
 }

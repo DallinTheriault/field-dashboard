@@ -31,7 +31,7 @@ async function authorizePurchase(idRaw: string) {
     .select("client_id, role")
     .eq("auth_user_id", user.id)
     .in("role", ["owner", "manager"])
-    .limit(1);
+    .limit(1).throwOnError();
   const clientId = clientUsers?.[0]?.client_id;
   if (!clientId) return { status: 403 as const, error: "Forbidden" };
 
@@ -39,7 +39,7 @@ async function authorizePurchase(idRaw: string) {
     .from("purchases")
     .select("id, client_id, receipt_path, receipt_paths")
     .eq("id", purchaseId)
-    .maybeSingle();
+    .maybeSingle().throwOnError();
   if (!purchase || purchase.client_id !== clientId) {
     return { status: 404 as const, error: "Purchase not found" };
   }
