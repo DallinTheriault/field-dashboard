@@ -10,22 +10,17 @@ import type { EstimatorBundle } from "./assemble";
 export async function getEstimatorBundle(
   supabase: SupabaseClient,
 ): Promise<EstimatorBundle> {
-  const [settings, overhead, services, materials, links, modifiers, entities] =
+  const [settings, services, materials, links, modifiers, entities] =
     await Promise.all([
+      // The same pricing settings as the rest of Field (Business › Pricing).
       supabase
         .from("pricing_settings")
-        .select(
-          "desired_annual_owner_pay, hours_worked_per_week, utilization_pct, margin_pct, material_markup_pct, minimum_job_charge, rounding_increment",
-        )
+        .select("default_hourly_rate, skilled_hourly_rate, material_markup_pct, minimum_job_charge")
         .maybeSingle().throwOnError(),
-      supabase
-        .from("overhead_items")
-        .select("monthly_amount")
-        .eq("active", true).throwOnError(),
       supabase
         .from("service_catalog")
         .select(
-          "id, name, type, unit, labor_hours_per_unit, flat_labor_hours, is_placeholder, active",
+          "id, name, type, unit, labor_hours_per_unit, flat_labor_hours, is_placeholder, active, rate_type",
         )
         // PRICED rows sell at a fixed price; the engine only prices from hours.
         .in("type", ["MEASURED", "TASK"])
@@ -56,19 +51,12 @@ export async function getEstimatorBundle(
   return {
     settings: s
       ? {
-          desired_annual_owner_pay: Number(s.desired_annual_owner_pay),
-          hours_worked_per_week: Number(s.hours_worked_per_week),
-          utilization_pct: Number(s.utilization_pct),
-          margin_pct: Number(s.margin_pct),
-          material_markup_pct: Number(s.material_markup_pct),
-          minimum_job_charge: Number(s.minimum_job_charge),
-          rounding_increment: Number(s.rounding_increment),
+          default_hourly_rate: s.default_hourly_rate === null ? null : Number(s.default_hourly_rate),
+          skilled_hourly_rate: s.skilled_hourly_rate === null ? null : Number(s.skilled_hourly_rate),
+          material_markup_pct: Number(s.material_markup_pct ?? 0),
+          minimum_job_charge: Number(s.minimum_job_charge ?? 0),
         }
       : null,
-    monthlyOverhead: (overhead.data ?? []).reduce(
-      (sum, o) => sum + Number(o.monthly_amount || 0),
-      0,
-    ),
     services: (services.data ?? []).map((x) => ({
       ...x,
       labor_hours_per_unit:

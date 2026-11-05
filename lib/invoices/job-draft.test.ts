@@ -81,7 +81,7 @@ describe("invoiceTotals / claimsOf", () => {
     expect(invoiceTotals(rows, 7.25).taxCents).toBe(1923);
   });
   it("claims exactly the lines and extras on the rows", () => {
-    expect(claimsOf(rows)).toEqual({ taskIds: [1, 2], expenseIds: [30], hourIds: [] });
+    expect(claimsOf(rows)).toEqual({ taskIds: [1, 2], expenseIds: [30], hourIds: [], estimateIds: [] });
   });
 });
 
@@ -173,7 +173,7 @@ describe("hourly and minimum invoices", () => {
       { description: "Minimum service charge", qtyLabel: null, amount: 150, time_entry_ids: [48], kind: "minimum" },
     ]);
     expect(subtotalOf(rows)).toBe(150);
-    expect(claimsOf(rows)).toEqual({ taskIds: [4], expenseIds: [30], hourIds: [48] });
+    expect(claimsOf(rows)).toEqual({ taskIds: [4], expenseIds: [30], hourIds: [48], estimateIds: [] });
   });
 
   it("Add minimum service charge: the other lines go to $0.00 and keep their claims; never two minimum lines", () => {
@@ -192,7 +192,7 @@ describe("hourly and minimum invoices", () => {
       ["Senior discount", null, 0],
       ["Minimum service charge", null, 150],
     ]);
-    expect(claimsOf(once)).toEqual({ taskIds: [4], expenseIds: [9], hourIds: [48] });
+    expect(claimsOf(once)).toEqual({ taskIds: [4], expenseIds: [9], hourIds: [48], estimateIds: [] });
     expect(once[1].covered).toBe(true);
     const twice = applyMinimum(once, 175);
     expect(twice.filter((r) => r.kind === "minimum")).toHaveLength(1);

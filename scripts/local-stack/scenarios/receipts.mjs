@@ -400,6 +400,16 @@ await page.getByPlaceholder("Search catalog…").waitFor();
 check("the estimate builder has no travel zone", (await page.getByText(/Travel zone/i).count()) === 0);
 await page.getByRole("button", { name: "Toilet swap" }).click();
 await page.locator('input[placeholder="0"]').nth(0).fill("1");
+// Estimates price at Business › Pricing's rates (v105); a fresh stack has none.
+check("with no hourly rate set, the builder says which to set and won't save",
+  /general hourly rate/.test(await page.getByTestId("estimate-needs-rate").innerText()) &&
+  (await page.getByRole("button", { name: "Save estimate" }).isDisabled()));
+await adminCall("PATCH", "pricing_settings?client_id=eq.8", { default_hourly_rate: 110, skilled_hourly_rate: 125 });
+await page.reload();
+await page.getByPlaceholder("Search catalog…").waitFor();
+await page.waitForLoadState("networkidle");
+await page.getByRole("button", { name: "Toilet swap" }).click();
+await page.locator('input[placeholder="0"]').nth(0).fill("1");
 await Promise.all([page.waitForURL(/\/app\/estimator\/\d+$/), page.getByRole("button", { name: "Save estimate" }).click()]);
 const est = (await adminGet(`estimates?id=eq.${page.url().split("/").pop()}&select=travel_zone_id,resolved_travel_fee`))[0];
 check("…and a new estimate carries no travel fee, even with a zone on file", est.travel_zone_id === null && Number(est.resolved_travel_fee) === 0,

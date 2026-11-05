@@ -9,6 +9,10 @@
 export type EngineBasis = "COVERAGE" | "PER_UNIT" | "FLAT";
 
 export interface EngineSettings {
+  /**
+   * $/hr for a labor line that brings no rate of its own. Estimates price
+   * each line at its own laborRate (the general or skilled rate, v105).
+   */
   loadedLaborRate: number;
   /** 0–1. price = cost / (1 − margin). MARGIN math — cost × (1+m) is WRONG. */
   marginPct: number;
@@ -60,10 +64,12 @@ export interface EngineLineInput {
   hardwareUnitCost?: number | null;
   /**
    * HARDWARE only. true = pass through at cost (customer pays exactly what
-   * the owner paid, margin only on the rest of the job). false = mark up
-   * by the job margin like any other cost.
+   * the owner paid, margin only on the rest of the job). false = marked up
+   * by the material markup, then the job margin, like a material.
    */
   passThrough?: boolean;
+  /** LABOR only: $/hr for this line's hours; defaults to settings.loadedLaborRate. */
+  laborRate?: number | null;
   /** Prep applies to LABOR ONLY, never materials. Default 1. */
   prepMultiplier?: number | null;
   materials: EngineMaterialInput[];
@@ -87,6 +93,8 @@ export interface EngineLineResult {
   passThrough: boolean;
   baseHours: number;
   laborHours: number;
+  /** $/hr this line's hours were priced at (0 for hardware). */
+  laborRate: number;
   laborCost: number;
   materials: EngineMaterialResult[];
   materialCost: number;
@@ -110,7 +118,7 @@ export interface JobPricingResult {
   /** After material markup (identical when markup = 0). */
   materialCostMarked: number;
   travelFee: number;
-  /** Marked-up hardware (before margin). */
+  /** Marked-up hardware, after the material markup (before margin). */
   hardwareMarkupCost: number;
   /** At-cost hardware — added to price at cost, never margined. */
   hardwarePassThroughCost: number;
@@ -120,6 +128,7 @@ export interface JobPricingResult {
   price: number;
   minimumApplied: boolean;
   marginPct: number;
+  materialMarkupPct: number;
   /** price / cost − 1 — shown in owner view next to margin. */
   effectiveMarkupPct: number;
 }
@@ -187,6 +196,7 @@ export function priceLine(
       passThrough: !!line.passThrough,
       baseHours: 0,
       laborHours: 0,
+      laborRate: 0,
       laborCost: 0,
       materials: [],
       materialCost: 0,
@@ -201,7 +211,8 @@ export function priceLine(
 
   const prep = line.prepMultiplier && line.prepMultiplier > 0 ? line.prepMultiplier : 1;
   const laborHours = baseHours * prep; // prep applies to labor ONLY
-  const laborCost = round2(laborHours * settings.loadedLaborRate);
+  const laborRate = line.laborRate ?? settings.loadedLaborRate;
+  const laborCost = round2(laborHours * laborRate);
 
   const materials = line.materials.map((m) => priceMaterial(m, line.qty, line.type));
   const materialCost = round2(materials.reduce((s, m) => s + m.total, 0));
@@ -212,6 +223,7 @@ export function priceLine(
     passThrough: false,
     baseHours,
     laborHours,
+    laborRate,
     laborCost,
     materials,
     materialCost,
@@ -241,7 +253,7 @@ export function priceJob(
   const hardwareMarkupCost = round2(
     lines
       .filter((l) => l.kind === "hardware" && !l.passThrough)
-      .reduce((s, l) => s + l.lineCost, 0),
+      .reduce((s, l) => s + l.lineCost, 0) * (1 + (settings.materialMarkupPct || 0)),
   );
   const hardwarePassThroughCost = round2(
     lines
@@ -282,6 +294,7 @@ export function priceJob(
     price,
     minimumApplied: rawPrice < settings.minimumJobCharge,
     marginPct: margin,
+    materialMarkupPct: settings.materialMarkupPct || 0,
     effectiveMarkupPct: jobCost > 0 ? price / jobCost - 1 : 0,
   };
 }
@@ -304,22 +317,26 @@ export function allocateClientRows(result: JobPricingResult): {
   total: number;
 } {
   const margin = result.marginPct;
+  const markup = 1 + (result.materialMarkupPct || 0);
   // Track which rows are at-cost pass-through so the rounding/min-charge
   // delta is never folded into them (it would distort their exact price).
   const meta: boolean[] = []; // atCost per row, aligned to `rows`
   const rows: ClientRow[] = result.lines.map((l) => {
     const atCost = l.kind === "hardware" && l.passThrough;
     meta.push(atCost);
+    // Each row carries its own material markup, so the rows add up to the
+    // price without the markup being folded into one of them.
+    const cost = l.kind === "hardware" ? l.lineCost * markup : l.laborCost + l.materialCost * markup;
     return {
       kind: "line" as const,
       key: l.key,
-      amount: atCost ? round2(l.lineCost) : round2(l.lineCost / (1 - margin)),
+      amount: atCost ? round2(l.lineCost) : round2(cost / (1 - margin)),
     };
   });
 
   const extrasCost = result.extraMaterials.reduce((s, m) => s + m.total, 0);
   if (extrasCost > 0) {
-    rows.push({ kind: "extras", amount: round2(extrasCost / (1 - margin)) });
+    rows.push({ kind: "extras", amount: round2((extrasCost * markup) / (1 - margin)) });
     meta.push(false);
   }
   if (result.travelFee > 0) {

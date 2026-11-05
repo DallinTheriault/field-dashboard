@@ -21,7 +21,6 @@ import {
   setEstimateStatus,
   type EstimateStatus,
 } from "../estimate-actions";
-import { createInvoiceFromEstimate } from "../invoice-actions";
 import { SharePdfButton } from "../share-pdf-button";
 
 export function EstimateActionsBar({
@@ -34,15 +33,12 @@ export function EstimateActionsBar({
   /** Owning job — deleting the estimate returns there. */
   jobId: number;
   status: string;
-  /** Existing invoice created from this estimate, if any. */
+  /** The invoice (not voided) that bills this job's estimate, if any. */
   invoiceId: number | null;
 }) {
   const router = useRouter();
   const [busy, setBusy] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
-  const [invoiceOpen, setInvoiceOpen] = useState(false);
-  const [taxPct, setTaxPct] = useState("");
-  const [dueTerms, setDueTerms] = useState("Due on receipt");
 
   async function run(name: string, fn: () => Promise<{ ok: boolean; error?: string }>) {
     setErr(null);
@@ -96,21 +92,6 @@ export function EstimateActionsBar({
     </button>
   );
 
-  async function createInvoice() {
-    setErr(null);
-    setBusy("invoice");
-    const r = await createInvoiceFromEstimate(estimateId, {
-      taxRatePct: taxPct.trim() ? parseFloat(taxPct) : 0,
-      dueTerms,
-    });
-    setBusy(null);
-    if (!r.ok) {
-      setErr(r.error);
-      return;
-    }
-    router.push(`/app/estimator/invoices/${r.data!.invoiceId}`);
-  }
-
   return (
     <div className="space-y-2">
       <div className="flex flex-wrap gap-2">
@@ -153,7 +134,8 @@ export function EstimateActionsBar({
           btn("accepted", "Accepted", <ThumbsUp size={13} />, () => mark("accepted"), "btn-primary")}
         {(status === "draft" || status === "sent") &&
           btn("lost", "Lost", <ThumbsDown size={13} />, () => mark("lost"))}
-        {status !== "lost" &&
+        {/* Accepted: the customer agreed to this price; a change is a new version. */}
+        {(status === "draft" || status === "sent") &&
           btn("reprice", "Reprice at current settings", <RefreshCcw size={13} />, reprice)}
         {status === "draft" &&
           btn("delete", "Delete", <Trash2 size={13} />, remove, "btn-danger")}
@@ -167,52 +149,18 @@ export function EstimateActionsBar({
               View invoice
             </Link>
           ) : (
-            <button
-              type="button"
-              onClick={() => setInvoiceOpen(!invoiceOpen)}
-              disabled={busy !== null}
+            // The job's invoice: the estimate's lines plus anything else the
+            // job bills (extras, hours), claimed together.
+            <Link
+              href={`/app/jobs/${jobId}/invoice`}
               className="btn-primary text-sm min-h-[42px]"
+              data-testid="estimate-create-invoice"
             >
               <Receipt size={13} />
               Create invoice
-            </button>
+            </Link>
           ))}
       </div>
-
-      {invoiceOpen && !invoiceId && (
-        <div className="panel px-3 py-3 flex flex-wrap items-end gap-2">
-          <label className="field-group">
-            <span className="field-label">Tax % (optional)</span>
-            <input
-              inputMode="decimal"
-              value={taxPct}
-              onChange={(e) => setTaxPct(e.target.value)}
-              placeholder="0"
-              className="w-24"
-            />
-          </label>
-          <label className="field-group flex-1 min-w-40">
-            <span className="field-label">Terms</span>
-            <input
-              value={dueTerms}
-              onChange={(e) => setDueTerms(e.target.value)}
-              className="w-full"
-            />
-          </label>
-          <button
-            type="button"
-            onClick={createInvoice}
-            disabled={busy !== null}
-            className="btn-primary text-sm min-h-[42px]"
-          >
-            {busy === "invoice" ? (
-              <Loader2 size={13} className="animate-spin" />
-            ) : (
-              "Create"
-            )}
-          </button>
-        </div>
-      )}
 
       {err && <div className="form-error">{err}</div>}
     </div>

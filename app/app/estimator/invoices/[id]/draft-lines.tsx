@@ -12,7 +12,7 @@ const round2 = (n: number) => Math.round((n + 1e-9) * 100) / 100;
 export type DraftRow = InvoiceRow;
 
 /** What a row claims and how the database keeps it in step; carried through edits untouched. */
-type RowMeta = Pick<InvoiceRow, "extra_expense_id" | "task_id" | "time_entry_ids" | "rate" | "kind" | "covered">;
+type RowMeta = Pick<InvoiceRow, "extra_expense_id" | "task_id" | "time_entry_ids" | "rate" | "kind" | "covered" | "estimate_id">;
 
 type Line = {
   key: number;
@@ -57,6 +57,7 @@ export function DraftLines({
         rate: r.rate,
         kind: r.kind,
         covered: r.covered,
+        estimate_id: r.estimate_id,
       },
       isNew: false,
     })),

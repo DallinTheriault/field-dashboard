@@ -10,6 +10,7 @@ import {
 import { getEstimatorBundle } from "@/lib/estimator/queries";
 import {
   buildSavePayload,
+  missingRate,
   priceEstimate,
   type RawLine,
 } from "@/lib/estimator/assemble";
@@ -146,14 +147,10 @@ export async function saveEstimate(
     }
   }
 
-  // Authoritative pricing from tenant settings.
+  // Authoritative pricing from the tenant's rates (Business › Pricing).
   const bundle = await getEstimatorBundle(supabase);
-  if (!bundle.settings) {
-    return {
-      ok: false,
-      error: "Set up pricing settings (pay, hours, margin) before estimating.",
-    };
-  }
+  const noRate = missingRate(lines, bundle);
+  if (noRate) return { ok: false, error: noRate };
   for (const l of lines) {
     if (l.serviceId && !bundle.services.some((s) => s.id === l.serviceId)) {
       return { ok: false, error: `Unknown catalog service on "${l.description}".` };
@@ -284,7 +281,7 @@ export async function repriceEstimate(estimateId: number): Promise<Result> {
     supabase
       .from("estimates")
       .select(
-        "id, job_id, billing_entity_id, notes, manual_override_price, override_reason",
+        "id, job_id, status, billing_entity_id, notes, manual_override_price, override_reason",
       )
       .eq("id", estimateId)
       .maybeSingle(),
@@ -297,6 +294,10 @@ export async function repriceEstimate(estimateId: number): Promise<Result> {
       .order("sort_order"),
   ]);
   if (!est) return { ok: false, error: "Estimate not found." };
+  // The customer agreed to an accepted estimate's price: changing it is a new version.
+  if (est.status !== "draft" && est.status !== "sent") {
+    return { ok: false, error: "Only a draft or sent estimate can be repriced. Start a new version to change an accepted one." };
+  }
 
   const rawLines: RawLine[] = (lineRows ?? []).map((r, i) =>
     r.is_hardware
@@ -336,9 +337,8 @@ export async function repriceEstimate(estimateId: number): Promise<Result> {
   );
 
   const bundle = await getEstimatorBundle(supabase);
-  if (!bundle.settings) {
-    return { ok: false, error: "Pricing settings are missing." };
-  }
+  const noRate = missingRate(rawLines, bundle);
+  if (noRate) return { ok: false, error: noRate };
   // A catalog line whose service was deleted reprices as ad-hoc using its
   // frozen hours — flag it instead of silently changing meaning.
   for (const l of rawLines) {

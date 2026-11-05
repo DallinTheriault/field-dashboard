@@ -29,12 +29,14 @@ export type BuilderPart = {
 
 /**
  * What the invoice bills, chosen here; the server rebuilds the same rows and
- * the database claims them. Itemized: work lines, logged hours as one labor
- * line, ticked receipt lines at cost. Under the minimum, one tap bills it as
- * the minimum: every line and part at $0.00 plus the minimum service charge.
+ * the database claims them. Itemized: the accepted estimate's lines ("per
+ * estimate"), work lines, logged hours as one labor line, ticked receipt lines
+ * at cost. Under the minimum, one tap bills it as the minimum: every line and
+ * part at $0.00 plus the minimum service charge.
  */
 export function InvoiceBuilder({
   jobId,
+  estimate,
   work,
   hours,
   parts,
@@ -44,8 +46,11 @@ export function InvoiceBuilder({
   defaultEntityId,
   openCount,
   unpriced,
+  billedTwice,
 }: {
   jobId: number;
+  /** The job's accepted estimate no invoice has taken yet, as it bills. */
+  estimate: { id: number; version: number; rows: InvoiceRow[] } | null;
   work: InvoiceRow[];
   hours: Array<{ id: number; hours: number; date: string }>;
   parts: BuilderPart[];
@@ -56,11 +61,15 @@ export function InvoiceBuilder({
   /** Work lines not done yet (listed on the draft to add on purpose), and lines still needing a price. */
   openCount: number;
   unpriced: string[];
+  /** Why this draft can't be made: an estimate line and a priced job line bill the same work. */
+  billedTwice: string | null;
 }) {
   const router = useRouter();
+  const estimateRows = estimate?.rows ?? [];
   const pricedWork = work.some((r) => r.amount > 0);
-  // Priced work lines already cover labor: hours start unticked so nothing is billed twice.
-  const [billHours, setBillHours] = useState(!pricedWork && hours.length > 0);
+  // An accepted estimate or priced work lines already cover labor: hours
+  // start unticked so nothing is billed twice.
+  const [billHours, setBillHours] = useState(!estimate && !pricedWork && hours.length > 0);
   const [skilled, setSkilled] = useState(false);
   const [billParts, setBillParts] = useState<Set<number>>(new Set(parts.filter((p) => p.billToCustomer).map((p) => p.id)));
   const [typed, setTyped] = useState<string[]>([]);
@@ -75,13 +84,19 @@ export function InvoiceBuilder({
   const rate = skilled ? rates.skilled : rates.general;
   const typedRows: InvoiceRow[] = typed.map((t) => ({ description: t, qtyLabel: null, amount: 0 }));
   const labor = billHours ? laborRow(hours, rate ?? 0, skilled) : null;
-  const itemized = [...work, ...typedRows, ...(labor ? [labor] : []), ...parts.filter((p) => billParts.has(p.id)).map((p) => p.row)];
+  const itemized = [
+    ...estimateRows,
+    ...work,
+    ...typedRows,
+    ...(labor ? [labor] : []),
+    ...parts.filter((p) => billParts.has(p.id)).map((p) => p.row),
+  ];
   const itemizedSubtotal = subtotalOf(itemized);
   const underMinimum = minimum > 0 && itemizedSubtotal < minimum;
   const minimumMode = asMinimum && minimum > 0;
   const preview = minimumMode
     ? [
-        ...[...work, ...typedRows].map(coveredRow),
+        ...[...estimateRows, ...work, ...typedRows].map(coveredRow),
         ...parts.filter((p) => p.billToCustomer).map((p) => partRow(p, true)),
         ...parts.filter((p) => !p.billToCustomer).map((p) => partRow(p, false)),
         minimumRow(minimum, hours.map((h) => h.id)),
@@ -104,6 +119,7 @@ export function InvoiceBuilder({
       dueTerms,
       plan: {
         mode: minimumMode ? "minimum" : "itemized",
+        estimateId: estimate?.id ?? null,
         billHours: billHours && hours.length > 0,
         skilled,
         billPartIds: [...billParts],
@@ -121,7 +137,23 @@ export function InvoiceBuilder({
     <div className="space-y-4">
       <section className="panel px-4 py-3 space-y-2" data-testid="builder-work">
         <div className="label-eyebrow">Work</div>
-        {work.length === 0 && typed.length === 0 && (
+        {estimate && (
+          <div className="space-y-1" data-testid="builder-estimate">
+            <div className="text-2xs text-bone-400">Accepted estimate v{estimate.version}</div>
+            <ul className="text-sm space-y-1">
+              {estimateRows.map((r, i) => (
+                <li key={`e${i}`} className="flex gap-3">
+                  <span className="flex-1 min-w-0 text-bone-100 break-words">
+                    {r.description}
+                    {r.qtyLabel && <span className="text-2xs text-bone-400"> {r.qtyLabel}</span>}
+                  </span>
+                  <span className="num text-bone-300">{usd.format(r.amount)}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+        {!estimate && work.length === 0 && typed.length === 0 && (
           <p className="text-2xs text-bone-400">No work lines on the job. Type what you did; each line is listed on the invoice.</p>
         )}
         <ul className="text-sm space-y-1">
@@ -149,7 +181,7 @@ export function InvoiceBuilder({
             </li>
           ))}
         </ul>
-        {work.length === 0 && (
+        {!estimate && work.length === 0 && (
           <div className="flex gap-2">
             <input
               value={draftLine}
@@ -201,10 +233,16 @@ export function InvoiceBuilder({
                   </button>
                 ))}
               </div>
-              {pricedWork && (
+              {estimate ? (
                 <p className="text-2xs text-bone-400" data-testid="hours-covered-note">
-                  Your work lines are priced, and that price covers labor, so the hours aren&apos;t billed. Tick to bill them as well.
+                  The accepted estimate covers labor, so the hours aren&apos;t billed. Tick to bill them as well.
                 </p>
+              ) : (
+                pricedWork && (
+                  <p className="text-2xs text-bone-400" data-testid="hours-covered-note">
+                    Your work lines are priced, and that price covers labor, so the hours aren&apos;t billed. Tick to bill them as well.
+                  </p>
+                )
               )}
               {!billHours && (
                 <p className="text-2xs text-bone-500">Hours left unticked count as covered by this invoice once it&apos;s sent.</p>
@@ -328,8 +366,18 @@ export function InvoiceBuilder({
             <input value={dueTerms} onChange={(e) => setDueTerms(e.target.value)} className="w-full min-h-[44px]" />
           </label>
         </div>
+        {billedTwice && (
+          <div className="form-error" data-testid="estimate-linked-twice">
+            {billedTwice}
+          </div>
+        )}
         {err && <div className="form-error">{err}</div>}
-        <button type="button" onClick={create} disabled={busy || entityId === null} className="btn-primary text-sm min-h-[44px]">
+        <button
+          type="button"
+          onClick={create}
+          disabled={busy || entityId === null || billedTwice !== null}
+          className="btn-primary text-sm min-h-[44px]"
+        >
           {busy ? <Loader2 size={13} className="animate-spin" /> : <Receipt size={13} />}
           Create draft
         </button>

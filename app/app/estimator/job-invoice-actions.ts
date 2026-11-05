@@ -10,6 +10,8 @@ import {
   type InvoiceRow,
 } from "@/lib/estimator/expenses";
 import { getEstimatorStripe, STRIPE_NOT_CONFIGURED } from "@/lib/estimator/stripe";
+import { loadEstimateOffer, type EstimateOffer } from "@/lib/invoices/estimate-offer";
+import { billedTwiceMessage } from "@/lib/invoices/estimate-rows";
 import {
   applyMinimum,
   claimsOf,
@@ -29,11 +31,12 @@ type Result<T = undefined> = { ok: true; data?: T } | { ok: false; error: string
 type Supabase = Extract<WriterAuth, { ok: true }>["supabase"];
 
 /**
- * Invoicing from the job (billing slice 3). No estimate needed: a draft is
- * the job's done, billable lines plus its uninvoiced extras. The database
- * claims every line a draft carries (invoice_create_from_job /
- * invoice_set_draft), finalizes them once the invoice goes out, and releases
- * them on void or delete — so a line can't be billed twice.
+ * Invoicing from the job (billing slice 3), the one invoice path: a draft is
+ * the job's accepted estimate (v105), its done, billable lines, its hours and
+ * its uninvoiced extras. The database claims every line and estimate a draft
+ * carries (invoice_create_from_job / invoice_set_draft), finalizes them once
+ * the invoice goes out, and releases them on void or delete — so nothing is
+ * billed twice.
  *
  * "Sending" happens on the phone's share sheet, not by email: the client
  * shares the PDF (and receipt photos), then confirms with markInvoiceSent.
@@ -138,19 +141,31 @@ async function unbilledParts(supabase: Supabase, jobId: number) {
 }
 
 /**
- * What the builder decided. Itemized: the job's ready lines, the logged hours
- * (when billed) as one labor line, and the ticked receipt lines at cost.
- * Minimum: every work line and part at $0.00 plus the minimum charge.
- * Typed lines become done work lines on the job first.
+ * What the builder decided. Itemized: the job's accepted estimate, its ready
+ * lines, the logged hours (when billed) as one labor line, and the ticked
+ * receipt lines at cost. Minimum: every estimate row, work line and part at
+ * $0.00 plus the minimum charge. Typed lines become done work lines on the
+ * job first.
  */
 export type InvoicePlan = {
   mode: "itemized" | "minimum";
+  /** The accepted estimate the builder showed (null: none). It must still be the one the job bills. */
+  estimateId: number | null;
   billHours: boolean;
   skilled: boolean;
   /** Receipt lines to bill (itemized): ticked ones. The rest count as included in the price. */
   billPartIds: number[];
   typedLines: string[];
 };
+
+/** The job's estimate offer, or the read error as a result. */
+async function estimateOffer(supabase: Supabase, jobId: number): Promise<EstimateOffer | { error: string }> {
+  try {
+    return await loadEstimateOffer(supabase, jobId);
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "Couldn't read the job's estimate. Try again." };
+  }
+}
 
 function needsPriceError(tasks: DraftTask[], invoiceId: number | null): string | null {
   const waiting = needingPrice(tasks, invoiceId);
@@ -192,6 +207,16 @@ export async function createInvoiceFromJob(
     pricing(supabase),
   ]);
   if (!job) return { ok: false, error: "Job not found." };
+  // The estimate goes on the draft as the builder showed it, or not at all:
+  // a builder opened before the estimate was accepted (or billed elsewhere)
+  // reloads instead of making a draft without it.
+  const offer = await estimateOffer(supabase, jobId);
+  if ("error" in offer) return { ok: false, error: offer.error };
+  const offeredId = offer.estimate?.id ?? null;
+  if (plan && (plan.estimateId ?? null) !== offeredId) {
+    return { ok: false, error: "The job's estimate changed since this page opened. Reload it and check the invoice again." };
+  }
+  const estimateRows = offer.estimate?.rows ?? [];
   if (plan?.mode === "minimum" && !(price.minimum > 0)) {
     return { ok: false, error: "Set your minimum job charge in Business › Pricing first." };
   }
@@ -301,6 +326,7 @@ export async function createInvoiceFromJob(
   let rows: InvoiceRow[];
   if (plan?.mode === "minimum") {
     rows = minimumRows({
+      estimate: estimateRows,
       work,
       billToCustomer: extras,
       included: parts.filter((p) => p.assignment === "job_in_bid"),
@@ -314,16 +340,27 @@ export async function createInvoiceFromJob(
       await undo();
       return { ok: false, error: `Set your ${plan.skilled ? "skilled" : "general"} hourly rate in Business › Pricing first.` };
     }
-    rows = [...work.map(taskRow), ...(labor ? [labor] : []), ...buildExtraInvoiceRows(extras, price.markup).rows];
+    rows = [
+      ...estimateRows,
+      ...work.map(taskRow),
+      ...(labor ? [labor] : []),
+      ...buildExtraInvoiceRows(extras, price.markup).rows,
+    ];
+  }
+  // An estimate line linked to a priced job line: the estimate on this draft
+  // (or already billed) and the job line would bill the same work twice.
+  const twice = offer.linkedTwice.filter((l) => offeredId !== null || rows.some((r) => r.task_id === l.taskId));
+  if (twice.length > 0) {
+    await undo();
+    return { ok: false, error: billedTwiceMessage(twice) };
   }
   const totals = invoiceTotals(rows, taxRatePct);
 
-  // The RPC claims exactly the lines, extras and hours the rows carry.
+  // The RPC claims exactly the lines, extras, hours and estimate the rows carry.
   const { data, error } = await supabase.rpc("invoice_create_from_job", {
     p: {
       client_id: clientId,
       job_id: jobId,
-      estimate_id: null,
       billing_entity_id: entityId,
       bill_to_contact_id: billToId,
       customer_name: billTo.name,
@@ -391,7 +428,7 @@ async function draftInvoice(supabase: Supabase, invoiceId: number) {
 export async function updateDraftInvoiceRows(
   invoiceId: number,
   rows: Array<
-    Pick<InvoiceRow, "task_id" | "extra_expense_id" | "time_entry_ids" | "rate" | "kind" | "covered"> & {
+    Pick<InvoiceRow, "task_id" | "extra_expense_id" | "time_entry_ids" | "rate" | "kind" | "covered" | "estimate_id"> & {
       description: string;
       qtyLabel?: string | null;
       amount: number;
@@ -422,6 +459,7 @@ export async function updateDraftInvoiceRows(
       ...(Number.isFinite(Number(r.rate)) && Number(r.rate) > 0 ? { rate: Number(r.rate) } : {}),
       ...(r.kind === "labor" || r.kind === "minimum" ? { kind: r.kind } : {}),
       ...(r.covered === true ? { covered: true } : {}),
+      ...(Number.isInteger(r.estimate_id) ? { estimate_id: Number(r.estimate_id) } : {}),
     });
   }
   return setDraft(auth.supabase, invoiceId, clean, Number(d.inv.tax_rate_pct ?? 0));
@@ -442,10 +480,10 @@ export async function applyMinimumCharge(invoiceId: number): Promise<Result> {
   return setDraft(auth.supabase, invoiceId, rows, Number(d.inv.tax_rate_pct ?? 0));
 }
 
-/** Add job lines (done or not) and extras that aren't on any invoice yet. */
+/** Add job lines (done or not), extras and the accepted estimate that aren't on any invoice yet. */
 export async function addToDraftInvoice(
   invoiceId: number,
-  add: { taskIds?: number[]; expenseIds?: number[] },
+  add: { taskIds?: number[]; expenseIds?: number[]; estimateId?: number },
 ): Promise<Result> {
   const auth = await requireWriter();
   if (!auth.ok) return { ok: false, error: auth.error };
@@ -458,7 +496,23 @@ export async function addToDraftInvoice(
   const carried = claimsOf((d.inv.line_items ?? []) as InvoiceRow[]);
   const taskIds = (add.taskIds ?? []).filter((id) => Number.isInteger(id) && !carried.taskIds.includes(id));
   const expenseIds = (add.expenseIds ?? []).filter((id) => Number.isInteger(id) && !carried.expenseIds.includes(id));
-  if (taskIds.length === 0 && expenseIds.length === 0) return { ok: true };
+  const estimateId =
+    Number.isInteger(add.estimateId) && !carried.estimateIds.includes(add.estimateId as number) ? (add.estimateId as number) : null;
+  if (taskIds.length === 0 && expenseIds.length === 0 && estimateId === null) return { ok: true };
+  let estimateRows: InvoiceRow[] = [];
+  if (estimateId !== null || taskIds.length > 0) {
+    const offer = await estimateOffer(supabase, d.inv.job_id);
+    if ("error" in offer) return { ok: false, error: offer.error };
+    if (estimateId !== null) {
+      if (offer.estimate?.id !== estimateId) {
+        return { ok: false, error: "That estimate is already on an invoice or isn't the job's accepted one. Reload the page." };
+      }
+      estimateRows = offer.estimate.rows;
+    }
+    // The estimate and a job line it's linked to would bill the same work twice.
+    const twice = offer.linkedTwice.filter((l) => estimateId !== null || taskIds.includes(l.taskId));
+    if (twice.length > 0) return { ok: false, error: billedTwiceMessage(twice) };
+  }
   const tasks = (await jobTasks(supabase, d.inv.job_id)).filter((t) => taskIds.includes(t.id));
   if (tasks.some((t) => t.invoice_id !== null || !t.billable)) {
     return { ok: false, error: "That line is already on an invoice or isn't billable." };
@@ -470,11 +524,14 @@ export async function addToDraftInvoice(
   // On a minimum invoice, what's added is covered by the minimum ($0.00).
   const current = (d.inv.line_items ?? []) as InvoiceRow[];
   const minimum = hasMinimum(current);
+  const cover = (r: InvoiceRow) => (minimum ? coveredRow(r) : r);
   const added = [
     ...tasks.sort((a, b) => a.sort_order - b.sort_order).map(taskRow),
     ...buildExtraInvoiceRows(extras, await markupPct(supabase)).rows,
-  ].map((r) => (minimum ? coveredRow(r) : r));
+  ].map(cover);
+  // The estimate leads the invoice, as on a new draft.
   const rows: InvoiceRow[] = [
+    ...estimateRows.map(cover),
     ...current.filter((r) => r.kind !== "minimum"),
     ...added,
     ...current.filter((r) => r.kind === "minimum"),

@@ -24,6 +24,7 @@ import {
   type DraftTask,
 } from "@/lib/invoices/job-draft";
 import { receiptFilename, receiptPathsFor } from "@/lib/invoices/receipts";
+import { loadEstimateOffer } from "@/lib/invoices/estimate-offer";
 import { fmtLongDate } from "@/lib/schedule";
 import {
   billToLines,
@@ -96,7 +97,7 @@ export default async function InvoiceDetailPage({
   let agreed: { version: number; total: number } | null = null;
   let attachments: Attachment[] = [];
   if (sendable && job) {
-    const [{ data: taskRows }, { data: extraRows }, { data: settings }, { data: estimates }, { data: attached }] =
+    const [{ data: taskRows }, { data: extraRows }, { data: settings }, { data: estimates }, { data: attached }, offer] =
       await Promise.all([
         supabase
           .from("tasks")
@@ -120,6 +121,7 @@ export default async function InvoiceDetailPage({
           .eq("invoiced_on", invoiceId)
           .eq("attach_receipt", true)
           .order("id").throwOnError(),
+        loadEstimateOffer(supabase, job.id),
       ]);
     const tasks: DraftTask[] = (taskRows ?? []).map((t) => ({
       id: t.id,
@@ -151,13 +153,27 @@ export default async function InvoiceDetailPage({
     ).rows;
 
     const completed = job.status === "completed";
-    available = [
-      ...readyToBill(tasks, completed).map((t) => ({ t, done: true })),
-      ...openUnbilled(tasks, completed).map((t) => ({ t, done: false })),
-    ].map(({ t, done }) => {
-      const row = taskRow(t);
-      return { kind: "task" as const, id: t.id, title: t.title, detail: row.qtyLabel, amount: row.amount, done };
-    });
+    available = offer.estimate
+      ? [
+          {
+            kind: "estimate" as const,
+            id: offer.estimate.id,
+            title: `Estimate v${offer.estimate.version}`,
+            detail: `${offer.estimate.rows.length} line${offer.estimate.rows.length === 1 ? "" : "s"}, per estimate`,
+            amount: offer.estimate.total,
+            done: true,
+          },
+        ]
+      : [];
+    available.push(
+      ...[
+        ...readyToBill(tasks, completed).map((t) => ({ t, done: true })),
+        ...openUnbilled(tasks, completed).map((t) => ({ t, done: false })),
+      ].map(({ t, done }) => {
+        const row = taskRow(t);
+        return { kind: "task" as const, id: t.id, title: t.title, detail: row.qtyLabel, amount: row.amount, done };
+      }),
+    );
     available.push(
       ...extras.map((r) => ({
         kind: "extra" as const,
