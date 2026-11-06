@@ -22,6 +22,7 @@ import {
   type EstimateStatus,
 } from "../estimate-actions";
 import { SharePdfButton } from "../share-pdf-button";
+import { SecondStepNote } from "@/components/ui/second-step-note";
 
 export function EstimateActionsBar({
   estimateId,
@@ -39,14 +40,19 @@ export function EstimateActionsBar({
   const router = useRouter();
   const [busy, setBusy] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
+  const [warning, setWarning] = useState<string | null>(null);
 
-  async function run(name: string, fn: () => Promise<{ ok: boolean; error?: string }>) {
+  async function run(name: string, fn: () => Promise<{ ok: boolean; error?: string; warning?: string }>) {
     setErr(null);
+    setWarning(null);
     setBusy(name);
     const r = await fn();
     setBusy(null);
     if (!r.ok) setErr(r.error ?? "Something went wrong.");
-    else router.refresh();
+    else {
+      if (r.warning) setWarning(r.warning);
+      router.refresh();
+    }
   }
 
   function mark(next: EstimateStatus) {
@@ -163,6 +169,7 @@ export function EstimateActionsBar({
       </div>
 
       {err && <div className="form-error">{err}</div>}
+      <SecondStepNote text={warning} />
     </div>
   );
 }

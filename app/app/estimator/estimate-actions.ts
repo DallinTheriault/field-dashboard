@@ -14,10 +14,11 @@ import {
   priceEstimate,
   type RawLine,
 } from "@/lib/estimator/assemble";
-import { failLoudly, logIfFailed } from "@/lib/actions/fail-loudly";
+import { failLoudly, secondStep } from "@/lib/actions/fail-loudly";
 
+/** warning: the main write worked, a step after it didn't ("Saved, but … didn't: …"). */
 type Result<T = undefined> =
-  | { ok: true; data?: T }
+  | { ok: true; data?: T; warning?: string }
   | { ok: false; error: string };
 
 export type SaveEstimateInput = {
@@ -186,17 +187,18 @@ export async function saveEstimate(
       return { ok: false, error: error?.message ?? "Save failed." };
     }
 
-    await syncJobAfterEstimate(
+    const warning = await syncJobAfterEstimate(
       supabase,
       jobId,
       priced.result.price,
       overridePrice,
       input.estimateId == null, // status moves only when an estimate is CREATED
+      "Saved, but the job's quoted price and status didn't update",
     );
 
     revalidatePath("/app/estimator");
     revalidatePath(`/app/jobs/${jobId}`);
-    return { ok: true, data: { estimateId: Number(estimateId), jobId } };
+    return { ok: true, data: { estimateId: Number(estimateId), jobId }, warning };
   });
 }
 
@@ -207,13 +209,17 @@ async function syncJobAfterEstimate(
   computedPrice: number,
   overridePrice: number | null,
   isNewEstimate: boolean,
-) {
+  sentence: string,
+): Promise<string | undefined> {
+  // The estimate is saved already: from here a failure is a warning, never a
+  // failed save (a retry would save a second estimate).
   const charge = overridePrice ?? computedPrice;
-  const { data: job } = await supabase
+  const { data: job, error: readErr } = await supabase
     .from("jobs")
     .select("status")
     .eq("id", jobId)
-    .maybeSingle().throwOnError();
+    .maybeSingle();
+  if (readErr) return secondStep({ error: readErr }, sentence);
   const update: Record<string, unknown> = {
     quoted_price: Math.round(charge * 100), // jobs.quoted_price is cents
   };
@@ -221,8 +227,7 @@ async function syncJobAfterEstimate(
     const next = jobStatusAfterEstimateCreated(job.status);
     if (next) update.status = next;
   }
-  // The estimate is saved; the job's quoted price and status follow, best effort.
-  logIfFailed("job after estimate", await supabase.from("jobs").update(update).eq("id", jobId));
+  return secondStep(await supabase.from("jobs").update(update).eq("id", jobId), sentence);
 }
 
 const ESTIMATE_STATUSES = ["draft", "sent", "accepted", "lost"] as const;
@@ -250,26 +255,28 @@ export async function setEstimateStatus(
       .eq("id", estimateId);
     if (error) return { ok: false, error: error.message };
 
-    // Acceptance rolls the job forward (lead/estimated → accepted, only).
-    // Best-effort like syncJobAfterEstimate: the estimate update is the
-    // primary action and never fails on the job sync.
+    // Acceptance rolls the job forward (lead/estimated → accepted, only). The
+    // estimate is updated already: a failure here is a warning on screen.
+    let warning: string | undefined;
     if (status === "accepted") {
-      const { data: est } = await supabase
+      const sentence = "Marked accepted, but the job's status didn't move to Accepted";
+      const { data: est, error: readErr } = await supabase
         .from("estimates")
         .select("job_id, jobs(status)")
         .eq("id", estimateId)
-        .maybeSingle().throwOnError();
+        .maybeSingle();
+      if (readErr) warning = secondStep({ error: readErr }, sentence);
       const job = est?.jobs as unknown as { status: string } | null;
       const next = job ? jobStatusAfterEstimateAccepted(job.status) : null;
       if (next && est) {
-        logIfFailed("job status after acceptance", await supabase.from("jobs").update({ status: next }).eq("id", est.job_id));
+        warning = secondStep(await supabase.from("jobs").update({ status: next }).eq("id", est.job_id), sentence);
       }
       if (est) revalidatePath(`/app/jobs/${est.job_id}`);
     }
 
     revalidatePath("/app/estimator");
     revalidatePath(`/app/estimator/${estimateId}`);
-    return { ok: true };
+    return { ok: true, warning };
   });
 }
 
@@ -376,10 +383,13 @@ export async function repriceEstimate(estimateId: number): Promise<Result> {
     if (error) return { ok: false, error: error.message };
 
     // Reprice touches an existing estimate — quoted_price refreshes, status doesn't.
-    await syncJobAfterEstimate(supabase, est.job_id, priced.result.price, overridePrice, false);
+    const warning = await syncJobAfterEstimate(
+      supabase, est.job_id, priced.result.price, overridePrice, false,
+      "Repriced, but the job's quoted price didn't update",
+    );
     revalidatePath("/app/estimator");
     revalidatePath(`/app/estimator/${estimateId}`);
-    return { ok: true };
+    return { ok: true, warning };
   });
 }
 

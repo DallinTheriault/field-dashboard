@@ -27,6 +27,7 @@ tester.run("field/supabase-checked", rule, {
     wrap(`const { data: { publicUrl } } = admin.storage.from("tenant-logos").getPublicUrl("a.png");`),
     wrap(`const { error } = x ? await supabase.from("a").delete().eq("id", 1) : await supabase.from("a").update({ k: 1 }).eq("id", 1); if (error) throw error;`),
     wrap(`logIfFailed("remember letterhead", await supabase.from("jobs").update({ a: 1 }).eq("id", 1));`),
+    wrap(`const w = secondStep(await supabase.from("jobs").update({ a: 1 }).eq("id", 1), "Saved, but the job didn't update"); return w;`),
   ],
   invalid: [
     { code: wrap(`await supabase.from("jobs").update({ a: 1 }).eq("id", 1);`), errors: [{ messageId: "unchecked" }] },

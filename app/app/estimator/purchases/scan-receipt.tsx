@@ -431,6 +431,11 @@ export function ConfirmScan({
     });
     setMerging(false);
     if (!res.ok) return setErr(res.error);
+    // The photos moved but the items didn't: this receipt stays, and says why.
+    if (res.warning) {
+      router.refresh();
+      return setErr(res.warning);
+    }
     router.push(`/app/estimator/purchases/${dupe.id}`);
   }
 

@@ -13,3 +13,12 @@ describe("failLoudly", () => {
     expect(failureMessage({})).toMatch(/Nothing was saved/);
   });
 });
+
+describe("secondStep", async () => {
+  const { secondStep } = await import("./fail-loudly");
+  it("says what didn't happen and why, or nothing when it worked", () => {
+    expect(secondStep({ error: null }, "Saved, but x didn't")).toBeUndefined();
+    expect(secondStep({ error: { message: "permission denied" } }, "Saved, but the job didn't update"))
+      .toBe("Saved, but the job didn't update: permission denied");
+  });
+});

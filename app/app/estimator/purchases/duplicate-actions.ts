@@ -6,7 +6,8 @@ import { requireMember } from "@/lib/estimator/auth";
 import { findDuplicate } from "@/lib/estimator/vendor-normalize";
 import { failLoudly, logIfFailed } from "@/lib/actions/fail-loudly";
 
-type Result<T = undefined> = { ok: true; data?: T } | { ok: false; error: string };
+/** warning: the main write worked, a step after it didn't ("… but … didn't: …"). */
+type Result<T = undefined> = { ok: true; data?: T; warning?: string } | { ok: false; error: string };
 
 export type DuplicateHit = {
   id: number;
@@ -179,18 +180,28 @@ export async function mergePurchaseIntoExisting(input: {
     }
 
     // ---- 2. Optional items, only into an EMPTY target ----------------------
+    // The photos are on the target already. If the items can't move, this
+    // receipt (which still has them) is kept and the screen says so; nothing
+    // is deleted, and nothing is reported as failed that already worked.
     let movedItems = 0;
+    const itemsDidntMove = (why: string) => ({
+      ok: true as const,
+      data: { targetId, movedItems: 0 },
+      warning: `Photos added to that receipt, but the items didn't move, so this one was kept: ${why}`,
+    });
     if (input.alsoMoveItems && (input.items ?? []).length > 0) {
-      const { count: targetItems } = await admin
+      const { count: targetItems, error: countErr } = await admin
         .from("expenses")
         .select("*", { count: "exact", head: true })
-        .eq("purchase_id", targetId).throwOnError();
+        .eq("purchase_id", targetId);
+      if (countErr) return itemsDidntMove(countErr.message);
       if ((targetItems ?? 0) === 0) {
-        const { data: t } = await admin
+        const { data: t, error: tErr } = await admin
           .from("purchases")
           .select("purchase_date")
           .eq("id", targetId)
-          .maybeSingle().throwOnError();
+          .maybeSingle();
+        if (tErr) return itemsDidntMove(tErr.message);
         const rows = (input.items ?? []).map((r) => ({
           client_id: clientId,
           purchase_id: targetId,
@@ -205,7 +216,8 @@ export async function mergePurchaseIntoExisting(input: {
           assignment: "unassigned",
         }));
         const { error: iErr } = await admin.from("expenses").insert(rows);
-        if (!iErr) movedItems = rows.length;
+        if (iErr) return itemsDidntMove(iErr.message);
+        movedItems = rows.length;
       }
     }
 

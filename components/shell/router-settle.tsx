@@ -17,9 +17,23 @@ import { useEffect, useState } from "react";
  */
 const NUDGES_MS = [0, 150, 500, 1500];
 
+/**
+ * Diagnostic off switch, per browser: localStorage "field:router-settle" =
+ * "off". Lets a test measure the stall with and without this on the same
+ * deploy. Nobody else sets it.
+ */
+function switchedOff(): boolean {
+  try {
+    return window.localStorage.getItem("field:router-settle") === "off";
+  } catch {
+    return false;
+  }
+}
+
 export function RouterSettle() {
   const [, setTick] = useState(0);
   useEffect(() => {
+    if (switchedOff()) return;
     const original = window.fetch;
     const timers = new Set<number>();
     const nudge = () => {

@@ -26,9 +26,10 @@ import {
   taskRow,
   type DraftTask,
 } from "@/lib/invoices/job-draft";
-import { failLoudly, logIfFailed } from "@/lib/actions/fail-loudly";
+import { failLoudly, logIfFailed, secondStep } from "@/lib/actions/fail-loudly";
 
-type Result<T = undefined> = { ok: true; data?: T } | { ok: false; error: string; code?: string };
+/** warning: the main write worked, a step after it didn't ("… but … didn't: …"). */
+type Result<T = undefined> = { ok: true; data?: T; warning?: string } | { ok: false; error: string; code?: string };
 type Supabase = Extract<WriterAuth, { ok: true }>["supabase"];
 
 /**
@@ -393,13 +394,17 @@ export async function createInvoiceFromJob(
       throw e;
     }
 
-    // The job remembers its letterhead for next time.
-    if (job.billing_entity_id !== entityId) {
-      logIfFailed("remember letterhead", await supabase.from("jobs").update({ billing_entity_id: entityId }).eq("id", jobId));
-    }
+    // The job remembers its letterhead for next time; the draft exists either way.
+    const warning =
+      job.billing_entity_id !== entityId
+        ? secondStep(
+            await supabase.from("jobs").update({ billing_entity_id: entityId }).eq("id", jobId),
+            "Draft made, but the job didn't keep this letterhead for next time",
+          )
+        : undefined;
 
     revalidatePath("/app/estimator/invoices");
-    return { ok: true, data: { invoiceId: Number(created.invoice_id), invoiceNumber: created.invoice_number } };
+    return { ok: true, data: { invoiceId: Number(created.invoice_id), invoiceNumber: created.invoice_number }, warning };
   });
 }
 
@@ -662,6 +667,7 @@ export async function createCardPayLink(
     const entity = inv.billing_entities as unknown as { name: string } | null;
 
     let finalizedId: string | null = null;
+    let warning: string | undefined;
     try {
       const customer = await stripe.customers.create({
         name: customerName,
@@ -725,10 +731,13 @@ export async function createCardPayLink(
         };
       }
       if (inv.bill_to_contact_id) {
-        logIfFailed("card link default", await supabase.from("contacts").update({ card_link_default: true }).eq("id", inv.bill_to_contact_id));
+        warning = secondStep(
+          await supabase.from("contacts").update({ card_link_default: true }).eq("id", inv.bill_to_contact_id),
+          "Card link made, but the customer's card-link choice wasn't saved for next time",
+        );
       }
       revalidatePath(`/app/estimator/invoices/${invoiceId}`);
-      return { ok: true, data: { hostedUrl } };
+      return { ok: true, data: { hostedUrl }, warning };
     } catch (e) {
       if (finalizedId) await stripe.invoices.voidInvoice(finalizedId).catch(() => undefined);
       return { ok: false, error: e instanceof Error ? `Stripe: ${e.message}` : "Stripe call failed." };
@@ -770,12 +779,16 @@ export async function markInvoiceSent(invoiceId: number, opts: { cardLink: boole
       .select("id");
     if (error) return { ok: false, error: error.message };
     if (!sent?.length) return { ok: false, error: "This invoice changed; reload it." };
+    let warning: string | undefined;
     if (inv.bill_to_contact_id) {
-      logIfFailed("card link default", await supabase.from("contacts").update({ card_link_default: opts.cardLink }).eq("id", inv.bill_to_contact_id));
+      warning = secondStep(
+        await supabase.from("contacts").update({ card_link_default: opts.cardLink }).eq("id", inv.bill_to_contact_id),
+        "Marked sent, but the customer's card-link choice wasn't saved for next time",
+      );
     }
     revalidatePath(`/app/estimator/invoices/${invoiceId}`);
     revalidatePath("/app/estimator/invoices");
-    return { ok: true };
+    return { ok: true, warning };
   });
 }
 

@@ -124,8 +124,10 @@ export default {
       if (p?.type === "AssignmentExpression" && p.right === awaitNode) return checkBound(p.left, at);
       // (await q).error
       if (p?.type === "MemberExpression" && p.object === awaitNode && !p.computed && p.property.name === "error") return true;
-      // logIfFailed("label", await q): a best-effort write, its failure logged
-      if (p?.type === "CallExpression" && p.callee.type === "Identifier" && p.callee.name === "logIfFailed" && p.arguments.includes(awaitNode)) return true;
+      // logIfFailed("label", await q) / secondStep(await q, "Saved, but …"): a
+      // write after the main one, its failure logged or said on screen
+      if (p?.type === "CallExpression" && p.callee.type === "Identifier" &&
+          (p.callee.name === "logIfFailed" || p.callee.name === "secondStep") && p.arguments.includes(awaitNode)) return true;
       context.report({ node: at, messageId: "unchecked" });
       return true;
     }

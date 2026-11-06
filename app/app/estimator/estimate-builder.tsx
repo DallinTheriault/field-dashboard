@@ -23,6 +23,7 @@ import {
   type RawLine,
 } from "@/lib/estimator/assemble";
 import { saveEstimate } from "./estimate-actions";
+import { withWarning } from "@/components/ui/second-step-note";
 
 const usd = new Intl.NumberFormat("en-US", {
   style: "currency",
@@ -315,7 +316,7 @@ export function EstimateBuilder({
       setErr(result.error);
       return;
     }
-    router.push(`/app/estimator/${result.data!.estimateId}`);
+    router.push(withWarning(`/app/estimator/${result.data!.estimateId}`, result.warning));
   }
 
   const canSave = lines.length > 0 && noRate === null;

@@ -14,6 +14,7 @@ import {
   subtotalOf,
   totalHours,
 } from "@/lib/invoices/job-draft";
+import { withWarning } from "@/components/ui/second-step-note";
 
 const usd = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" });
 
@@ -130,7 +131,7 @@ export function InvoiceBuilder({
       setBusy(false);
       return setErr(r.error);
     }
-    router.push(`/app/estimator/invoices/${r.data!.invoiceId}`);
+    router.push(withWarning(`/app/estimator/invoices/${r.data!.invoiceId}`, r.warning));
   }
 
   return (

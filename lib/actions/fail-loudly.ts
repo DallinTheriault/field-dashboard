@@ -25,4 +25,4 @@ export async function failLoudly<T>(body: () => Promise<T>): Promise<T | Failed>
   }
 }
 
-export { logIfFailed } from "@/lib/supabase/log-if-failed";
+export { logIfFailed, secondStep } from "@/lib/supabase/log-if-failed";

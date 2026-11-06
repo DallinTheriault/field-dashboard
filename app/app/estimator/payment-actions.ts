@@ -53,7 +53,11 @@ export async function recordPayment(
     // take the same money a second time.
     let warning: string | undefined;
     if (inv.stripe_invoice_id) {
-      const { data: after } = await supabase.from("invoices").select("status").eq("id", invoiceId).maybeSingle().throwOnError();
+      // The payment is recorded already: a failed check is a warning, not a failure (a retry would record it twice).
+      const { data: after, error: afterErr } = await supabase.from("invoices").select("status").eq("id", invoiceId).maybeSingle();
+      if (afterErr) {
+        warning = `Recorded, but couldn't check whether that paid the invoice in full, so Stripe's copy may still be open (${afterErr.message}). If it's paid, mark it paid in Stripe too.`;
+      }
       if (after?.status === "paid") {
         const stripe = await getEstimatorStripe();
         try {
