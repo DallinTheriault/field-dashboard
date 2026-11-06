@@ -4,8 +4,10 @@ import { revalidatePath } from "next/cache";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { requireMember } from "@/lib/estimator/auth";
 import { findDuplicate } from "@/lib/estimator/vendor-normalize";
+import { failLoudly, logIfFailed } from "@/lib/actions/fail-loudly";
 
-type Result<T = undefined> = { ok: true; data?: T } | { ok: false; error: string };
+/** warning: the main write worked, a step after it didn't ("… but … didn't: …"). */
+type Result<T = undefined> = { ok: true; data?: T; warning?: string } | { ok: false; error: string };
 
 export type DuplicateHit = {
   id: number;
@@ -29,49 +31,51 @@ export async function findDuplicatePurchase(input: {
   total: number | null;
   excludePurchaseId?: number | null;
 }): Promise<Result<DuplicateHit | null>> {
-  const auth = await requireMember();
-  if (!auth.ok) return auth;
-  const { clientId } = auth;
+  return failLoudly(async () => {
+    const auth = await requireMember();
+    if (!auth.ok) return auth;
+    const { clientId } = auth;
 
-  if (input.total === null || !Number.isFinite(input.total) || !input.purchaseDate) {
-    return { ok: true, data: null }; // all three fields required to match
-  }
+    if (input.total === null || !Number.isFinite(input.total) || !input.purchaseDate) {
+      return { ok: true, data: null }; // all three fields required to match
+    }
 
-  const admin = createAdminClient();
-  const { data: rows } = await admin
-    .from("purchases")
-    .select("id, vendor, purchase_date, total, expenses(count)")
-    .eq("client_id", clientId)
-    .eq("purchase_date", input.purchaseDate)
-    .eq("total", input.total)
-    .order("id", { ascending: false })
-    .limit(20);
+    const admin = createAdminClient();
+    const { data: rows } = await admin
+      .from("purchases")
+      .select("id, vendor, purchase_date, total, expenses(count)")
+      .eq("client_id", clientId)
+      .eq("purchase_date", input.purchaseDate)
+      .eq("total", input.total)
+      .order("id", { ascending: false })
+      .limit(20).throwOnError();
 
-  const candidates = (rows ?? []).filter(
-    (r) => r.id !== (input.excludePurchaseId ?? -1),
-  );
-  const hit = findDuplicate(
-    { vendor: input.vendor, purchase_date: input.purchaseDate, total: input.total },
-    candidates.map((r) => ({
-      id: r.id as number,
-      vendor: (r.vendor as string) ?? "",
-      purchase_date: String(r.purchase_date),
-      total: r.total === null ? null : Number(r.total),
-      itemCount:
-        ((r.expenses as unknown as Array<{ count: number }> | null)?.[0]?.count) ?? 0,
-    })),
-  );
-  if (!hit) return { ok: true, data: null };
-  return {
-    ok: true,
-    data: {
-      id: hit.id,
-      vendor: hit.vendor,
-      purchaseDate: String(hit.purchase_date).slice(0, 10),
-      total: hit.total === null ? null : Number(hit.total),
-      itemCount: hit.itemCount,
-    },
-  };
+    const candidates = (rows ?? []).filter(
+      (r) => r.id !== (input.excludePurchaseId ?? -1),
+    );
+    const hit = findDuplicate(
+      { vendor: input.vendor, purchase_date: input.purchaseDate, total: input.total },
+      candidates.map((r) => ({
+        id: r.id as number,
+        vendor: (r.vendor as string) ?? "",
+        purchase_date: String(r.purchase_date),
+        total: r.total === null ? null : Number(r.total),
+        itemCount:
+          ((r.expenses as unknown as Array<{ count: number }> | null)?.[0]?.count) ?? 0,
+      })),
+    );
+    if (!hit) return { ok: true, data: null };
+    return {
+      ok: true,
+      data: {
+        id: hit.id,
+        vendor: hit.vendor,
+        purchaseDate: String(hit.purchase_date).slice(0, 10),
+        total: hit.total === null ? null : Number(hit.total),
+        itemCount: hit.itemCount,
+      },
+    };
+  });
 }
 
 /**
@@ -102,128 +106,141 @@ export async function mergePurchaseIntoExisting(input: {
     amount: number;
   }>;
 }): Promise<Result<{ targetId: number; movedItems: number }>> {
-  const auth = await requireMember();
-  if (!auth.ok) return auth;
-  const { clientId } = auth;
+  return failLoudly(async () => {
+    const auth = await requireMember();
+    if (!auth.ok) return auth;
+    const { clientId } = auth;
 
-  const placeholderId = Number(input.placeholderId);
-  const targetId = Number(input.targetId);
-  if (placeholderId === targetId) {
-    return { ok: false, error: "Can't merge a purchase into itself." };
-  }
+    const placeholderId = Number(input.placeholderId);
+    const targetId = Number(input.targetId);
+    if (placeholderId === targetId) {
+      return { ok: false, error: "Can't merge a purchase into itself." };
+    }
 
-  const admin = createAdminClient();
-  const { data: rows } = await admin
-    .from("purchases")
-    .select("id, client_id, receipt_path, receipt_paths, scan_paths")
-    .in("id", [placeholderId, targetId]);
+    const admin = createAdminClient();
+    const { data: rows } = await admin
+      .from("purchases")
+      .select("id, client_id, receipt_path, receipt_paths, scan_paths")
+      .in("id", [placeholderId, targetId]).throwOnError();
 
-  const placeholder = (rows ?? []).find((r) => r.id === placeholderId);
-  const target = (rows ?? []).find((r) => r.id === targetId);
-  // Tenant boundary: the admin client bypasses RLS, so both rows must belong
-  // to the caller's client_id (derived from the session, never the body).
-  if (!placeholder || placeholder.client_id !== clientId) {
-    return { ok: false, error: "Receipt not found." };
-  }
-  if (!target || target.client_id !== clientId) {
-    return { ok: false, error: "The other receipt wasn't found." };
-  }
+    const placeholder = (rows ?? []).find((r) => r.id === placeholderId);
+    const target = (rows ?? []).find((r) => r.id === targetId);
+    // Tenant boundary: the admin client bypasses RLS, so both rows must belong
+    // to the caller's client_id (derived from the session, never the body).
+    if (!placeholder || placeholder.client_id !== clientId) {
+      return { ok: false, error: "Receipt not found." };
+    }
+    if (!target || target.client_id !== clientId) {
+      return { ok: false, error: "The other receipt wasn't found." };
+    }
 
-  // The placeholder must be empty — its FK to expenses is ON DELETE CASCADE,
-  // so deleting a placeholder that somehow had items would destroy them.
-  const { count: placeholderItems } = await admin
-    .from("expenses")
-    .select("*", { count: "exact", head: true })
-    .eq("purchase_id", placeholderId);
-  if ((placeholderItems ?? 0) > 0) {
-    return { ok: false, error: "That capture already has items — save it separately." };
-  }
-
-  const incoming = [
-    ...(((placeholder.receipt_paths as string[] | null) ?? []).filter(Boolean)),
-    ...(placeholder.receipt_path ? [placeholder.receipt_path as string] : []),
-  ];
-  const existing = [
-    ...(((target.receipt_paths as string[] | null) ?? []).filter(Boolean)),
-    ...(target.receipt_path ? [target.receipt_path as string] : []),
-  ];
-  const merged = [...new Set([...existing, ...incoming])];
-  // The scanner's pieces of a tall receipt travel with its photo (and stay
-  // referenced, so they're deleted with the purchase later).
-  const pieceList = (r: typeof target) => {
-    const own = ((r.scan_paths as string[] | null) ?? []).filter(Boolean);
-    return own.length > 0 ? own : null;
-  };
-  const scanPaths =
-    pieceList(target) || pieceList(placeholder)
-      ? [...new Set([...(pieceList(target) ?? existing), ...(pieceList(placeholder) ?? incoming)])]
-      : [];
-
-  // ---- 1. APPEND FIRST, and confirm it landed ----------------------------
-  const { data: appended, error: appendErr } = await admin
-    .from("purchases")
-    .update({ receipt_paths: merged, scan_paths: scanPaths })
-    .eq("id", targetId)
-    .select("id, receipt_paths")
-    .maybeSingle();
-  if (appendErr || !appended) {
-    return { ok: false, error: appendErr?.message ?? "Couldn't add the photos." };
-  }
-  const landed = ((appended.receipt_paths as string[] | null) ?? []).length;
-  if (landed < merged.length) {
-    return { ok: false, error: "Photos didn't attach — nothing was deleted." };
-  }
-
-  // ---- 2. Optional items, only into an EMPTY target ----------------------
-  let movedItems = 0;
-  if (input.alsoMoveItems && (input.items ?? []).length > 0) {
-    const { count: targetItems } = await admin
+    // The placeholder must be empty — its FK to expenses is ON DELETE CASCADE,
+    // so deleting a placeholder that somehow had items would destroy them.
+    const { count: placeholderItems } = await admin
       .from("expenses")
       .select("*", { count: "exact", head: true })
-      .eq("purchase_id", targetId);
-    if ((targetItems ?? 0) === 0) {
-      const { data: t } = await admin
-        .from("purchases")
-        .select("purchase_date")
-        .eq("id", targetId)
-        .maybeSingle();
-      const rows = (input.items ?? []).map((r) => ({
-        client_id: clientId,
-        purchase_id: targetId,
-        expense_date: String(t?.purchase_date ?? "").slice(0, 10) || null,
-        category: "Materials & supplies",
-        description: r.description.trim(),
-        sku: r.sku,
-        qty: r.qty !== null && Number.isFinite(r.qty) && r.qty > 0 ? r.qty : 1,
-        unit_price:
-          r.unitPrice !== null && Number.isFinite(r.unitPrice) ? r.unitPrice : null,
-        amount: r.amount,
-        assignment: "unassigned",
-      }));
-      const { error: iErr } = await admin.from("expenses").insert(rows);
-      if (!iErr) movedItems = rows.length;
+      .eq("purchase_id", placeholderId).throwOnError();
+    if ((placeholderItems ?? 0) > 0) {
+      return { ok: false, error: "That capture already has items — save it separately." };
     }
-  }
 
-  // ---- 3. Preserve the billing meter, then delete the placeholder --------
-  // Re-point rather than let ON DELETE SET NULL orphan it: the scan happened
-  // and stays attributable to the receipt it produced.
-  await admin
-    .from("receipt_scans")
-    .update({ purchase_id: targetId })
-    .eq("purchase_id", placeholderId);
+    const incoming = [
+      ...(((placeholder.receipt_paths as string[] | null) ?? []).filter(Boolean)),
+      ...(placeholder.receipt_path ? [placeholder.receipt_path as string] : []),
+    ];
+    const existing = [
+      ...(((target.receipt_paths as string[] | null) ?? []).filter(Boolean)),
+      ...(target.receipt_path ? [target.receipt_path as string] : []),
+    ];
+    const merged = [...new Set([...existing, ...incoming])];
+    // The scanner's pieces of a tall receipt travel with its photo (and stay
+    // referenced, so they're deleted with the purchase later).
+    const pieceList = (r: typeof target) => {
+      const own = ((r.scan_paths as string[] | null) ?? []).filter(Boolean);
+      return own.length > 0 ? own : null;
+    };
+    const scanPaths =
+      pieceList(target) || pieceList(placeholder)
+        ? [...new Set([...(pieceList(target) ?? existing), ...(pieceList(placeholder) ?? incoming)])]
+        : [];
 
-  const { error: delErr } = await admin
-    .from("purchases")
-    .delete()
-    .eq("id", placeholderId);
-  // NOTE: no storage removal here, deliberately — those objects are now
-  // referenced by the target. A failed delete leaves a visible empty row.
-  if (delErr) {
-    console.error("[merge] placeholder delete failed (photos are safe)", delErr);
-  }
+    // ---- 1. APPEND FIRST, and confirm it landed ----------------------------
+    const { data: appended, error: appendErr } = await admin
+      .from("purchases")
+      .update({ receipt_paths: merged, scan_paths: scanPaths })
+      .eq("id", targetId)
+      .select("id, receipt_paths")
+      .maybeSingle();
+    if (appendErr || !appended) {
+      return { ok: false, error: appendErr?.message ?? "Couldn't add the photos." };
+    }
+    const landed = ((appended.receipt_paths as string[] | null) ?? []).length;
+    if (landed < merged.length) {
+      return { ok: false, error: "Photos didn't attach — nothing was deleted." };
+    }
 
-  revalidatePath("/app/estimator/purchases");
-  revalidatePath(`/app/estimator/purchases/${targetId}`);
-  return { ok: true, data: { targetId, movedItems } };
+    // ---- 2. Optional items, only into an EMPTY target ----------------------
+    // The photos are on the target already. If the items can't move, this
+    // receipt (which still has them) is kept and the screen says so; nothing
+    // is deleted, and nothing is reported as failed that already worked.
+    let movedItems = 0;
+    const itemsDidntMove = (why: string) => ({
+      ok: true as const,
+      data: { targetId, movedItems: 0 },
+      warning: `Photos added to that receipt, but the items didn't move, so this one was kept: ${why}`,
+    });
+    if (input.alsoMoveItems && (input.items ?? []).length > 0) {
+      const { count: targetItems, error: countErr } = await admin
+        .from("expenses")
+        .select("*", { count: "exact", head: true })
+        .eq("purchase_id", targetId);
+      if (countErr) return itemsDidntMove(countErr.message);
+      if ((targetItems ?? 0) === 0) {
+        const { data: t, error: tErr } = await admin
+          .from("purchases")
+          .select("purchase_date")
+          .eq("id", targetId)
+          .maybeSingle();
+        if (tErr) return itemsDidntMove(tErr.message);
+        const rows = (input.items ?? []).map((r) => ({
+          client_id: clientId,
+          purchase_id: targetId,
+          expense_date: String(t?.purchase_date ?? "").slice(0, 10) || null,
+          category: "Materials & supplies",
+          description: r.description.trim(),
+          sku: r.sku,
+          qty: r.qty !== null && Number.isFinite(r.qty) && r.qty > 0 ? r.qty : 1,
+          unit_price:
+            r.unitPrice !== null && Number.isFinite(r.unitPrice) ? r.unitPrice : null,
+          amount: r.amount,
+          assignment: "unassigned",
+        }));
+        const { error: iErr } = await admin.from("expenses").insert(rows);
+        if (iErr) return itemsDidntMove(iErr.message);
+        movedItems = rows.length;
+      }
+    }
+
+    // ---- 3. Preserve the billing meter, then delete the placeholder --------
+    // Re-point rather than let ON DELETE SET NULL orphan it: the scan happened
+    // and stays attributable to the receipt it produced.
+    logIfFailed(
+      "re-point receipt scans",
+      await admin.from("receipt_scans").update({ purchase_id: targetId }).eq("purchase_id", placeholderId),
+    );
+
+    const { error: delErr } = await admin
+      .from("purchases")
+      .delete()
+      .eq("id", placeholderId);
+    // NOTE: no storage removal here, deliberately — those objects are now
+    // referenced by the target. A failed delete leaves a visible empty row.
+    if (delErr) {
+      console.error("[merge] placeholder delete failed (photos are safe)", delErr);
+    }
+
+    revalidatePath("/app/estimator/purchases");
+    revalidatePath(`/app/estimator/purchases/${targetId}`);
+    return { ok: true, data: { targetId, movedItems } };
+  });
 }

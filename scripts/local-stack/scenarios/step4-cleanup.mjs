@@ -30,8 +30,6 @@ await owner.post("payments", { client_id: 8, invoice_id: sentInv, received_on: "
 const draftInv = await invoiceFor(draftJob.id, 5000);
 const draftNumber = (await adminGet(`invoices?id=eq.${draftInv}&select=invoice_number`))[0].invoice_number;
 const contact = (await owner.post("contacts", { client_id: 8, name: "Phoebe Phone", phone: "+18015550123" })).body[0];
-await adminCall("POST", "notifications", { client_id: 8, kind: "sms_received", title: "Old text", body: "from the receptionist" });
-await adminCall("POST", "notifications", { client_id: 8, kind: "invoice_paid", title: "Invoice CAS paid", body: "$1", link_url: `/app/estimator/invoices/${sentInv}` });
 
 const browser = await launch();
 const page = await login(browser, "owner@cascade.test", PHONE);
@@ -100,9 +98,14 @@ const settings = await page.locator("main").innerText();
 check("Settings has no receptionist sections", !/Assistant voice|Voice assistant prompt|SMS reply templates|Twilio|Pricing block|Escalation phone/i.test(settings), settings.slice(0, 200));
 await page.goto(`${APP}/app`);
 await page.waitForLoadState("networkidle");
-await page.getByRole("button", { name: /notifications/i }).first().click();
-const bell = await page.locator("body").innerText();
-check("the bell shows invoice notifications, not the receptionist's", bell.includes("Invoice CAS paid") && !bell.includes("Old text"));
+// Cleanup batch 1: the bell (and its 30-second poll) is gone; nothing reads notifications.
+const notificationReads = [];
+page.on("request", (r) => { if (r.url().includes("/rest/v1/notifications")) notificationReads.push(r.url()); });
+await page.reload();
+await page.waitForLoadState("networkidle");
+await page.waitForTimeout(1500);
+check("no notification bell, and no notifications polling",
+  (await page.getByRole("button", { name: /notifications/i }).count()) === 0 && notificationReads.length === 0, notificationReads.join(" ").slice(0, 120));
 await browser.close();
 
 // --- Admin: flags save, receptionist fields untouched ------------------------------------------------------

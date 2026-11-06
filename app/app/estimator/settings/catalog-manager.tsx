@@ -194,7 +194,9 @@ export function CatalogManager({ clientId }: { clientId: number }) {
     if (!confirm(`Delete "${s.name}"? Jobs, estimates and invoices that use it keep their own copy.`)) return;
     const { error } = await supabase.from("service_catalog").delete().eq("id", s.id);
     if (error) {
-      await supabase.from("service_catalog").update({ active: false }).eq("id", s.id);
+      // In use: hide it from new work instead.
+      const { error: offErr } = await supabase.from("service_catalog").update({ active: false }).eq("id", s.id);
+      if (offErr) setErr(`Couldn't delete "${s.name}": ${offErr.message}`);
     }
     await load();
     setEditing(null);
@@ -224,7 +226,8 @@ export function CatalogManager({ clientId }: { clientId: number }) {
   }
 
   async function removeLink(id: number) {
-    await supabase.from("service_materials").delete().eq("id", id);
+    const { error } = await supabase.from("service_materials").delete().eq("id", id);
+    if (error) setErr(`Couldn't remove the material: ${error.message}`);
     load();
   }
 

@@ -1,25 +1,27 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { useRouter } from "next/navigation";
 import { Loader2, X } from "lucide-react";
 import { markPaidOutside, undoPaidOutside } from "./billing-actions";
 
 /** Owner's dialog: mark an old job paid outside Field, with an optional note. */
 export function PaidOutsideDialog({ jobId, onClose }: { jobId: number; onClose: () => void }) {
-  const router = useRouter();
   const [note, setNote] = useState("");
   const [err, setErr] = useState<string | null>(null);
-  const [pending, start] = useTransition();
+  const [pending, setPending] = useState(false);
 
-  function submit() {
+  // Not in a transition of our own: closing the dialog unmounts this
+  // component, and unmounting the owner of a transition the router's update
+  // is tied to left the old page on screen (still "Ready to invoice") until
+  // something else re-rendered it. The action's revalidatePath brings the
+  // updated page back with its answer.
+  async function submit() {
     setErr(null);
-    start(async () => {
-      const r = await markPaidOutside(jobId, note);
-      if (!r.ok) return setErr(r.error);
-      onClose();
-      router.refresh();
-    });
+    setPending(true);
+    const r = await markPaidOutside(jobId, note);
+    setPending(false);
+    if (!r.ok) return setErr(r.error);
+    onClose();
   }
 
   return (
@@ -78,7 +80,6 @@ export function PaidOutsideNotice({
   note: string | null;
   canUndo: boolean;
 }) {
-  const router = useRouter();
   const [err, setErr] = useState<string | null>(null);
   const [pending, start] = useTransition();
 
@@ -97,7 +98,6 @@ export function PaidOutsideNotice({
               setErr(null);
               const r = await undoPaidOutside(jobId);
               if (!r.ok) return setErr(r.error);
-              router.refresh();
             })
           }
           className="btn-ghost text-xs min-h-[44px] underline"

@@ -250,4 +250,27 @@ await mp.getByRole("button", { name: "Job options" }).click();
 check("…and no Mark paid outside Field or Undo", (await mp.locator("[data-billing]").count()) === 0 &&
   (await mp.getByRole("menuitem", { name: /paid outside Field/ }).count()) === 0 &&
   (await mp.getByTestId("paid-outside").getByRole("button", { name: "Undo" }).count()) === 0);
+
+// --- The page updates on its own after a save ------------------------------------------------------------
+// The app router sometimes holds an action's updated page until something
+// else re-renders (prod: 1 run in 8; here about half). The notification bell's
+// 30-second poll used to be that; with it gone, RouterSettle is. Eight fresh
+// jobs, each marked paid and expected to show Paid within 5 s, with no tap.
+const late = [];
+for (let i = 0; i < 8; i++) {
+  const sj = await job(`Settle ${i}`, "completed");
+  await line(sj.id, "Rail");
+  const sp = await login(browser, "owner@cascade.test", PHONE);
+  await sp.goto(`${APP}/app/jobs/${sj.id}`);
+  await sp.waitForLoadState("networkidle");
+  await sp.getByRole("button", { name: "Job options" }).click();
+  await sp.getByRole("menuitem", { name: "Mark paid outside Field" }).click();
+  const t0 = Date.now();
+  await sp.getByRole("dialog", { name: "Mark paid outside Field" }).getByRole("button", { name: "Mark paid" }).click();
+  const ms = await sp.locator('[data-billing="paid"]').first().waitFor({ timeout: 5_000 }).then(() => Date.now() - t0).catch(() => null);
+  if (ms === null) late.push(i);
+  await sp.context().close();
+}
+check("after Mark paid the page shows Paid on its own, every time (8 of 8 within 5 s, no tap)", late.length === 0,
+  late.length ? `stalled on ${late.length}` : "");
 await browser.close();

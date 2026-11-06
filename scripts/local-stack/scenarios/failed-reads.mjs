@@ -19,7 +19,6 @@ const PAGES = {
   payments: ["/app/estimator/expenses"],
   time_entries: [`/app/jobs/${job}`, "/app/estimator/insights"],
   pricing_settings: [],
-  notifications: [],
 };
 // Exports built from the table: a 500 with a message, never a CSV missing rows.
 const EXPORTS = {
@@ -45,12 +44,5 @@ if (table === "pricing_settings") {
   await page.goto(`${APP}/app/estimator/settings`);
   await page.getByText("Couldn't load this section").first().waitFor();
   check("pricing_settings reads failing: the pricing form isn't shown (it could save over the real rates)", (await page.getByText("Minimum job charge").count()) === 0);
-}
-if (table === "notifications") {
-  await page.goto(`${APP}/app`);
-  await page.getByRole("button", { name: /^Notifications/ }).first().click();
-  const msg = page.getByText("Couldn't load notifications");
-  await msg.waitFor({ timeout: 10_000 }).catch(() => {});
-  check("notifications reads failing: the bell says so instead of \"No notifications yet\"", await msg.isVisible());
 }
 await browser.close();

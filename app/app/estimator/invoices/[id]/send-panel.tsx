@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Check, Loader2, Send, Share2 } from "lucide-react";
 import { createCardPayLink, markInvoiceSent } from "../../job-invoice-actions";
+import { SecondStepNote, withWarning } from "@/components/ui/second-step-note";
 
 const usd = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" });
 
@@ -48,6 +49,7 @@ export function SendPanel({
   const [busy, setBusy] = useState<"share" | "sent" | null>(null);
   const [shared, setShared] = useState<"sheet" | "download" | null>(null);
   const [err, setErr] = useState<string | null>(null);
+  const [warning, setWarning] = useState<string | null>(null);
 
   const message = (url: string | null) =>
     `${entityName} invoice ${invoiceNumber}: ${usd.format(totalCents / 100)}.` +
@@ -70,6 +72,7 @@ export function SendPanel({
         }
         url = r.data?.hostedUrl ?? null;
         setHostedUrl(url);
+        if (r.warning) setWarning(r.warning);
       }
 
       const fetchFile = async (src: string, name: string, type?: string) => {
@@ -117,7 +120,9 @@ export function SendPanel({
     const r = await markInvoiceSent(invoiceId, { cardLink });
     setBusy(null);
     if (!r.ok) return setErr(r.error);
-    router.refresh();
+    // Sent: this panel goes with the draft, so the page carries any warning.
+    if (r.warning) router.push(withWarning(`/app/estimator/invoices/${invoiceId}`, r.warning));
+    else router.refresh();
   }
 
   return (
@@ -186,6 +191,7 @@ export function SendPanel({
         </div>
       )}
       {err && <div className="form-error">{err}</div>}
+      <SecondStepNote text={warning} />
       {!shared && !blocked && (
         <p className="text-2xs text-bone-500 flex items-center gap-1">
           <Check size={10} /> It stays a draft until you mark it sent.

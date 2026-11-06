@@ -21,11 +21,13 @@ export async function requireWriter(): Promise<WriterAuth> {
   const user = await getAuthUser();
   if (!user) return { ok: false, error: "Not signed in." };
 
-  const { data: memberships } = await supabase
+  const { data: memberships, error } = await supabase
     .from("client_users")
     .select("client_id, role")
     .eq("auth_user_id", user.id)
     .in("role", ["owner", "manager"]);
+  // A failed read isn't "no permission": say what happened.
+  if (error) return { ok: false, error: `Couldn't check your access: ${error.message}` };
   const clientId = memberships?.[0]?.client_id as number | undefined;
   if (!clientId) {
     return { ok: false, error: "You don't have permission to do this." };
@@ -55,11 +57,12 @@ export async function requireMember(): Promise<MemberAuth> {
   const user = await getAuthUser();
   if (!user) return { ok: false, error: "Not signed in." };
 
-  const { data: memberships } = await supabase
+  const { data: memberships, error } = await supabase
     .from("client_users")
     .select("client_id, role")
     .eq("auth_user_id", user.id)
     .order("created_at", { ascending: true });
+  if (error) return { ok: false, error: `Couldn't check your access: ${error.message}` };
   const m = memberships?.[0];
   if (!m || !isValidRole(m.role)) {
     return { ok: false, error: "You're not on a team." };

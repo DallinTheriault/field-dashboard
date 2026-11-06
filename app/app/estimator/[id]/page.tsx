@@ -7,6 +7,7 @@ import { canViewSettings } from "@/lib/permissions/roles";
 import { EstimateStatusChip } from "../estimate-status";
 import { EstimateActionsBar } from "./estimate-actions-bar";
 import { getTenantTimezone } from "@/lib/dates";
+import { SecondStepNote } from "@/components/ui/second-step-note";
 
 const usd = new Intl.NumberFormat("en-US", {
   style: "currency",
@@ -31,9 +32,13 @@ function fmtDate(d: string | null, tz: string): string {
  */
 export default async function EstimateDetailPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ id: string }>;
+  /** warn: a save's second step that didn't happen ("Saved, but … didn't: …"). */
+  searchParams: Promise<{ warn?: string }>;
 }) {
+  const { warn } = await searchParams;
   const tz = await getTenantTimezone();
   const session = await getCurrentUserRole();
   if (!session) redirect("/login");
@@ -124,6 +129,7 @@ export default async function EstimateDetailPage({
 
   return (
     <div className="max-w-2xl mx-auto px-4 py-6 space-y-5">
+      <SecondStepNote text={warn} />
       <Link
         href={`/app/jobs/${est.job_id}`}
         className="inline-flex items-center gap-1.5 text-2xs text-bone-400 hover:text-bone-100"

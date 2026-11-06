@@ -27,7 +27,7 @@ export async function GET(
     .from("task_photos")
     .select("id, storage_path")
     .eq("id", photoId)
-    .maybeSingle();
+    .maybeSingle().throwOnError();
   if (!photo) return NextResponse.json({ error: "Photo not found" }, { status: 404 });
 
   const admin = createAdminClient();

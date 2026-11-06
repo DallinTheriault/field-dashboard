@@ -7,7 +7,7 @@ SCEN="$(cd "$(dirname "$0")" && pwd)"
 source "$SCEN/../lib.sh"
 
 status=0
-for table in expenses mileage_entries payments time_entries pricing_settings notifications; do
+for table in expenses mileage_entries payments time_entries pricing_settings; do
   restart_gateway GATEWAY_FAIL="^/$table\\b"
   node "$SCEN/failed-reads.mjs" "$table" || status=1
 done

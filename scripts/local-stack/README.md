@@ -40,13 +40,24 @@ transaction, and records them in `_local_stack.migrations`. To test a migration
 against existing data, build without it (`APPLY_THROUGH=92 up.sh --fresh`), create data,
 then run `migrate.sh`.
 
-**Every batch** runs `scenarios/query-errors.sh` before it's reported, with the
-app built for production (`next build && next start`) on :3000: it opens every
-page and CSV export as owner and member and fails on any Supabase request that
-errors, so a query broken by a schema change can't pass as an empty page. It also
-runs `node scenarios/embed-check.mjs`: every literal `.from().select()` with an embed
-in `app/` and `lib/`, once, as the owner, so an embed a schema change made ambiguous
-fails even on a page no scenario opens.
+**Every batch** runs, with the app built for production (`next build && next start`)
+on :3000:
+- `scenarios/query-errors.sh`: opens every page and CSV export as owner and member
+  (making a job, contact, estimate, invoice and receipt when the stack has none) and
+  fails on any Supabase request that errors, so a query broken by a schema change
+  can't pass as an empty page. It also holds every select the pages send to the
+  embed rule below.
+- `node scenarios/embed-check.mjs`: every `.from().select()` with an embed in
+  `app/`, `lib/` and `components/` (string constants filled in), once, as the owner;
+  an embed that errors fails, and so does one that crosses a composite same-tenant
+  foreign key (`expenses_invoice_same_tenant` and the like) without naming it
+  (`invoices!expenses_invoice_same_tenant(…)`), even on a page no scenario opens.
+- `node scenarios/rows-appear.mjs`: seeds one of everything and requires Expenses,
+  Jobs, the job, Invoices and an invoice, its PDF, the expenses CSV, Money, Mileage
+  and Home to show it: a row that should be there and isn't fails.
+- `npx eslint .`: `field/supabase-checked` rejects a Supabase call with no error
+  check (`next build` runs it too, so a deploy can't skip it).
+
 `scenarios/failed-reads.sh` is the companion for changes to error handling: it
 fails one table's reads at a time and requires an error, never an empty page.
 

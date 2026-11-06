@@ -57,7 +57,7 @@ export default async function InvoicesPage({
     supabase
       .from("invoices")
       .select(
-        "id, invoice_number, status, total_cents, customer_name, customer_company, created_at, sent_at, paid_at, stripe_invoice_id, jobs(address), payments(amount_cents), bill_to:contacts!invoices_bill_to_same_tenant(name, company)",
+        "id, invoice_number, status, total_cents, customer_name, customer_company, created_at, sent_at, paid_at, stripe_invoice_id, jobs(address), payments!payments_invoice_same_tenant(amount_cents), bill_to:contacts!invoices_bill_to_same_tenant(name, company)",
       )
       .not("invoice_number", "is", null)
       .order("created_at", { ascending: false })

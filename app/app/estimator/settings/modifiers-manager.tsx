@@ -86,7 +86,8 @@ export function ModifiersManager({ clientId }: { clientId: number }) {
       return;
     const { error } = await supabase.from("price_modifiers").delete().eq("id", m.id);
     if (error) {
-      await supabase.from("price_modifiers").update({ active: false }).eq("id", m.id);
+      const { error: offErr } = await supabase.from("price_modifiers").update({ active: false }).eq("id", m.id);
+      if (offErr) setErr(`Couldn't delete "${m.name}": ${offErr.message}`);
     }
     load();
   }

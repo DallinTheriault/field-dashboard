@@ -404,7 +404,6 @@ export function CalendarClient({
       window.removeEventListener("keydown", handler);
       document.body.style.overflow = original;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [anySheet, busy]);
 
   function openEvent(job: CalJob) {
@@ -443,23 +442,31 @@ export function CalendarClient({
     let status = job.status;
     const supabase = await browserSupabase();
     if (job.status === "scheduled") {
-      const { data: logRows } = await supabase
+      const { data: logRows, error: logErr } = await supabase
         .from("job_status_log")
         .select("old_status")
         .eq("job_id", job.id)
         .eq("new_status", "scheduled")
         .order("changed_at", { ascending: false })
         .limit(1);
+      if (logErr) {
+        setBusy(false);
+        return setErr(`Couldn't unschedule: ${logErr.message}`);
+      }
       const prior = logRows?.[0]?.old_status ?? null;
       if (prior && prior !== "scheduled") {
         status = prior;
       } else {
         // No log row — the job was created directly as scheduled (calendar
         // quick-create) or predates the log. Infer from its estimates.
-        const { data } = await supabase
+        const { data, error: estErr } = await supabase
           .from("estimates")
           .select("id, status")
           .eq("job_id", job.id);
+        if (estErr) {
+          setBusy(false);
+          return setErr(`Couldn't unschedule: ${estErr.message}`);
+        }
         const ests = data ?? [];
         status = ests.some((e) => e.status === "accepted")
           ? "accepted"

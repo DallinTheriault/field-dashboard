@@ -166,7 +166,15 @@ await mileagePage();
 const baseA = page.getByTestId("bases").locator(`li[data-base="${baseRows[0].id}"]`);
 await baseA.getByRole("button", { name: "Edit base" }).click();
 await page.getByTestId("bases").getByLabel("Base address").fill(BASE_A2);
+// Slow map services: the save must not wait on them (cleanup batch 1); the
+// trips it covers are worked out after, in the background.
+await geo.script({ delay: { census: 6000, valhalla: 6000 } });
+const tBase = Date.now();
 await page.getByTestId("bases").getByRole("button", { name: "Save base" }).click();
+await page.getByTestId("bases").getByLabel("Base address").waitFor({ state: "detached" });
+const baseSavedAfter = Date.now() - tBase;
+await geo.script({ delay: {} });
+check("saving a base doesn't wait on the map services", baseSavedAfter < 3000, `${baseSavedAfter} ms`);
 const sept2 = await until(async () => (await dayTrips("2026-09-26")).find((x) => x.start_address === BASE_A2));
 const july2 = (await dayTrips("2026-07-08"))[0];
 const manual2 = (await adminGet(`mileage_entries?id=eq.${manual.id}&select=*`))[0];
@@ -182,7 +190,15 @@ await hours(j2.id, "2026-10-01", 1);
 await mileagePage();
 check("a removed automatic trip isn't made again, even with more hours that day", (await dayTrips("2026-10-01"))[0]?.kind === "removed");
 await page.locator("summary", { hasText: /removed trip/ }).click();
-await page.locator('li[data-date="2026-10-01"]').getByRole("button", { name: "Put back automatic trip" }).click();
+await geo.script({ delay: { census: 6000, valhalla: 6000 } });
+const putBack = page.locator('li[data-date="2026-10-01"]').getByRole("button", { name: "Put back automatic trip" });
+const tBack = Date.now();
+await putBack.click();
+await until(async () => (await dayTrips("2026-10-01"))[0]?.kind === "auto", 10_000);
+await putBack.waitFor({ state: "detached", timeout: 10_000 }).catch(() => {});
+const backAfter = Date.now() - tBack;
+await geo.script({ delay: {} });
+check("putting a trip back doesn't wait on the map services", backAfter < 3000, `${backAfter} ms`);
 check("Put back makes it automatic again", !!(await until(async () => (await dayTrips("2026-10-01"))[0]?.kind === "auto" && (await dayTrips("2026-10-01"))[0]?.miles !== null)));
 
 // --- When the routing service fails: no backup; the day says so and takes typed miles -------------------
@@ -250,10 +266,15 @@ check("completing a job with no hours asks \"Which days were you there?\", every
   (await dialog.count()) === 1 && (await dialog.getByLabel("2026-10-16").isChecked()) && (await dialog.getByLabel("2026-10-17").isChecked()));
 check("…at once, while the miles box is still waiting on the map services", askedAfter < 3000 && (await page.getByTestId("property-miles").count()) === 0,
   `${askedAfter} ms`);
-await geo.script({ delay: {} });
+// Still slow: saving the days doesn't wait on them either (it ran the trip
+// lookups for up to 10 s); the trips are worked out in the background.
 await dialog.getByLabel("2026-10-17").uncheck();
+const tDays = Date.now();
 await dialog.getByRole("button", { name: "Save days" }).click();
 await dialog.waitFor({ state: "detached" });
+const daysSavedAfter = Date.now() - tDays;
+await geo.script({ delay: {} });
+check("…saving the days doesn't wait on the map services", daysSavedAfter < 3000, `${daysSavedAfter} ms`);
 const days7 = await adminGet(`job_site_days?job_id=eq.${j7.id}&select=day`);
 check("…untick the days you weren't there: the rest become trips", days7.map((d) => d.day).join() === "2026-10-16" &&
   !!(await until(async () => (await dayTrips("2026-10-16"))[0]?.stops?.[0]?.job_id === j7.id)) && (await dayTrips("2026-10-17")).length === 0);

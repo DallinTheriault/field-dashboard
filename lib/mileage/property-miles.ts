@@ -3,6 +3,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { drivingMiles, lookupAddress, pointKey, type Point } from "./geo";
 import { addressKey, baseOn, mapsUrl } from "./plan";
 import { sharedTurn } from "./throttle";
+import { logIfFailed } from "@/lib/supabase/log-if-failed";
 
 export type PropertyMiles =
   | { status: "ok"; miles: number; base: string; url: string }
@@ -23,7 +24,7 @@ export async function milesFromBase(
   deadline: number,
 ): Promise<PropertyMiles> {
   const turn = sharedTurn(admin, deadline);
-  const { data: bases } = await admin.from("mileage_bases").select("id, address, effective_from").eq("client_id", clientId);
+  const { data: bases } = await admin.from("mileage_bases").select("id, address, effective_from").eq("client_id", clientId).throwOnError();
   const base = baseOn(
     date,
     (bases ?? []).map((b) => ({ id: Number(b.id), address: String(b.address), effectiveFrom: String(b.effective_from).slice(0, 10) })),
@@ -38,11 +39,11 @@ export async function milesFromBase(
       .select("status, lat, lon")
       .eq("client_id", clientId)
       .eq("address_key", key)
-      .maybeSingle();
+      .maybeSingle().throwOnError();
     if (hit) return hit.status === "ok" ? { lat: Number(hit.lat), lon: Number(hit.lon) } : "not_found";
     const g = await lookupAddress(addr, turn);
     if (g.status === "error" || g.status === "later") return "error";
-    await admin.from("geocode_cache").upsert(
+    logIfFailed("geocode cache", await admin.from("geocode_cache").upsert(
       {
         client_id: clientId,
         address_key: key,
@@ -54,7 +55,7 @@ export async function milesFromBase(
         source: g.status === "ok" ? g.source : null,
       },
       { onConflict: "client_id,address_key" },
-    );
+    ));
     return g.status === "ok" ? g.point : "not_found";
   };
 
@@ -72,14 +73,17 @@ export async function milesFromBase(
     .eq("client_id", clientId)
     // Points are "lat,lon": quoted, or the comma splits the filter (PGRST100).
     .or(`and(from_point.eq."${from}",to_point.eq."${to}"),and(from_point.eq."${to}",to_point.eq."${from}")`)
-    .limit(1);
+    .limit(1).throwOnError();
   if (cached?.[0]) return { status: "ok", miles: Math.round(Number(cached[0].miles) * 10) / 10, base: base.address, url };
   const r = await drivingMiles(a, b, turn);
   if (typeof r === "string") return { status: "failed", base: base.address, url };
-  await admin
-    .from("route_cache")
-    .upsert({ client_id: clientId, from_point: from, to_point: to, miles: Math.round(r.miles * 100) / 100, source: r.source }, {
-      onConflict: "client_id,from_point,to_point",
-    });
+  logIfFailed(
+    "route cache",
+    await admin
+      .from("route_cache")
+      .upsert({ client_id: clientId, from_point: from, to_point: to, miles: Math.round(r.miles * 100) / 100, source: r.source }, {
+        onConflict: "client_id,from_point,to_point",
+      }),
+  );
   return { status: "ok", miles: Math.round(r.miles * 10) / 10, base: base.address, url };
 }

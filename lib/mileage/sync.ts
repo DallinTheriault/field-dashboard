@@ -4,6 +4,7 @@ import { jobContactName, type JobLocationRow } from "@/lib/jobs/address";
 import { drivingMiles, lookupAddress, pointKey, type Point } from "./geo";
 import { sharedTurn } from "./throttle";
 import { addressKey, planDays, sumMiles, type Base, type DayPlan, type JobInfo, type SiteVisit } from "./plan";
+import { logIfFailed } from "@/lib/supabase/log-if-failed";
 
 /**
  * Keeps the automatic trips in step with the days on site: one loop per day,
@@ -48,14 +49,14 @@ export async function syncDayTrips(
   const online = () => opts.network && Date.now() < deadline;
 
   const [{ data: hours }, { data: manualDays }, { data: baseRows }, { data: existing }] = await Promise.all([
-    admin.from("time_entries").select("job_id, entry_date").eq("client_id", clientId),
-    admin.from("job_site_days").select("job_id, day").eq("client_id", clientId),
-    admin.from("mileage_bases").select("id, address, effective_from").eq("client_id", clientId),
+    admin.from("time_entries").select("job_id, entry_date").eq("client_id", clientId).throwOnError(),
+    admin.from("job_site_days").select("job_id, day").eq("client_id", clientId).throwOnError(),
+    admin.from("mileage_bases").select("id, address, effective_from").eq("client_id", clientId).throwOnError(),
     admin
       .from("mileage_entries")
       .select("id, trip_date, kind, base_id, start_address, stops, destination, purpose, miles, miles_status, miles_note, job_id")
       .eq("client_id", clientId)
-      .in("kind", ["auto", "edited", "removed"]),
+      .in("kind", ["auto", "edited", "removed"]).throwOnError(),
   ]);
 
   const visits: SiteVisit[] = [
@@ -68,7 +69,7 @@ export async function syncDayTrips(
         .from("jobs")
         .select("id, client_id, name, job_number, address, property_id, start_datetime, all_day, property:properties(address, unit), contact:contacts!jobs_contact_id_fkey(name)")
         .in("id", jobIds)
-        .eq("client_id", clientId)
+        .eq("client_id", clientId).throwOnError()
     : { data: [] };
 
   const jobs = new Map<number, JobInfo>();
@@ -105,7 +106,7 @@ export async function syncDayTrips(
       .from("geocode_cache")
       .select("address_key, status, lat, lon")
       .eq("client_id", clientId)
-      .in("address_key", [...addresses.keys()]);
+      .in("address_key", [...addresses.keys()]).throwOnError();
     for (const g of (cached ?? []) as GeoRow[]) geo.set(g.address_key, g);
   }
   const turn = sharedTurn(admin, deadline);
@@ -129,13 +130,13 @@ export async function syncDayTrips(
         matched_address: g.status === "ok" ? g.matched : null,
         source: g.status === "ok" ? g.source : null,
       };
-      await admin.from("geocode_cache").upsert(row, { onConflict: "client_id,address_key" });
+      logIfFailed("geocode cache", await admin.from("geocode_cache").upsert(row, { onConflict: "client_id,address_key" }));
       geo.set(key, row as GeoRow);
     }
   }
 
   const routeCache = new Map<string, number>();
-  const { data: routes } = await admin.from("route_cache").select("from_point, to_point, miles").eq("client_id", clientId);
+  const { data: routes } = await admin.from("route_cache").select("from_point, to_point, miles").eq("client_id", clientId).throwOnError();
   for (const r of routes ?? []) routeCache.set(`${r.from_point}|${r.to_point}`, Number(r.miles));
 
   async function leg(a: Point, b: Point): Promise<number | "pending" | "failed"> {
@@ -150,11 +151,14 @@ export async function syncDayTrips(
     result.lookups++;
     if (r === "failed") return "failed";
     routeCache.set(`${from}|${to}`, r.miles);
-    await admin
-      .from("route_cache")
-      .upsert({ client_id: clientId, from_point: from, to_point: to, miles: Math.round(r.miles * 100) / 100, source: r.source }, {
-        onConflict: "client_id,from_point,to_point",
-      });
+    logIfFailed(
+      "route cache",
+      await admin
+        .from("route_cache")
+        .upsert({ client_id: clientId, from_point: from, to_point: to, miles: Math.round(r.miles * 100) / 100, source: r.source }, {
+          onConflict: "client_id,from_point,to_point",
+        }),
+    );
     return r.miles;
   }
 
@@ -272,7 +276,7 @@ export async function syncDayTrips(
   // Automatic trips for days no longer on site go away; edited ones stay.
   const gone = (existing ?? []).filter((e) => e.kind === "auto" && !planned.has(String(e.trip_date).slice(0, 10)));
   if (gone.length > 0) {
-    await admin.from("mileage_entries").delete().in("id", gone.map((e) => e.id));
+    await admin.from("mileage_entries").delete().in("id", gone.map((e) => e.id)).throwOnError();
     result.deleted = gone.length;
   }
   return result;

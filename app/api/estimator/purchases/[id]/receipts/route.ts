@@ -4,6 +4,7 @@ import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { thumbPathFor } from "@/lib/estimator/receipt-paths";
 import { MAX_PIECES } from "@/lib/receipts/pieces";
+import { logIfFailed } from "@/lib/supabase/log-if-failed";
 
 const MAX_BYTES = 8 * 1024 * 1024;
 // Types the scanner reads: photos (the phone converts HEIC to JPEG before
@@ -42,7 +43,7 @@ export async function POST(
     .select("client_id")
     .eq("auth_user_id", user.id)
     .order("created_at", { ascending: true })
-    .limit(1);
+    .limit(1).throwOnError();
   const clientId = clientUsers?.[0]?.client_id;
   if (!clientId) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
@@ -50,7 +51,7 @@ export async function POST(
     .from("purchases")
     .select("id, client_id, receipt_paths, scan_paths")
     .eq("id", purchaseId)
-    .maybeSingle();
+    .maybeSingle().throwOnError();
   if (!purchase || purchase.client_id !== clientId) {
     return NextResponse.json({ error: "Purchase not found" }, { status: 404 });
   }
@@ -108,7 +109,7 @@ export async function POST(
       .upload(path, await f.arrayBuffer(), { contentType: f.type, upsert: false });
     if (error) {
       // Don't leave earlier objects orphaned behind a failed batch.
-      if (written.length > 0) await admin.storage.from("receipts").remove(written);
+      if (written.length > 0) logIfFailed("remove partial upload", await admin.storage.from("receipts").remove(written));
       return NextResponse.json({ error: error.message }, { status: 500 });
     }
     newPaths.push(path);
@@ -122,7 +123,7 @@ export async function POST(
         .from("receipts")
         .upload(piecePath, await piece.arrayBuffer(), { contentType: "image/jpeg", upsert: false });
       if (pErr) {
-        await admin.storage.from("receipts").remove(written);
+        logIfFailed("remove partial upload", await admin.storage.from("receipts").remove(written));
         return NextResponse.json({ error: pErr.message }, { status: 500 });
       }
       written.push(piecePath);
@@ -157,7 +158,7 @@ export async function POST(
     .update({ receipt_paths: allPaths, scan_paths: scanPaths })
     .eq("id", purchaseId);
   if (updateErr) {
-    await admin.storage.from("receipts").remove(written);
+    logIfFailed("remove partial upload", await admin.storage.from("receipts").remove(written));
     return NextResponse.json({ error: updateErr.message }, { status: 500 });
   }
 

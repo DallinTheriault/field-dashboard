@@ -12,10 +12,10 @@ import {
   summarizePnl,
   summarizeStock,
 } from "@/lib/estimator/expenses";
-import { ALTERNATIVE_METHODS_NOTE } from "@/lib/estimator/mileage";
+import { ALTERNATIVE_METHODS_NOTE } from "@/lib/mileage/tax-note";
 import { loadRatePeriods, loadTrips } from "@/lib/mileage/trips";
 import { yearTotals } from "@/lib/mileage/plan";
-import { ExpensesManager } from "./expenses-manager";
+import { ExpenseList } from "./expense-list";
 
 const usd = new Intl.NumberFormat("en-US", {
   style: "currency",
@@ -117,8 +117,6 @@ export default async function ExpensesPage({
   // Schedule-C category already on those rows (§6.2). Display only.
   const materials = splitMaterials(expenses);
   const stock = summarizeStock(expenses);
-
-  const clientId = session.clientId;
 
   return (
     <div className="max-w-3xl mx-auto px-4 py-6 space-y-5">
@@ -329,7 +327,7 @@ export default async function ExpensesPage({
             Log expenses →
           </Link>
         </div>
-        <ExpensesManager clientId={clientId} expenses={expenses} readOnly />
+        <ExpenseList expenses={expenses} />
       </section>
     </div>
   );

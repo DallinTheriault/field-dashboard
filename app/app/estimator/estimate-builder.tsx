@@ -23,6 +23,7 @@ import {
   type RawLine,
 } from "@/lib/estimator/assemble";
 import { saveEstimate } from "./estimate-actions";
+import { withWarning } from "@/components/ui/second-step-note";
 
 const usd = new Intl.NumberFormat("en-US", {
   style: "currency",
@@ -264,10 +265,15 @@ export function EstimateBuilder({
       setErr("Give the line a description and hours before saving it to the catalog.");
       return;
     }
+    const { data: clientRows, error: clientErr } = await supabase.from("Clients").select("id").limit(1);
+    if (clientErr || !clientRows?.[0]) {
+      setErr(`Couldn't save to the catalog: ${clientErr?.message ?? "no business found"}.`);
+      return;
+    }
     const { data, error } = await supabase
       .from("service_catalog")
       .insert({
-        client_id: (await supabase.from("Clients").select("id").limit(1)).data?.[0]?.id,
+        client_id: clientRows[0].id,
         name,
         type: "TASK",
         flat_labor_hours: hours,
@@ -310,7 +316,7 @@ export function EstimateBuilder({
       setErr(result.error);
       return;
     }
-    router.push(`/app/estimator/${result.data!.estimateId}`);
+    router.push(withWarning(`/app/estimator/${result.data!.estimateId}`, result.warning));
   }
 
   const canSave = lines.length > 0 && noRate === null;
@@ -782,13 +788,14 @@ function TaskPeek({ taskId }: { taskId: number }) {
   const [loaded, setLoaded] = useState<{
     note: string | null;
     photos: Array<{ id: number; caption: string | null }>;
+    failed?: boolean;
   } | null>(null);
 
   async function toggle() {
     const next = !open;
     setOpen(next);
-    if (next && !loaded) {
-      const [{ data: task }, { data: photos }] = await Promise.all([
+    if (next && (!loaded || loaded.failed)) {
+      const [{ data: task, error: taskErr }, { data: photos, error: photosErr }] = await Promise.all([
         supabase.from("tasks").select("note").eq("id", taskId).maybeSingle(),
         supabase
           .from("task_photos")
@@ -796,7 +803,11 @@ function TaskPeek({ taskId }: { taskId: number }) {
           .eq("task_id", taskId)
           .order("id"),
       ]);
-      setLoaded({ note: task?.note ?? null, photos: photos ?? [] });
+      setLoaded(
+        taskErr || photosErr
+          ? { note: null, photos: [], failed: true }
+          : { note: task?.note ?? null, photos: photos ?? [] },
+      );
     }
   }
 
@@ -830,7 +841,10 @@ function TaskPeek({ taskId }: { taskId: number }) {
               ))}
             </span>
           )}
-          {!loaded.note && loaded.photos.length === 0 && (
+          {loaded.failed && (
+            <span className="block text-2xs text-status-danger">Couldn&apos;t load this task. Close and open it to try again.</span>
+          )}
+          {!loaded.failed && !loaded.note && loaded.photos.length === 0 && (
             <span className="block text-2xs text-bone-400">
               No note or photos on this task.
             </span>

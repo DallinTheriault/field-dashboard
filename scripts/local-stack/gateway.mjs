@@ -9,6 +9,8 @@
 //                            call to Supabase Auth crosses the country on prod).
 //   GATEWAY_FAIL=<regex>     answer GET /rest/v1 requests whose path matches with a
 //                            PostgREST-style 400, to check a failed read shows an error.
+//   GATEWAY_FAIL_METHOD=PATCH (with GATEWAY_FAIL) fail that method instead of GET, to
+//                            check a failed write (a save's second step) is said.
 import http from "node:http";
 import { appendFileSync } from "node:fs";
 
@@ -17,6 +19,7 @@ const LOG = process.env.GATEWAY_LOG;
 const DELAY = Number(process.env.GATEWAY_DELAY_MS ?? 0);
 const AUTH_DELAY = Number(process.env.GATEWAY_AUTH_DELAY_MS ?? DELAY);
 const FAIL = process.env.GATEWAY_FAIL ? new RegExp(process.env.GATEWAY_FAIL) : null;
+const FAIL_METHOD = (process.env.GATEWAY_FAIL_METHOD ?? "GET").toUpperCase();
 const routes = [
   ["/rest/v1", restPort],
   ["/auth/v1", authPort],
@@ -47,8 +50,8 @@ http
     const [prefix, target] = route;
     const path = req.url.slice(prefix.length) || "/";
     const t0 = Date.now();
-    if (LOG) res.on("finish", () => appendFileSync(LOG, `[GW] ${t0} ${Date.now()} ${Date.now() - t0}ms ${req.method} ${req.url.slice(0, 160)} ${res.statusCode}\n`));
-    if (FAIL && prefix === "/rest/v1" && req.method === "GET" && FAIL.test(path)) {
+    if (LOG) res.on("finish", () => appendFileSync(LOG, `[GW] ${t0} ${Date.now()} ${Date.now() - t0}ms ${req.method} ${req.url} ${res.statusCode}\n`));
+    if (FAIL && prefix === "/rest/v1" && req.method === FAIL_METHOD && FAIL.test(path)) {
       res.writeHead(400, cors(req, { "content-type": "application/json" }));
       return res.end(JSON.stringify({ code: "TEST", details: null, hint: null, message: "failed on purpose (GATEWAY_FAIL)" }));
     }
